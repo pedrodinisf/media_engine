@@ -73,3 +73,14 @@ def corrupt_mp4() -> Path:
     if not p.exists():
         pytest.skip("corrupt.mp4 missing — run `python tests/fixtures/build_fixtures.py`")
     return p
+
+
+@pytest.fixture
+def sample_speech_wav() -> Path:
+    p = FIXTURE_DIR / "sample_speech.wav"
+    if not p.exists():
+        pytest.skip(
+            "sample_speech.wav missing — run `python tests/fixtures/build_fixtures.py` "
+            "on macOS (requires `say`)"
+        )
+    return p
