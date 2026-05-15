@@ -23,10 +23,19 @@ SAMPLE_MP4 = FIXTURE_DIR / "sample.mp4"
 SAMPLE_M4A = FIXTURE_DIR / "sample.m4a"
 CORRUPT_MP4 = FIXTURE_DIR / "corrupt.mp4"
 SAMPLE_SPEECH_WAV = FIXTURE_DIR / "sample_speech.wav"
+SAMPLE_DIALOGUE_WAV = FIXTURE_DIR / "sample_dialogue.wav"
 
 SPEECH_TEXT = (
     "The quick brown fox jumps over the lazy dog. "
     "Pack my box with five dozen liquor jugs."
+)
+DIALOGUE_VOICE_A = "Alex"
+DIALOGUE_VOICE_B = "Samantha"
+DIALOGUE_LINE_A = (
+    "Good morning. The quarterly results exceeded our internal forecasts."
+)
+DIALOGUE_LINE_B = (
+    "That's terrific news. Does this change our hiring plan for next quarter?"
 )
 
 
@@ -115,6 +124,59 @@ def build_sample_speech_wav(force: bool = False) -> None:
         aiff.unlink(missing_ok=True)
 
 
+def build_sample_dialogue_wav(force: bool = False) -> None:
+    """Two-speaker synthesized dialogue: ``say`` × 2 voices + ffmpeg concat.
+
+    16 kHz mono pcm_s16le wav with two distinct synthetic voices speaking in
+    turn — enough signal for pyannote to detect 2 speakers in
+    ``audio.diarize`` tests.
+    """
+    if SAMPLE_DIALOGUE_WAV.exists() and not force:
+        return
+    if shutil.which("say") is None:
+        sys.stderr.write("skipping sample_dialogue.wav: macOS `say` not found\n")
+        return
+    _require_ffmpeg()
+    a_aiff = FIXTURE_DIR / "_diag_a.aiff"
+    b_aiff = FIXTURE_DIR / "_diag_b.aiff"
+    a_wav = FIXTURE_DIR / "_diag_a.wav"
+    b_wav = FIXTURE_DIR / "_diag_b.wav"
+    list_file = FIXTURE_DIR / "_diag_list.txt"
+    try:
+        subprocess.check_call(
+            ["say", "-v", DIALOGUE_VOICE_A, "-o", str(a_aiff), DIALOGUE_LINE_A],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        subprocess.check_call(
+            ["say", "-v", DIALOGUE_VOICE_B, "-o", str(b_aiff), DIALOGUE_LINE_B],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        for src, dst in ((a_aiff, a_wav), (b_aiff, b_wav)):
+            subprocess.check_call(
+                [
+                    "ffmpeg", "-y", "-i", str(src),
+                    "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+                    str(dst),
+                ],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        # ffmpeg concat demuxer expects a manifest with `file '...'` lines.
+        list_file.write_text(f"file '{a_wav.name}'\nfile '{b_wav.name}'\n")
+        subprocess.check_call(
+            [
+                "ffmpeg", "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", str(list_file),
+                "-c:a", "pcm_s16le",
+                str(SAMPLE_DIALOGUE_WAV),
+            ],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    finally:
+        for f in (a_aiff, b_aiff, a_wav, b_wav, list_file):
+            f.unlink(missing_ok=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rebuild", action="store_true", help="rebuild even if present")
@@ -124,9 +186,11 @@ def main() -> None:
     build_sample_m4a(force=args.rebuild)
     build_corrupt_mp4(force=args.rebuild)
     build_sample_speech_wav(force=args.rebuild)
+    build_sample_dialogue_wav(force=args.rebuild)
 
     print(f"Fixtures ready in {FIXTURE_DIR}")
-    for f in (SAMPLE_MP4, SAMPLE_M4A, CORRUPT_MP4, SAMPLE_SPEECH_WAV):
+    for f in (SAMPLE_MP4, SAMPLE_M4A, CORRUPT_MP4, SAMPLE_SPEECH_WAV,
+              SAMPLE_DIALOGUE_WAV):
         size = f.stat().st_size if f.exists() else "(missing)"
         print(f"  {f.name:<22} = {size}")
 

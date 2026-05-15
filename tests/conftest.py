@@ -84,3 +84,14 @@ def sample_speech_wav() -> Path:
             "on macOS (requires `say`)"
         )
     return p
+
+
+@pytest.fixture
+def sample_dialogue_wav() -> Path:
+    p = FIXTURE_DIR / "sample_dialogue.wav"
+    if not p.exists():
+        pytest.skip(
+            "sample_dialogue.wav missing — run `python tests/fixtures/build_fixtures.py` "
+            "on macOS (requires `say`)"
+        )
+    return p
