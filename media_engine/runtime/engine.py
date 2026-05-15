@@ -174,6 +174,7 @@ class Engine:
             emit=self.event_bus.emit,
             server_manager=self.server_manager,
             model_pool=self.model_pool,
+            run_op=self.run,
         )
 
         started_at = datetime.now(UTC)

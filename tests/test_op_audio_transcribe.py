@@ -79,8 +79,8 @@ def test_cost_estimate_scales_with_duration(tmp_path: Path) -> None:
 
 @pytest.fixture
 def fake_transcribe_backend() -> type[Backend]:
-    """Register a deterministic stand-in backend; clean up afterwards."""
-    BackendRegistry.clear()
+    """Register a deterministic stand-in backend; restore on teardown."""
+    BackendRegistry.unregister("audio.transcribe", "mlx-whisper")
 
     @register_backend
     class _FakeWhisper(Backend):
@@ -121,7 +121,12 @@ def fake_transcribe_backend() -> type[Backend]:
             return CostEstimate(local_seconds=1.0)
 
     yield _FakeWhisper
-    BackendRegistry.clear()
+    BackendRegistry.unregister("audio.transcribe", "mlx-whisper")
+    # Re-register the real backend so other tests have it.
+    from media_engine.backends.transcribe.mlx_whisper import (
+        MlxWhisperTranscribeBackend,
+    )
+    BackendRegistry.register(MlxWhisperTranscribeBackend)
 
 
 async def _acquire_audio(engine: Engine, sample_m4a: Path) -> Audio:

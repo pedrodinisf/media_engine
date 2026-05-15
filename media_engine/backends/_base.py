@@ -112,6 +112,11 @@ class BackendRegistry:
         """For tests only — wipe the registry."""
         cls._backends.clear()
 
+    @classmethod
+    def unregister(cls, op_name: str, backend_name: str) -> bool:
+        """Remove a single backend entry. Returns True if something was removed."""
+        return cls._backends.pop((op_name, backend_name), None) is not None
+
 
 T = TypeVar("T", bound=type[Backend])
 

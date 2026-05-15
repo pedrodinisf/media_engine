@@ -47,7 +47,7 @@ def test_cost_estimate_is_cheap() -> None:
 
 @pytest.fixture
 def fake_detect_backend() -> type[Backend]:
-    BackendRegistry.clear()
+    BackendRegistry.unregister("audio.detect_language", "mlx-whisper")
 
     @register_backend
     class _Fake(Backend):
@@ -83,7 +83,11 @@ def fake_detect_backend() -> type[Backend]:
             return CostEstimate(local_seconds=2.0)
 
     yield _Fake
-    BackendRegistry.clear()
+    BackendRegistry.unregister("audio.detect_language", "mlx-whisper")
+    from media_engine.backends.transcribe.mlx_whisper import (
+        MlxWhisperDetectLanguageBackend,
+    )
+    BackendRegistry.register(MlxWhisperDetectLanguageBackend)
 
 
 def _ctx_for(engine: Engine) -> OperationContext:

@@ -53,7 +53,7 @@ def test_export_includes_backend_when_registered() -> None:
     from media_engine.backends import Backend, BackendRequirements
     from media_engine.ops import CostEstimate
 
-    BackendRegistry.clear()
+    BackendRegistry.unregister("video.extract_audio", "ffmpeg-test")
 
     class _FakeBackend(Backend):
         op_name = "video.extract_audio"
@@ -75,11 +75,11 @@ def test_export_includes_backend_when_registered() -> None:
         assert backend_prop["type"] == "string"
         assert "ffmpeg-test" in backend_prop["enum"]
     finally:
-        BackendRegistry.clear()
+        BackendRegistry.unregister("video.extract_audio", "ffmpeg-test")
 
 
 def test_export_no_backend_property_when_none_registered() -> None:
-    BackendRegistry.clear()
+    """video.extract_audio has no backend layer (logic embedded in the Op)."""
     spec = export_op_as_mcp_tool(VideoExtractAudio)
     assert "backend" not in spec["inputSchema"]["properties"]
 

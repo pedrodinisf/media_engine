@@ -75,7 +75,7 @@ def _ctx_for(engine: Engine) -> OperationContext:
 
 @pytest.fixture
 def fake_diarize_backend() -> type[Backend]:
-    BackendRegistry.clear()
+    BackendRegistry.unregister("audio.diarize", "pyannote")
 
     @register_backend
     class _Fake(Backend):
@@ -112,7 +112,13 @@ def fake_diarize_backend() -> type[Backend]:
             return CostEstimate(local_seconds=10.0)
 
     yield _Fake
-    BackendRegistry.clear()
+    BackendRegistry.unregister("audio.diarize", "pyannote")
+    # Try to restore the real pyannote backend if available.
+    try:
+        from media_engine.backends.diarize.pyannote import PyannoteDiarizeBackend
+        BackendRegistry.register(PyannoteDiarizeBackend)
+    except ImportError:
+        pass
 
 
 async def test_diarize_via_fake_backend(

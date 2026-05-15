@@ -12,11 +12,68 @@ from pathlib import Path
 
 import pytest
 
+from media_engine.backends import BackendRegistry
 from media_engine.config import EngineConfig
 from media_engine.ops import OperationContext
 from media_engine.runtime.engine import Engine
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+def _ensure_all_backends_registered() -> None:
+    """Force-register every known backend.
+
+    Module-import side effects only run once; tests that mutate the
+    BackendRegistry (clear / unregister) leave it in an unknown state for
+    the next test. This autouse fixture is idempotent — ``register`` is a
+    no-op when the same class is already there.
+    """
+    # Trigger module imports so the backend classes exist.
+    from media_engine.backends.sample_frames.ffmpeg_uniform import (
+        FfmpegUniformBackend,
+    )
+    from media_engine.backends.transcribe.mlx_whisper import (
+        MlxWhisperDetectLanguageBackend,
+        MlxWhisperTranscribeBackend,
+    )
+
+    for backend_cls in (
+        MlxWhisperTranscribeBackend,
+        MlxWhisperDetectLanguageBackend,
+        FfmpegUniformBackend,
+    ):
+        if not BackendRegistry.has(backend_cls.op_name, backend_cls.name):
+            BackendRegistry.register(backend_cls)
+
+    # pyannote is optional; only register when installed.
+    try:
+        from media_engine.backends.diarize.pyannote import PyannoteDiarizeBackend
+    except ImportError:
+        return
+    if not BackendRegistry.has(
+        PyannoteDiarizeBackend.op_name, PyannoteDiarizeBackend.name
+    ):
+        BackendRegistry.register(PyannoteDiarizeBackend)
+
+
+def _ensure_all_ops_registered() -> None:
+    """Same idea, for ``OpRegistry``."""
+    # Importing the op modules registers via decorators on first import.
+    from media_engine.ops.acquire import upload as _u  # noqa: F401
+    from media_engine.ops.audio import (  # noqa: F401
+        detect_language as _adl,
+    )
+    from media_engine.ops.frames import subsample as _fs  # noqa: F401
+    from media_engine.ops.video import (  # noqa: F401
+        extract_audio as _ve,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _ensure_registries() -> None:
+    """Restore the full op + backend catalog before every test."""
+    _ensure_all_ops_registered()
+    _ensure_all_backends_registered()
 
 
 @pytest.fixture

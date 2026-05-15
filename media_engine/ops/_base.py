@@ -47,6 +47,11 @@ class OperationContext:
     emit). The async / resource fields below — semaphore acquisition, backend
     selection, server manager, model pool — become non-trivial in Phase 1+
     when the daemon and DAG executor land.
+
+    ``run_op`` is the recursion handle injected by ``Engine.run``: composite
+    ops call ``await ctx.run_op("audio.transcribe", inputs=[...])`` to invoke
+    a sibling op through the same cache + dispatch layer they themselves are
+    running under. ``None`` outside of an Engine.run invocation.
     """
 
     workdir: Path
@@ -58,6 +63,7 @@ class OperationContext:
     select_backend: Callable[[str, str | None], Any] | None = None
     server_manager: Any | None = None
     model_pool: Any | None = None
+    run_op: Callable[..., Any] | None = None
 
 
 class Operation(ABC):
