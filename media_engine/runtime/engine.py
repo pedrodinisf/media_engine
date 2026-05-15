@@ -13,6 +13,7 @@ ships a sequential v1 that just iterates a list of steps.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from datetime import UTC, datetime
 from types import TracebackType
@@ -28,6 +29,12 @@ from media_engine.backends import BackendRegistry
 from media_engine.config import EngineConfig
 from media_engine.ops import CostEstimate, Operation, OperationContext, OpRegistry
 from media_engine.runtime.cache import Cache
+from media_engine.runtime.dag import (
+    DAGResult,
+    Pipeline,
+    execute_pipeline,
+    make_default_semaphores,
+)
 from media_engine.runtime.disk_guard import assert_free_space
 from media_engine.runtime.events import EventBus
 from media_engine.runtime.lineage import LineageNode
@@ -60,6 +67,14 @@ class Engine:
             config.permanent_store / "server-state"
         )
         self.model_pool = model_pool or ModelPool()
+        # Lazy: created on first run_pipeline call from inside the running event
+        # loop (asyncio.Semaphore needs a loop to bind to).
+        self._semaphores: dict[str, asyncio.Semaphore] | None = None
+
+    def _get_semaphores(self) -> dict[str, asyncio.Semaphore]:
+        if self._semaphores is None:
+            self._semaphores = make_default_semaphores()
+        return self._semaphores
 
     @classmethod
     def open_quick(cls, config: EngineConfig | None = None) -> Self:
@@ -225,6 +240,27 @@ class Engine:
         resolved_inputs = self._resolve_inputs(list(inputs or []))
         params_model = op_class.params_model(**params)
         return op.cost_estimate(resolved_inputs, params_model)
+
+    async def run_pipeline(self, pipeline: Pipeline) -> DAGResult:
+        """Run a Pipeline through the async DAG executor.
+
+        Source artifacts come from ``pipeline.sources``. The executor enforces
+        per-op ``declared_resources`` via the engine's shared semaphore pool
+        (one async lock per resource name). Per-node retry policy comes from
+        ``DAGNode.retry_policy`` (or the executor's heuristic default).
+
+        Returns a ``DAGResult`` with successes + failures (partial completion).
+        Raises only if the graph itself is invalid (cycle / unresolved ref).
+        """
+        # Persist sources so the inner Engine.run dispatches can resolve them
+        # by id. ``upsert_artifact`` is idempotent on (id, namespace).
+        for artifact in pipeline.sources.values():
+            self.cache.upsert_artifact(artifact)
+        return await execute_pipeline(
+            pipeline,
+            run_op=self.run,
+            semaphores=self._get_semaphores(),
+        )
 
     # ── Internals ──
 
