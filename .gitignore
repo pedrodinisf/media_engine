@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# uv
+.uv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Project state
+.env
+.env.local
+
+# Engine ephemeral state
+/tmp/media_engine/
+*.log
+
+# Test fixtures (large media; rebuilt by build_fixtures.py)
+# (committed fixtures explicitly listed; this is a safety net)
+tests/fixtures/*.mp4.tmp
+tests/fixtures/*.wav.tmp
+
+# Plan-mode session state
+.claude/
