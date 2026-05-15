@@ -71,18 +71,32 @@ def _ensure_all_backends_registered() -> None:
 
 
 def _ensure_all_ops_registered() -> None:
-    """Same idea, for ``OpRegistry``."""
-    # Importing the op modules registers via decorators on first import.
-    from media_engine.ops.acquire import upload as _u  # noqa: F401
-    from media_engine.ops.audio import (  # noqa: F401
-        detect_language as _adl,
-    )
-    from media_engine.ops.chunk import semantic as _cs  # noqa: F401
-    from media_engine.ops.embed import text as _et  # noqa: F401
-    from media_engine.ops.frames import subsample as _fs  # noqa: F401
-    from media_engine.ops.video import (  # noqa: F401
-        extract_audio as _ve,
-    )
+    """Same idea, for ``OpRegistry`` — force-register every production op.
+
+    Python caches module imports so the @register_op decorators only run
+    once per process; tests that clear the registry would otherwise leave
+    every subsequent test starved.
+    """
+    from media_engine.ops import OpRegistry as _OR
+    from media_engine.ops.acquire.upload import AcquireUpload
+    from media_engine.ops.audio.detect_language import AudioDetectLanguage
+    from media_engine.ops.audio.diarize import AudioDiarize
+    from media_engine.ops.audio.transcribe import AudioTranscribe
+    from media_engine.ops.audio.transcribe_diarized import AudioTranscribeDiarized
+    from media_engine.ops.chunk.semantic import ChunkSemantic
+    from media_engine.ops.embed.text import EmbedText
+    from media_engine.ops.frames.subsample import FramesSubsample
+    from media_engine.ops.video.extract_audio import VideoExtractAudio
+    from media_engine.ops.video.sample_frames import VideoSampleFrames
+    from media_engine.ops.video.trim import VideoTrim
+
+    for op_class in (
+        AcquireUpload, AudioDetectLanguage, AudioDiarize, AudioTranscribe,
+        AudioTranscribeDiarized, ChunkSemantic, EmbedText, FramesSubsample,
+        VideoExtractAudio, VideoSampleFrames, VideoTrim,
+    ):
+        if not _OR.has(op_class.name):
+            _OR.register(op_class)
 
 
 @pytest.fixture(autouse=True)

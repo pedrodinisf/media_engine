@@ -1,0 +1,19 @@
+profile_schema_version: "1.0"
+name: transcribe-and-diarize
+kind: pipeline
+description: >
+  Video → Audio → speaker-diarized Transcript. Smallest end-to-end pipeline
+  that exercises a multi-op DAG with the engine's content-addressed cache.
+inputs:
+  - { name: source, kind: video }
+graph:
+  - id: audio
+    op: video.extract_audio
+    inputs: { in: source }
+
+  - id: transcript
+    op: audio.transcribe_diarized
+    inputs: { audio: audio }
+    params:
+      language: en
+outputs: [transcript]
