@@ -28,6 +28,8 @@ def engine_config(tmp_path: Path) -> EngineConfig:
         cache_db_url=f"sqlite+pysqlite:///{tmp_path / 'cache.db'}",
         log_format="text",
         log_level="WARNING",
+        # Tests synthesize tiny fixtures; bypass the disk-space gate.
+        min_free_gb=0,
     )
 
 

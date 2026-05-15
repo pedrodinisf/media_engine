@@ -39,6 +39,11 @@ app = typer.Typer(
 console = Console()
 err_console = Console(stderr=True)
 
+# Subcommand groups.
+from media_engine.cli import daemon as _daemon_cli  # noqa: E402
+
+app.add_typer(_daemon_cli.app, name="daemon")
+
 
 # ─────────────────────────────────────────────────────────────────
 # Global state — passed via Typer Context, populated in the callback

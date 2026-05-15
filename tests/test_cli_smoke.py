@@ -24,6 +24,7 @@ def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("MEDIA_ENGINE_PERMANENT_STORE", str(store))
     monkeypatch.setenv("MEDIA_ENGINE_WORKDIR", str(work))
     monkeypatch.setenv("MEDIA_ENGINE_CACHE_DB_URL", f"sqlite+pysqlite:///{cache_db}")
+    monkeypatch.setenv("MEDIA_ENGINE_MIN_FREE_GB", "0")
     return tmp_path
 
 

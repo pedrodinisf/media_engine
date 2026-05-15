@@ -28,7 +28,11 @@ from media_engine.backends import BackendRegistry
 from media_engine.config import EngineConfig
 from media_engine.ops import CostEstimate, Operation, OperationContext, OpRegistry
 from media_engine.runtime.cache import Cache
+from media_engine.runtime.disk_guard import assert_free_space
+from media_engine.runtime.events import EventBus
 from media_engine.runtime.lineage import LineageNode
+from media_engine.runtime.model_pool import ModelPool
+from media_engine.runtime.server_manager import ServerManager
 from media_engine.runtime.storage import LocalFSStorage, StorageBackend
 
 if TYPE_CHECKING:
@@ -43,10 +47,19 @@ class Engine:
         config: EngineConfig,
         cache: Cache,
         storage: StorageBackend,
+        *,
+        event_bus: EventBus | None = None,
+        server_manager: ServerManager | None = None,
+        model_pool: ModelPool | None = None,
     ) -> None:
         self.config = config
         self.cache = cache
         self.storage = storage
+        self.event_bus = event_bus or EventBus()
+        self.server_manager = server_manager or ServerManager(
+            config.permanent_store / "server-state"
+        )
+        self.model_pool = model_pool or ModelPool()
 
     @classmethod
     def open_quick(cls, config: EngineConfig | None = None) -> Self:
@@ -59,8 +72,9 @@ class Engine:
 
     @classmethod
     def open_session(cls, config: EngineConfig | None = None) -> Self:
-        """Long-lived session. Phase 1 adds warm model pool, semaphores, server
-        lifecycle. For now identical to ``open_quick``."""
+        """Long-lived session. Same surface as ``open_quick`` today; intended
+        for the daemon (commit 8) — holds warm model pool + server processes
+        across many CLI clients."""
         return cls.open_quick(config)
 
     # ── Read API ──
@@ -124,6 +138,9 @@ class Engine:
 
         backend_name, backend_version = self._resolve_backend(op_class, backend)
 
+        # Disk-space precondition: refuse to start if the permanent_store
+        # filesystem is below the configured floor. Cache hits skip this
+        # because they don't write — checked AFTER cache lookup below.
         cached = self.cache.find_cached_run(
             op_name=op_name,
             op_version=op_class.version,
@@ -144,6 +161,9 @@ class Engine:
             # cache row points at artifacts that no longer exist — fall through
             # and re-run the op (lazy GC of stale rows happens elsewhere).
 
+        # No cache hit → we'll write. Enforce the disk-space gate now.
+        assert_free_space(self.config.permanent_store, self.config.min_free_gb)
+
         job_id = uuid4().hex
         workdir = self.storage.ensure_workdir(job_id)
         ctx = OperationContext(
@@ -151,6 +171,9 @@ class Engine:
             config=self.config,
             storage=self.storage,
             namespace=self.config.namespace,
+            emit=self.event_bus.emit,
+            server_manager=self.server_manager,
+            model_pool=self.model_pool,
         )
 
         started_at = datetime.now(UTC)
