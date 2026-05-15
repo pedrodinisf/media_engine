@@ -28,7 +28,9 @@ def _ensure_all_backends_registered() -> None:
     the next test. This autouse fixture is idempotent — ``register`` is a
     no-op when the same class is already there.
     """
-    # Trigger module imports so the backend classes exist.
+    from media_engine.backends.chunk_semantic.default import (
+        DefaultChunkSemanticBackend,
+    )
     from media_engine.backends.sample_frames.ffmpeg_uniform import (
         FfmpegUniformBackend,
     )
@@ -37,11 +39,23 @@ def _ensure_all_backends_registered() -> None:
         MlxWhisperTranscribeBackend,
     )
 
-    for backend_cls in (
+    base_backends: list[type] = [
         MlxWhisperTranscribeBackend,
         MlxWhisperDetectLanguageBackend,
         FfmpegUniformBackend,
-    ):
+        DefaultChunkSemanticBackend,
+    ]
+
+    # sentence-transformers is optional; only register when installed.
+    try:
+        from media_engine.backends.embed_text.sentence_transformers import (
+            SentenceTransformersEmbedTextBackend,
+        )
+        base_backends.append(SentenceTransformersEmbedTextBackend)
+    except ImportError:
+        pass
+
+    for backend_cls in base_backends:
         if not BackendRegistry.has(backend_cls.op_name, backend_cls.name):
             BackendRegistry.register(backend_cls)
 
@@ -63,6 +77,8 @@ def _ensure_all_ops_registered() -> None:
     from media_engine.ops.audio import (  # noqa: F401
         detect_language as _adl,
     )
+    from media_engine.ops.chunk import semantic as _cs  # noqa: F401
+    from media_engine.ops.embed import text as _et  # noqa: F401
     from media_engine.ops.frames import subsample as _fs  # noqa: F401
     from media_engine.ops.video import (  # noqa: F401
         extract_audio as _ve,
