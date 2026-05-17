@@ -104,7 +104,7 @@ class CycleError(RuntimeError):
     """Raised when the pipeline graph has a cycle. Carries the cycle path."""
 
 
-def _validate_and_sort(pipeline: Pipeline) -> list[list[DAGNode]]:
+def validate_and_sort(pipeline: Pipeline) -> list[list[DAGNode]]:
     """Return ready-waves: each wave is a list of nodes whose deps are all
     satisfied by the previous wave's completion."""
     by_id: dict[str, DAGNode] = {n.id: n for n in pipeline.nodes}
@@ -223,7 +223,7 @@ async def execute_pipeline(
     semaphores: dict[str, asyncio.Semaphore] | None = None,
 ) -> DAGResult:
     """Execute the pipeline; return per-node outcomes (partial completion)."""
-    waves = _validate_and_sort(pipeline)
+    waves = validate_and_sort(pipeline)
     semaphores = semaphores or {}
 
     successes: dict[str, NodeSuccess] = {}

@@ -20,6 +20,7 @@ from media_engine.runtime.events import Event
 from media_engine.runtime.lineage import LineageNode
 
 from .protocol import (
+    PROTOCOL_VERSION,
     ErrorResponse,
     EventNotification,
     GetArtifactRequest,
@@ -47,6 +48,16 @@ class DaemonClientError(RuntimeError):
     """Raised when a request returns ``ErrorResponse`` from the daemon."""
 
 
+class ProtocolVersionMismatch(DaemonClientError):
+    """Daemon is reachable but speaks an incompatible protocol major.
+
+    Distinct from "no daemon" (``connect`` returns ``None``): the user
+    explicitly has a daemon running, so silently falling back to a cold
+    local engine would be confusing. The fix is always
+    ``med daemon stop && med daemon start``.
+    """
+
+
 class DaemonClient:
     """Async JSON-line client over a Unix socket."""
 
@@ -64,8 +75,14 @@ class DaemonClient:
     ) -> DaemonClient | None:
         """Try to connect; ``ping`` round-trip must complete within ``timeout``.
 
-        Returns ``None`` if the socket doesn't exist, can't be opened, or
-        doesn't pong in time.
+        Returns ``None`` when there's no usable daemon (socket missing,
+        unreachable, dead, or no pong in time) — the caller silently falls
+        back to a local engine.
+
+        Raises ``ProtocolVersionMismatch`` when a daemon *is* reachable but
+        speaks an incompatible protocol major: that's a real misconfiguration
+        the user must fix (``med daemon stop && med daemon start``), not a
+        silent-fallback situation.
         """
         if not socket_path.exists():
             return None
@@ -78,10 +95,22 @@ class DaemonClient:
             return None
         client = cls(reader, writer)
         try:
-            await asyncio.wait_for(client.ping(), timeout=timeout)
-        except (TimeoutError, DaemonClientError, Exception):
+            pong = await asyncio.wait_for(client.ping(), timeout=timeout)
+        except (TimeoutError, OSError, DaemonClientError):
+            # Unreachable / dead socket / malformed pong → no usable daemon.
             await client.close()
             return None
+        # Reachable but incompatible → surface loudly, do NOT fall back.
+        client_major = PROTOCOL_VERSION.split(".")[0]
+        daemon_major = pong.protocol_version.split(".")[0]
+        if client_major != daemon_major:
+            await client.close()
+            raise ProtocolVersionMismatch(
+                f"daemon speaks protocol {pong.protocol_version}, client "
+                f"speaks {PROTOCOL_VERSION}. Run "
+                f"`med daemon stop && med daemon start` to restart the daemon "
+                f"on the current version."
+            )
         return client
 
     async def close(self) -> None:

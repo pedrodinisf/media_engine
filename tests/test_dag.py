@@ -35,8 +35,8 @@ from media_engine.runtime.dag import (
     CycleError,
     DAGNode,
     Pipeline,
-    _validate_and_sort,
     make_default_semaphores,
+    validate_and_sort,
 )
 from media_engine.runtime.engine import Engine
 from media_engine.runtime.retry import RetryPolicy
@@ -77,7 +77,7 @@ def test_topo_sort_linear(tmp_path: Path) -> None:
             DAGNode(id="c", op_name="acquire.upload", input_node_ids=["b"]),
         ],
     )
-    waves = _validate_and_sort(pipeline)
+    waves = validate_and_sort(pipeline)
     assert [n.id for n in waves[0]] == ["a"]
     assert [n.id for n in waves[1]] == ["b"]
     assert [n.id for n in waves[2]] == ["c"]
@@ -94,7 +94,7 @@ def test_topo_sort_diamond(tmp_path: Path) -> None:
             DAGNode(id="d", op_name="acquire.upload", input_node_ids=["b", "c"]),
         ],
     )
-    waves = _validate_and_sort(pipeline)
+    waves = validate_and_sort(pipeline)
     assert {n.id for n in waves[0]} == {"a"}
     assert {n.id for n in waves[1]} == {"b", "c"}  # parallel
     assert {n.id for n in waves[2]} == {"d"}
@@ -110,7 +110,7 @@ def test_topo_sort_cycle_raises(tmp_path: Path) -> None:
         ],
     )
     with pytest.raises(CycleError, match="cycle"):
-        _validate_and_sort(pipeline)
+        validate_and_sort(pipeline)
 
 
 def test_topo_sort_unknown_dep_raises(tmp_path: Path) -> None:
@@ -122,7 +122,7 @@ def test_topo_sort_unknown_dep_raises(tmp_path: Path) -> None:
         ],
     )
     with pytest.raises(ValueError, match="unknown input/dep"):
-        _validate_and_sort(pipeline)
+        validate_and_sort(pipeline)
 
 
 def test_topo_sort_duplicate_id_raises(tmp_path: Path) -> None:
@@ -135,7 +135,7 @@ def test_topo_sort_duplicate_id_raises(tmp_path: Path) -> None:
         ],
     )
     with pytest.raises(ValueError, match="duplicate node id"):
-        _validate_and_sort(pipeline)
+        validate_and_sort(pipeline)
 
 
 # ─────────────────────────────────────────────────────────────────

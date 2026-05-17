@@ -31,7 +31,6 @@ from rich.table import Table
 
 from media_engine.config import EngineConfig
 from media_engine.runtime.dag import DAGNode, Pipeline
-from media_engine.runtime.engine import Engine
 
 console = Console()
 err_console = Console(stderr=True)
@@ -140,8 +139,10 @@ def cmd_batch(
     cfg = EngineConfig.load()
 
     async def _go() -> int:
-        with Engine.open_quick(cfg) as engine:
-            result = await engine.run_pipeline(pipeline)
+        from media_engine.cli._handle import open_handle
+
+        async with open_handle(cfg) as h:
+            result = await h.run_pipeline(pipeline)
             if json_output:
                 payload = {
                     "successes": {

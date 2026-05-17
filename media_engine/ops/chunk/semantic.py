@@ -36,6 +36,15 @@ from media_engine.ops import (
 
 
 class ChunkSemanticParams(BaseModel):
+    """Chunking is **char-based**, not token-based.
+
+    The plan sketched ``max_tokens``/``overlap`` but a token unit needs a
+    tokenizer dependency in core (nltk/tiktoken); chars are an honest,
+    dependency-free unit and ~4 chars/token is a good rule of thumb
+    (``max_chars=2000`` ≈ 500 tokens). A future ``chunk.semantic`` backend
+    can add a token-aware variant without changing this op's contract.
+    """
+
     max_chars: int = 2000
     overlap_chars: int = 200
     strategy: Literal["sentence", "paragraph"] = "sentence"

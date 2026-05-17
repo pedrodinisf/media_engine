@@ -7,8 +7,8 @@ The compiler:
    ordered ``input_node_ids``.
 4. Defaults the pipeline's ``outputs`` to *all* leaf nodes when the
    profile didn't list them.
-
-Cycle detection happens later inside the DAG executor's topo sort.
+5. Runs the executor's topo-sort (``validate_and_sort``) so cycles and
+   unresolved refs fail at COMPILE time, not mid-run.
 """
 
 from __future__ import annotations
@@ -22,7 +22,12 @@ from media_engine.profiles.schema import (
     Profile,
     PromptProfile,
 )
-from media_engine.runtime.dag import DAGNode, Pipeline
+from media_engine.runtime.dag import (
+    CycleError,
+    DAGNode,
+    Pipeline,
+    validate_and_sort,
+)
 
 
 class ProfileCompileError(RuntimeError):
@@ -97,12 +102,24 @@ def compile_pipeline_profile(
     accepted_sources = {
         name: art for name, art in sources.items() if name in declared
     }
-    return Pipeline(
+    pipeline = Pipeline(
         name=profile.name,
         sources=accepted_sources,
         nodes=nodes,
         outputs=outputs,
     )
+
+    # Fail cycles / unresolved refs at COMPILE time, not deep inside the
+    # executor mid-run. Reuses the executor's topo-sort so the two stay
+    # consistent (a profile that compiles is guaranteed schedulable).
+    try:
+        validate_and_sort(pipeline)
+    except (CycleError, ValueError) as e:
+        raise ProfileCompileError(
+            f"profile {profile.name!r}: invalid graph — {e}"
+        ) from e
+
+    return pipeline
 
 
 def compile_prompt_profile(

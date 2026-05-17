@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from media_engine.backends import BackendRegistry
+from media_engine.bootstrap import register_all
 from media_engine.config import EngineConfig
 from media_engine.ops import OperationContext
 from media_engine.runtime.engine import Engine
@@ -20,90 +20,15 @@ from media_engine.runtime.engine import Engine
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
-def _ensure_all_backends_registered() -> None:
-    """Force-register every known backend.
-
-    Module-import side effects only run once; tests that mutate the
-    BackendRegistry (clear / unregister) leave it in an unknown state for
-    the next test. This autouse fixture is idempotent — ``register`` is a
-    no-op when the same class is already there.
-    """
-    from media_engine.backends.chunk_semantic.default import (
-        DefaultChunkSemanticBackend,
-    )
-    from media_engine.backends.sample_frames.ffmpeg_uniform import (
-        FfmpegUniformBackend,
-    )
-    from media_engine.backends.transcribe.mlx_whisper import (
-        MlxWhisperDetectLanguageBackend,
-        MlxWhisperTranscribeBackend,
-    )
-
-    base_backends: list[type] = [
-        MlxWhisperTranscribeBackend,
-        MlxWhisperDetectLanguageBackend,
-        FfmpegUniformBackend,
-        DefaultChunkSemanticBackend,
-    ]
-
-    # sentence-transformers is optional; only register when installed.
-    try:
-        from media_engine.backends.embed_text.sentence_transformers import (
-            SentenceTransformersEmbedTextBackend,
-        )
-        base_backends.append(SentenceTransformersEmbedTextBackend)
-    except ImportError:
-        pass
-
-    for backend_cls in base_backends:
-        if not BackendRegistry.has(backend_cls.op_name, backend_cls.name):
-            BackendRegistry.register(backend_cls)
-
-    # pyannote is optional; only register when installed.
-    try:
-        from media_engine.backends.diarize.pyannote import PyannoteDiarizeBackend
-    except ImportError:
-        return
-    if not BackendRegistry.has(
-        PyannoteDiarizeBackend.op_name, PyannoteDiarizeBackend.name
-    ):
-        BackendRegistry.register(PyannoteDiarizeBackend)
-
-
-def _ensure_all_ops_registered() -> None:
-    """Same idea, for ``OpRegistry`` — force-register every production op.
-
-    Python caches module imports so the @register_op decorators only run
-    once per process; tests that clear the registry would otherwise leave
-    every subsequent test starved.
-    """
-    from media_engine.ops import OpRegistry as _OR
-    from media_engine.ops.acquire.upload import AcquireUpload
-    from media_engine.ops.audio.detect_language import AudioDetectLanguage
-    from media_engine.ops.audio.diarize import AudioDiarize
-    from media_engine.ops.audio.transcribe import AudioTranscribe
-    from media_engine.ops.audio.transcribe_diarized import AudioTranscribeDiarized
-    from media_engine.ops.chunk.semantic import ChunkSemantic
-    from media_engine.ops.embed.text import EmbedText
-    from media_engine.ops.frames.subsample import FramesSubsample
-    from media_engine.ops.video.extract_audio import VideoExtractAudio
-    from media_engine.ops.video.sample_frames import VideoSampleFrames
-    from media_engine.ops.video.trim import VideoTrim
-
-    for op_class in (
-        AcquireUpload, AudioDetectLanguage, AudioDiarize, AudioTranscribe,
-        AudioTranscribeDiarized, ChunkSemantic, EmbedText, FramesSubsample,
-        VideoExtractAudio, VideoSampleFrames, VideoTrim,
-    ):
-        if not _OR.has(op_class.name):
-            _OR.register(op_class)
-
-
 @pytest.fixture(autouse=True)
 def _ensure_registries() -> None:
-    """Restore the full op + backend catalog before every test."""
-    _ensure_all_ops_registered()
-    _ensure_all_backends_registered()
+    """Re-assert the full op + backend catalog before every test.
+
+    Some tests (``test_ops_registry``, ``test_backends_registry``,
+    backend-swap fixtures) clear/unregister entries; ``register_all`` with
+    ``force=True`` puts the production catalog back idempotently so the
+    next test starts from a known-good state."""
+    register_all(force=True)
 
 
 @pytest.fixture

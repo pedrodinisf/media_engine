@@ -18,17 +18,15 @@ from rich.table import Table
 from rich.tree import Tree
 
 from media_engine.artifacts import AnyArtifact, Kind
+from media_engine.bootstrap import register_all
+from media_engine.cli._handle import open_handle
 from media_engine.config import EngineConfig
-
-# Eagerly import op modules so they self-register at startup.
 from media_engine.ops import OpRegistry
-from media_engine.ops.acquire import upload as _upload_op  # noqa: F401
-from media_engine.ops.video import extract_audio as _extract_audio_op  # noqa: F401
-from media_engine.runtime.engine import Engine
 from media_engine.runtime.lineage import LineageNode
 
-assert _upload_op  # keep imports live for op registration side-effects
-assert _extract_audio_op
+# Populate the op + backend registries so every `med` command sees the
+# full catalog (not just whatever this module happened to import).
+register_all()
 
 app = typer.Typer(
     name="med",
@@ -99,10 +97,6 @@ def _load_config() -> EngineConfig:
     if _opts.namespace_override is not None:
         cfg = cfg.model_copy(update={"namespace": _opts.namespace_override})
     return cfg
-
-
-def _open_engine() -> Engine:
-    return Engine.open_quick(_load_config())
 
 
 def _short_id(full: str, width: int = 12) -> str:
@@ -195,8 +189,11 @@ def cmd_ls(
             )
             raise typer.Exit(2) from None
 
-    with _open_engine() as eng:
-        rows = eng.list_artifacts(kind=kind_filter, limit=limit)
+    async def _go() -> list[AnyArtifact]:
+        async with open_handle(_load_config()) as h:
+            return await h.list_artifacts(kind=kind_filter, limit=limit)
+
+    rows = asyncio.run(_go())
 
     if _opts.json_output:
         typer.echo(_json.dumps([_artifact_payload(a) for a in rows], indent=2))
@@ -229,13 +226,16 @@ def cmd_show(
     id_or_prefix: Annotated[str, typer.Argument(help="Full id or unambiguous prefix")],
 ) -> None:
     """Show artifact metadata."""
-    with _open_engine() as eng:
-        try:
-            full = eng.resolve_id(id_or_prefix)
-        except LookupError as e:
-            err_console.print(f"[red]{e}[/red]")
-            raise typer.Exit(1) from None
-        a = eng.get_artifact(full)
+    async def _go() -> AnyArtifact | None:
+        async with open_handle(_load_config()) as h:
+            try:
+                full = await h.resolve_id(id_or_prefix)
+            except LookupError as e:
+                err_console.print(f"[red]{e}[/red]")
+                raise typer.Exit(1) from None
+            return await h.get_artifact(full)
+
+    a = asyncio.run(_go())
     assert a is not None
     payload = _artifact_payload(a)
     if _opts.json_output:
@@ -263,15 +263,18 @@ def cmd_lineage(
     depth: Annotated[int, typer.Option("--depth", help="Max upstream depth")] = 10,
 ) -> None:
     """Render the upstream lineage of an artifact."""
-    with _open_engine() as eng:
-        try:
-            full = eng.resolve_id(id_or_prefix)
-        except LookupError as e:
-            err_console.print(f"[red]{e}[/red]")
-            raise typer.Exit(1) from None
-        node = eng.lineage(full, max_depth=depth)
+    async def _go() -> LineageNode | None:
+        async with open_handle(_load_config()) as h:
+            try:
+                full = await h.resolve_id(id_or_prefix)
+            except LookupError as e:
+                err_console.print(f"[red]{e}[/red]")
+                raise typer.Exit(1) from None
+            return await h.lineage(full, max_depth=depth)
+
+    node = asyncio.run(_go())
     if node is None:
-        err_console.print(f"[red]No artifact found for {full!r}[/red]")
+        err_console.print(f"[red]No artifact found for {id_or_prefix!r}[/red]")
         raise typer.Exit(1)
     if _opts.json_output:
         typer.echo(node.model_dump_json(indent=2))
@@ -313,32 +316,38 @@ def cmd_acquire(
     ] = None,
 ) -> None:
     """Ingest a local file (acquire.upload)."""
-    with _open_engine() as eng:
-        if _opts.dry_run:
-            est = eng.estimate_op_cost(
-                "acquire.upload",
-                source_path=source,
-                original_filename=original_filename,
-                link_mode="hardlink" if link else "copy",
-            )
-            _print_cost_preview("acquire.upload", est)
-            return
-        try:
-            outputs = asyncio.run(
-                eng.run(
+    link_mode = "hardlink" if link else "copy"
+
+    async def _go() -> list[AnyArtifact] | None:
+        async with open_handle(_load_config()) as h:
+            if _opts.dry_run:
+                est = h.estimate_op_cost(
                     "acquire.upload",
                     source_path=source,
                     original_filename=original_filename,
-                    link_mode="hardlink" if link else "copy",
+                    link_mode=link_mode,
                 )
-            )
-        except FileNotFoundError as e:
-            err_console.print(f"[red]File not found: {e}[/red]")
-            raise typer.Exit(1) from None
-        except Exception as e:
-            err_console.print(f"[red]acquire.upload failed: {e}[/red]")
-            raise typer.Exit(1) from None
-    _emit_outputs(outputs)
+                _print_cost_preview("acquire.upload", est)
+                return None
+            try:
+                return await h.run(
+                    "acquire.upload",
+                    source_path=source,
+                    original_filename=original_filename,
+                    link_mode=link_mode,
+                )
+            except FileNotFoundError as e:
+                err_console.print(f"[red]File not found: {e}[/red]")
+                raise typer.Exit(1) from None
+            except typer.Exit:
+                raise
+            except Exception as e:
+                err_console.print(f"[red]acquire.upload failed: {e}[/red]")
+                raise typer.Exit(1) from None
+
+    outputs = asyncio.run(_go())
+    if outputs is not None:
+        _emit_outputs(outputs)
 
 
 @app.command("extract-audio")
@@ -350,26 +359,15 @@ def cmd_extract_audio(
     container: Annotated[str, typer.Option("--container")] = "wav",
 ) -> None:
     """Extract the audio track from a Video (video.extract_audio)."""
-    with _open_engine() as eng:
-        try:
-            full = eng.resolve_id(video_id)
-        except LookupError as e:
-            err_console.print(f"[red]{e}[/red]")
-            raise typer.Exit(1) from None
-        if _opts.dry_run:
-            est = eng.estimate_op_cost(
-                "video.extract_audio",
-                inputs=[full],
-                sample_rate=sample_rate,
-                channels=channels,
-                codec=codec,
-                container=container,
-            )
-            _print_cost_preview("video.extract_audio", est)
-            return
-        try:
-            outputs = asyncio.run(
-                eng.run(
+    async def _go() -> list[AnyArtifact] | None:
+        async with open_handle(_load_config()) as h:
+            try:
+                full = await h.resolve_id(video_id)
+            except LookupError as e:
+                err_console.print(f"[red]{e}[/red]")
+                raise typer.Exit(1) from None
+            if _opts.dry_run:
+                est = h.estimate_op_cost(
                     "video.extract_audio",
                     inputs=[full],
                     sample_rate=sample_rate,
@@ -377,11 +375,26 @@ def cmd_extract_audio(
                     codec=codec,
                     container=container,
                 )
-            )
-        except Exception as e:
-            err_console.print(f"[red]video.extract_audio failed: {e}[/red]")
-            raise typer.Exit(1) from None
-    _emit_outputs(outputs)
+                _print_cost_preview("video.extract_audio", est)
+                return None
+            try:
+                return await h.run(
+                    "video.extract_audio",
+                    inputs=[full],
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    codec=codec,
+                    container=container,
+                )
+            except typer.Exit:
+                raise
+            except Exception as e:
+                err_console.print(f"[red]video.extract_audio failed: {e}[/red]")
+                raise typer.Exit(1) from None
+
+    outputs = asyncio.run(_go())
+    if outputs is not None:
+        _emit_outputs(outputs)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -427,7 +440,13 @@ def _print_cost_preview(op_name: str, est: Any) -> None:
 
 def main() -> None:
     """Entry point used by the ``med`` console script."""
-    app()
+    from media_engine.daemon.client import ProtocolVersionMismatch
+
+    try:
+        app()
+    except ProtocolVersionMismatch as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise SystemExit(2) from None
 
 
 if __name__ == "__main__":  # pragma: no cover

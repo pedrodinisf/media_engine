@@ -19,8 +19,6 @@ from pydantic import BaseModel
 from media_engine.artifacts import AnyArtifact, Kind
 
 if TYPE_CHECKING:
-    from contextlib import AbstractAsyncContextManager
-
     from media_engine.config import EngineConfig
     from media_engine.runtime.events import Event
     from media_engine.runtime.storage import StorageBackend
@@ -43,10 +41,15 @@ def _no_op_emit(_: Event) -> None:  # pragma: no cover (default sink)
 class OperationContext:
     """Per-run handle passed to ``Operation.run``.
 
-    Phase 0 fills the synchronous fields (workdir, config, namespace, storage,
-    emit). The async / resource fields below — semaphore acquisition, backend
-    selection, server manager, model pool — become non-trivial in Phase 1+
-    when the daemon and DAG executor land.
+    Resource serialization and backend selection are **not** on this context
+    by design:
+
+    * Resource locks (``declared_resources``) are acquired by the DAG
+      executor *around* the whole op invocation — ops stay declarative and
+      never touch a semaphore. (``runtime.dag._acquire_all``.)
+    * Backend selection happens in ``Engine.run`` / the op's own dispatch
+      before ``run`` is called; an op that delegates does
+      ``BackendRegistry.get(self.name, backend_name)`` directly.
 
     ``run_op`` is the recursion handle injected by ``Engine.run``: composite
     ops call ``await ctx.run_op("audio.transcribe", inputs=[...])`` to invoke
@@ -59,8 +62,6 @@ class OperationContext:
     storage: StorageBackend
     namespace: str = "default"
     emit: Callable[[Event], None] = field(default=_no_op_emit)
-    acquire_resource: Callable[[str], AbstractAsyncContextManager[None]] | None = None
-    select_backend: Callable[[str, str | None], Any] | None = None
     server_manager: Any | None = None
     model_pool: Any | None = None
     run_op: Callable[..., Any] | None = None

@@ -2,8 +2,7 @@
 
 Used by ``med daemon start`` (background mode) so the daemon process is a
 distinct Python process — survives the parent CLI exiting and is
-inspectable via PID alone. Keeps eager op imports here so every op is
-registered when the daemon serves requests.
+inspectable via PID alone.
 """
 
 from __future__ import annotations
@@ -15,16 +14,13 @@ import signal
 import sys
 from pathlib import Path
 
+from media_engine.bootstrap import register_all
 from media_engine.config import EngineConfig
 from media_engine.daemon import DaemonServer
-
-# Eagerly register all ops so the daemon can dispatch them.
-from media_engine.ops.acquire import upload as _upload_op  # noqa: F401
-from media_engine.ops.video import extract_audio as _extract_audio_op  # noqa: F401
 from media_engine.runtime.engine import Engine
 
-assert _upload_op
-assert _extract_audio_op
+# Full op + backend catalog so the daemon can dispatch everything.
+register_all()
 
 
 async def _serve(cfg: EngineConfig, socket_path: Path) -> None:

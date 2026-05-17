@@ -15,7 +15,6 @@ from media_engine.config import EngineConfig
 from media_engine.profiles import discover_profiles, load_profile
 from media_engine.profiles.pipeline import compile_profile
 from media_engine.profiles.schema import PipelineProfile, Profile, PromptProfile
-from media_engine.runtime.engine import Engine
 
 app = typer.Typer(name="profile", help="Discover, inspect, and run profiles.")
 console = Console()
@@ -135,11 +134,19 @@ def cmd_run(
 
     async def _go() -> int:
         from media_engine.artifacts import AnyArtifact
-        with Engine.open_quick(cfg) as engine:
+        from media_engine.cli._handle import open_handle
+
+        async with open_handle(cfg) as h:
             sources: dict[str, AnyArtifact] = {}
             for src_name, art_id in parsed_inputs.items():
-                resolved_id = engine.resolve_id(art_id)
-                art = engine.get_artifact(resolved_id)
+                try:
+                    resolved_id = await h.resolve_id(art_id)
+                except LookupError as e:
+                    err_console.print(
+                        f"[red]source {src_name!r}: {e}[/red]"
+                    )
+                    return 1
+                art = await h.get_artifact(resolved_id)
                 if art is None:
                     err_console.print(
                         f"[red]artifact {resolved_id!r} (for source "
@@ -152,7 +159,7 @@ def cmd_run(
             except Exception as e:
                 err_console.print(f"[red]profile compile failed: {e}[/red]")
                 return 1
-            result = await engine.run_pipeline(pipeline)
+            result = await h.run_pipeline(pipeline)
             for node_id, success in result.successes.items():
                 for art in success.artifacts:
                     typer.echo(f"{node_id}\t{art.id}")

@@ -98,18 +98,33 @@ async def test_sample_frames_param_change_yields_new_id(
     assert high.frame_count >= low.frame_count
 
 
-async def test_sample_frames_unknown_strategy_raises(
+async def test_sample_frames_scene_change_routes_to_pyscenedetect(
     engine: Engine, sample_mp4: Path
 ) -> None:
-    """`scene_change` requires the pyscenedetect backend (not registered)."""
+    """`scene_change` routes to the pyscenedetect backend. When the optional
+    PySceneDetect lib isn't installed it fails at execute() with a clear
+    install hint (not a LookupError — the backend IS registered)."""
+    import importlib.util
+
     op = AcquireUpload()
     [video] = await op.run([], AcquireUploadParams(source_path=sample_mp4),
                            _ctx_for(engine))
     engine.cache.upsert_artifact(video)
-    with pytest.raises(LookupError, match="pyscenedetect"):
-        await engine.run(
-            "video.sample_frames", inputs=[video.id], strategy="scene_change"
+
+    if importlib.util.find_spec("scenedetect") is None:
+        with pytest.raises(RuntimeError, match="PySceneDetect is not installed"):
+            await engine.run(
+                "video.sample_frames", inputs=[video.id],
+                strategy="scene_change",
+            )
+    else:  # pragma: no cover - only when the optional dep is present
+        [fs] = await engine.run(
+            "video.sample_frames", inputs=[video.id],
+            strategy="scene_change",
         )
+        assert fs.kind.value == "frameset"
+        assert fs.metadata["strategy"] == "scene_change"
+        assert fs.frame_count >= 1
 
 
 def test_cost_estimate_scales_with_duration_and_fps(tmp_path: Path) -> None:
