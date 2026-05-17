@@ -68,12 +68,16 @@ def _backend_classes() -> list[type]:
         MlxWhisperDetectLanguageBackend,
         MlxWhisperTranscribeBackend,
     )
+    from media_engine.backends.video_multimodal.vllm_mlx import (
+        VllmMlxVideoMultimodalBackend,
+    )
 
     classes: list[type] = [
         MlxWhisperTranscribeBackend,
         MlxWhisperDetectLanguageBackend,
         FfmpegUniformBackend,
         DefaultChunkSemanticBackend,
+        VllmMlxVideoMultimodalBackend,
     ]
 
     # Optional-dep backends: import-clean even when the ML lib is absent,
