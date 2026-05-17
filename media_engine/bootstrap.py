@@ -37,6 +37,7 @@ def _op_classes() -> list[type]:
     from media_engine.ops.embed.text import EmbedText
     from media_engine.ops.frames.subsample import FramesSubsample
     from media_engine.ops.video.extract_audio import VideoExtractAudio
+    from media_engine.ops.video.multimodal import VideoMultimodal
     from media_engine.ops.video.sample_frames import VideoSampleFrames
     from media_engine.ops.video.trim import VideoTrim
 
@@ -50,6 +51,7 @@ def _op_classes() -> list[type]:
         EmbedText,
         FramesSubsample,
         VideoExtractAudio,
+        VideoMultimodal,
         VideoSampleFrames,
         VideoTrim,
     ]
@@ -95,6 +97,13 @@ def _backend_classes() -> list[type]:
             PySceneDetectBackend,
         )
         classes.append(PySceneDetectBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.video_multimodal.gemini import (
+            GeminiVideoMultimodalBackend,
+        )
+        classes.append(GeminiVideoMultimodalBackend)
     except ImportError:
         pass
 
