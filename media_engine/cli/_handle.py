@@ -28,7 +28,7 @@ from media_engine.artifacts import AnyArtifact, Kind
 from media_engine.config import EngineConfig
 from media_engine.daemon.client import DaemonClient
 from media_engine.ops import CostEstimate
-from media_engine.runtime.cache import CostLogEntry
+from media_engine.runtime.cache import CostLogEntry, EventLogEntry
 from media_engine.runtime.cost_tracker import CostSummary
 from media_engine.runtime.dag import (
     DAGResult,
@@ -87,6 +87,14 @@ class EngineHandle(Protocol):
         op_name: str | None = None,
         limit: int | None = None,
     ) -> list[CostLogEntry]: ...
+
+    def event_history(
+        self,
+        *,
+        since: datetime | None = None,
+        op_run_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[EventLogEntry]: ...
 
     async def aclose(self) -> None: ...
 
@@ -149,6 +157,17 @@ class LocalEngineHandle:
     ) -> list[CostLogEntry]:
         return self._engine.cost_log_entries(
             since=since, op_name=op_name, limit=limit
+        )
+
+    def event_history(
+        self,
+        *,
+        since: datetime | None = None,
+        op_run_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[EventLogEntry]:
+        return self._engine.event_log_entries(
+            since=since, op_run_id=op_run_id, limit=limit
         )
 
     async def aclose(self) -> None:
@@ -231,6 +250,18 @@ class DaemonEngineHandle:
         with Engine.open_quick(self._config) as local:
             return local.cost_log_entries(
                 since=since, op_name=op_name, limit=limit
+            )
+
+    def event_history(
+        self,
+        *,
+        since: datetime | None = None,
+        op_run_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[EventLogEntry]:
+        with Engine.open_quick(self._config) as local:
+            return local.event_log_entries(
+                since=since, op_run_id=op_run_id, limit=limit
             )
 
     async def aclose(self) -> None:

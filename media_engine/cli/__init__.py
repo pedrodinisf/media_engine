@@ -40,6 +40,7 @@ err_console = Console(stderr=True)
 # Subcommand groups.
 from media_engine.cli import cost as _cost_cli  # noqa: E402
 from media_engine.cli import daemon as _daemon_cli  # noqa: E402
+from media_engine.cli import events as _events_cli  # noqa: E402
 from media_engine.cli import mcp as _mcp_cli  # noqa: E402
 from media_engine.cli import profile as _profile_cli  # noqa: E402
 from media_engine.cli.batch import cmd_batch as _cmd_batch  # noqa: E402
@@ -48,6 +49,7 @@ app.add_typer(_daemon_cli.app, name="daemon")
 app.add_typer(_mcp_cli.app, name="mcp")
 app.add_typer(_profile_cli.app, name="profile")
 app.add_typer(_cost_cli.app, name="cost")
+app.add_typer(_events_cli.app, name="events")
 app.command("batch")(_cmd_batch)
 
 

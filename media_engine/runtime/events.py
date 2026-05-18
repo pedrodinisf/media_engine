@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
-from datetime import datetime
+import traceback as _tb
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from typing import Annotated, Literal, TypeAlias
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from media_engine.artifacts import AnyArtifact
+from media_engine.runtime.retry import classify_exception
 
 
 class _BaseEvent(BaseModel):
@@ -75,6 +78,35 @@ Event: TypeAlias = Annotated[
 ]
 
 
+def build_op_failed(
+    exc: BaseException,
+    *,
+    op_run_id: str,
+    job_id: str | None = None,
+    timestamp: datetime | None = None,
+) -> OpFailed:
+    """Wrap an exception in the structured failure envelope.
+
+    ``error_class`` / ``retryable`` / ``suggested_action`` come from the
+    same classifier ``with_retry`` uses, so the envelope and the retry
+    decision never disagree.
+    """
+    cls = classify_exception(exc)
+    return OpFailed(
+        event_id=uuid4().hex,
+        op_run_id=op_run_id,
+        job_id=job_id,
+        timestamp=timestamp or datetime.now(UTC),
+        error_class=cls.error_class,
+        message=str(exc),
+        retryable=cls.retryable,
+        suggested_action=cls.suggested_action,
+        traceback="".join(
+            _tb.format_exception(type(exc), exc, exc.__traceback__)
+        ),
+    )
+
+
 class EventBus:
     """Minimal in-process pub-sub for ``Event`` instances.
 
@@ -93,8 +125,18 @@ class EventBus:
     def __init__(self, queue_size: int = DEFAULT_QUEUE_SIZE) -> None:
         self._queue_size = queue_size
         self._subscribers: list[asyncio.Queue[Event]] = []
+        self._sinks: list[Callable[[Event], None]] = []
+
+    def add_sink(self, sink: Callable[[Event], None]) -> None:
+        """Register a synchronous tap (e.g. persistence). Sinks run inside
+        ``emit`` and must not raise — exceptions are swallowed so a bad
+        sink never wedges a producer."""
+        self._sinks.append(sink)
 
     def emit(self, event: Event) -> None:
+        for sink in self._sinks:
+            with contextlib.suppress(Exception):
+                sink(event)
         for q in self._subscribers:
             if q.full():
                 # Drop the oldest to keep emit non-blocking. Slow subscribers

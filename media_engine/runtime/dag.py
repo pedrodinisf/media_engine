@@ -208,10 +208,23 @@ async def _acquire_all(
 def _policy_for_op(node: DAGNode) -> RetryPolicy:
     if node.retry_policy is not None:
         return node.retry_policy
-    # Heuristic: ops with a backend that smells cloud → retry; else local.
     op_class = OpRegistry.get(node.op_name)
     backend_name = node.backend or op_class.default_backend or ""
-    if any(tag in backend_name for tag in ("openai", "gemini", "claude", "anthropic")):
+    # A backend may declare its own policy — that wins over the heuristic.
+    if backend_name:
+        from media_engine.backends import BackendRegistry
+
+        if BackendRegistry.has(node.op_name, backend_name):
+            declared = BackendRegistry.get(
+                node.op_name, backend_name
+            ).retry_policy
+            if declared is not None:
+                return declared
+    # Heuristic: ops with a backend that smells cloud → retry; else local.
+    if any(
+        tag in backend_name
+        for tag in ("openai", "gemini", "claude", "anthropic")
+    ):
         return CLOUD_DEFAULT
     return LOCAL_DEFAULT
 

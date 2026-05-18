@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Self, cast
 from uuid import uuid4
@@ -28,7 +28,7 @@ from media_engine.artifacts import (
 from media_engine.backends import BackendRegistry
 from media_engine.config import EngineConfig
 from media_engine.ops import CostEstimate, Operation, OperationContext, OpRegistry
-from media_engine.runtime.cache import Cache, CostLogEntry
+from media_engine.runtime.cache import Cache, CostLogEntry, EventLogEntry
 from media_engine.runtime.cost_tracker import CostSummary, CostTracker
 from media_engine.runtime.dag import (
     DAGResult,
@@ -37,7 +37,12 @@ from media_engine.runtime.dag import (
     make_default_semaphores,
 )
 from media_engine.runtime.disk_guard import assert_free_space
-from media_engine.runtime.events import EventBus
+from media_engine.runtime.events import (
+    EventBus,
+    OpCompleted,
+    OpStarted,
+    build_op_failed,
+)
 from media_engine.runtime.lineage import LineageNode
 from media_engine.runtime.model_pool import ModelPool
 from media_engine.runtime.server_manager import ServerManager
@@ -93,6 +98,24 @@ class Engine:
         # Lazy: created on first run_pipeline call from inside the running event
         # loop (asyncio.Semaphore needs a loop to bind to).
         self._semaphores: dict[str, asyncio.Semaphore] | None = None
+        # Durable event tail + weekly rotation (best-effort; a broken
+        # sink must never wedge a producer — EventBus swallows sink errors).
+        self.event_bus.add_sink(self._persist_event)
+        with contextlib.suppress(Exception):
+            self.cache.prune_events(
+                older_than=datetime.now(UTC) - timedelta(days=7)
+            )
+
+    def _persist_event(self, event: Any) -> None:
+        op_name = getattr(event, "op_name", None)
+        self.cache.record_event(
+            ts=event.timestamp,
+            event_type=event.type,
+            op_run_id=event.op_run_id,
+            op_name=op_name,
+            payload_json=event.model_dump_json(),
+            namespace=self.config.namespace,
+        )
 
     def _get_semaphores(self) -> dict[str, asyncio.Semaphore]:
         if self._semaphores is None:
@@ -221,8 +244,24 @@ class Engine:
         )
 
         started_at = datetime.now(UTC)
+        self.event_bus.emit(
+            OpStarted(
+                event_id=uuid4().hex,
+                op_run_id=job_id,
+                job_id=job_id,
+                timestamp=started_at,
+                op_name=op_name,
+                inputs=list(input_ids),
+                params=params_model.model_dump(mode="json"),
+            )
+        )
         try:
             raw_outputs = await op.run(resolved_inputs, params_model, ctx)
+        except BaseException as exc:  # noqa: BLE001 -- envelope, then re-raise
+            self.event_bus.emit(
+                build_op_failed(exc, op_run_id=job_id, job_id=job_id)
+            )
+            raise
         finally:
             # Workdir cleanup is best-effort; failures shouldn't mask op errors.
             with contextlib.suppress(Exception):
@@ -264,6 +303,21 @@ class Engine:
             ts=finished_at,
         )
 
+        self.event_bus.emit(
+            OpCompleted(
+                event_id=uuid4().hex,
+                op_run_id=job_id,
+                job_id=job_id,
+                timestamp=finished_at,
+                outputs=[o.id for o in raw_outputs],
+                duration_seconds=duration,
+                cost={
+                    "estimated_cents": cost.cloud_cents,
+                    "actual_cents": act_cents,
+                },
+            )
+        )
+
         final_outputs: list[AnyArtifact] = []
         for o in raw_outputs:
             stamped = o.model_copy(update={"produced_by": run_id})
@@ -292,6 +346,19 @@ class Engine:
         """Recent ledger rows (newest first) for this namespace."""
         return CostTracker(self.cache).entries(
             since=since, op_name=op_name,
+            namespace=self.config.namespace, limit=limit,
+        )
+
+    def event_log_entries(
+        self,
+        *,
+        since: datetime | None = None,
+        op_run_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[EventLogEntry]:
+        """Persisted events (newest first) for this namespace."""
+        return self.cache.event_log(
+            since=since, op_run_id=op_run_id,
             namespace=self.config.namespace, limit=limit,
         )
 

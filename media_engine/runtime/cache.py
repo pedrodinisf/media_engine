@@ -164,6 +164,34 @@ class CostLogEntry(Base):
     )
 
 
+class EventLogEntry(Base):
+    """Persisted engine events — backs ``med events history``.
+
+    The live stream is in-process (``EventBus``); this table is the
+    durable tail. Rotated weekly (``Cache.prune_events``) so it doesn't
+    grow without bound.
+    """
+
+    __tablename__ = "events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    op_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    op_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    namespace: Mapped[str] = mapped_column(
+        String, nullable=False, default="default"
+    )
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        Index("idx_events_ts", "ts"),
+        Index("idx_events_run", "op_run_id"),
+    )
+
+
 # ─────────────────────────────────────────────────────────────────
 # Pydantic ↔ SQLAlchemy boundary (the only crossings)
 # ─────────────────────────────────────────────────────────────────
@@ -419,6 +447,65 @@ class Cache:
             if limit is not None:
                 stmt = stmt.limit(limit)
             return list(s.scalars(stmt).all())
+
+    # ── event log ──
+
+    def record_event(
+        self,
+        *,
+        ts: datetime,
+        event_type: str,
+        op_run_id: str | None,
+        op_name: str | None,
+        payload_json: str,
+        namespace: str = "default",
+    ) -> None:
+        """Append one event to the durable tail (best-effort sink)."""
+        with self.session() as s:
+            s.add(
+                EventLogEntry(
+                    id=uuid4().hex,
+                    ts=_ensure_utc(ts),
+                    type=event_type,
+                    op_run_id=op_run_id,
+                    op_name=op_name,
+                    namespace=namespace,
+                    payload_json=payload_json,
+                )
+            )
+
+    def event_log(
+        self,
+        *,
+        since: datetime | None = None,
+        op_run_id: str | None = None,
+        namespace: str | None = None,
+        limit: int | None = None,
+    ) -> list[EventLogEntry]:
+        """Return persisted events newest-first, optionally filtered."""
+        with self.session() as s:
+            stmt = select(EventLogEntry).order_by(EventLogEntry.ts.desc())
+            if since is not None:
+                stmt = stmt.where(EventLogEntry.ts >= _ensure_utc(since))
+            if op_run_id is not None:
+                stmt = stmt.where(EventLogEntry.op_run_id == op_run_id)
+            if namespace is not None:
+                stmt = stmt.where(EventLogEntry.namespace == namespace)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            return list(s.scalars(stmt).all())
+
+    def prune_events(self, *, older_than: datetime) -> int:
+        """Delete events older than ``older_than``. Returns rows removed."""
+        from sqlalchemy import delete
+
+        with self.session() as s:
+            res = s.execute(
+                delete(EventLogEntry).where(
+                    EventLogEntry.ts < _ensure_utc(older_than)
+                )
+            )
+            return int(getattr(res, "rowcount", 0) or 0)
 
     # ── lineage ──
 

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from media_engine.artifacts import AnyArtifact
 from media_engine.ops import CostEstimate, OperationContext
+from media_engine.runtime.retry import RetryPolicy
 
 if TYPE_CHECKING:
     pass
@@ -45,6 +46,9 @@ class Backend(ABC):
     name: ClassVar[str]
     version: ClassVar[str]
     requires: ClassVar[BackendRequirements] = BackendRequirements()
+    # Per-backend retry override. ``None`` → the DAG executor's
+    # cloud/local heuristic decides (see ``runtime.dag._policy_for_op``).
+    retry_policy: ClassVar[RetryPolicy | None] = None
 
     @abstractmethod
     async def execute(
