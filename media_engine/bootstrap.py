@@ -41,6 +41,9 @@ def _op_classes() -> list[type]:
     from media_engine.ops.image.classify import ImageClassify
     from media_engine.ops.image.describe import ImageDescribe
     from media_engine.ops.image.ocr import ImageOCR
+    from media_engine.ops.intelligence.classify import IntelligenceClassify
+    from media_engine.ops.intelligence.extract import IntelligenceExtract
+    from media_engine.ops.intelligence.summarize import IntelligenceSummarize
     from media_engine.ops.video.extract_audio import VideoExtractAudio
     from media_engine.ops.video.multimodal import VideoMultimodal
     from media_engine.ops.video.sample_frames import VideoSampleFrames
@@ -60,6 +63,9 @@ def _op_classes() -> list[type]:
         ImageClassify,
         ImageDescribe,
         ImageOCR,
+        IntelligenceClassify,
+        IntelligenceExtract,
+        IntelligenceSummarize,
         VideoExtractAudio,
         VideoMultimodal,
         VideoSampleFrames,
@@ -169,6 +175,27 @@ def _backend_classes() -> list[type]:
             GeminiClassifyBackend,
         )
         classes.append(GeminiClassifyBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.intelligence_extract.gemini import (
+            GeminiExtractBackend,
+        )
+        classes.append(GeminiExtractBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.intelligence_extract.claude import (
+            ClaudeExtractBackend,
+        )
+        classes.append(ClaudeExtractBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.intelligence_extract.mlx_lm import (
+            MlxLmExtractBackend,
+        )
+        classes.append(MlxLmExtractBackend)
     except ImportError:
         pass
 
