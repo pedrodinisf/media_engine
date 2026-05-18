@@ -35,7 +35,12 @@ def _op_classes() -> list[type]:
     )
     from media_engine.ops.chunk.semantic import ChunkSemantic
     from media_engine.ops.embed.text import EmbedText
+    from media_engine.ops.frames.analyze import FramesAnalyze
+    from media_engine.ops.frames.compare import FramesCompare
     from media_engine.ops.frames.subsample import FramesSubsample
+    from media_engine.ops.image.classify import ImageClassify
+    from media_engine.ops.image.describe import ImageDescribe
+    from media_engine.ops.image.ocr import ImageOCR
     from media_engine.ops.video.extract_audio import VideoExtractAudio
     from media_engine.ops.video.multimodal import VideoMultimodal
     from media_engine.ops.video.sample_frames import VideoSampleFrames
@@ -49,7 +54,12 @@ def _op_classes() -> list[type]:
         AudioTranscribeDiarized,
         ChunkSemantic,
         EmbedText,
+        FramesAnalyze,
+        FramesCompare,
         FramesSubsample,
+        ImageClassify,
+        ImageDescribe,
+        ImageOCR,
         VideoExtractAudio,
         VideoMultimodal,
         VideoSampleFrames,
@@ -60,6 +70,9 @@ def _op_classes() -> list[type]:
 def _backend_classes() -> list[type]:
     from media_engine.backends.chunk_semantic.default import (
         DefaultChunkSemanticBackend,
+    )
+    from media_engine.backends.frames_analyze.vllm_mlx import (
+        VllmMlxFramesAnalyzeBackend,
     )
     from media_engine.backends.sample_frames.ffmpeg_uniform import (
         FfmpegUniformBackend,
@@ -78,6 +91,7 @@ def _backend_classes() -> list[type]:
         FfmpegUniformBackend,
         DefaultChunkSemanticBackend,
         VllmMlxVideoMultimodalBackend,
+        VllmMlxFramesAnalyzeBackend,
     ]
 
     # Optional-dep backends: import-clean even when the ML lib is absent,
@@ -108,6 +122,53 @@ def _backend_classes() -> list[type]:
             GeminiVideoMultimodalBackend,
         )
         classes.append(GeminiVideoMultimodalBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.frames_analyze.gemini import (
+            GeminiFramesAnalyzeBackend,
+        )
+        classes.append(GeminiFramesAnalyzeBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.frames_compare.gemini import (
+            GeminiFramesCompareBackend,
+        )
+        classes.append(GeminiFramesCompareBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.image_describe.gemini import (
+            GeminiImageDescribeBackend,
+        )
+        classes.append(GeminiImageDescribeBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.image_ocr.rapidocr import RapidOCRBackend
+        classes.append(RapidOCRBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.image_ocr.gemini_vision import (
+            GeminiVisionOCRBackend,
+        )
+        classes.append(GeminiVisionOCRBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.image_classify.open_clip import (
+            OpenClipClassifyBackend,
+        )
+        classes.append(OpenClipClassifyBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.image_classify.gemini import (
+            GeminiClassifyBackend,
+        )
+        classes.append(GeminiClassifyBackend)
     except ImportError:
         pass
 

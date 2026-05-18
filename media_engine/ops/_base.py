@@ -75,6 +75,12 @@ class Operation(ABC):
         technology-named.
       * ``version`` — semver. Bump invalidates cached results.
       * ``input_kinds`` — tuple of Kind required as inputs (in order).
+        For a ``variadic_inputs`` op this is instead the *set* of kinds
+        each input may be (order/count not fixed).
+      * ``variadic_inputs`` — when True the op takes one-or-more inputs,
+        each of which must be one of ``input_kinds`` (the engine skips the
+        positional length/order check; the op enforces its own arity in
+        ``run``). Used by fan-in ops like ``frames.compare``.
       * ``output_kinds`` — tuple of Kind produced as outputs.
       * ``params_model`` — Pydantic model class describing op params.
       * ``declared_resources`` — names of resources this op needs serialized
@@ -87,6 +93,7 @@ class Operation(ABC):
     name: ClassVar[str]
     version: ClassVar[str]
     input_kinds: ClassVar[tuple[Kind, ...]]
+    variadic_inputs: ClassVar[bool] = False
     output_kinds: ClassVar[tuple[Kind, ...]]
     params_model: ClassVar[type[BaseModel]]
     declared_resources: ClassVar[tuple[str, ...]] = ()

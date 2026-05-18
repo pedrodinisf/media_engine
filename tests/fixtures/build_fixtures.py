@@ -24,6 +24,9 @@ SAMPLE_M4A = FIXTURE_DIR / "sample.m4a"
 CORRUPT_MP4 = FIXTURE_DIR / "corrupt.mp4"
 SAMPLE_SPEECH_WAV = FIXTURE_DIR / "sample_speech.wav"
 SAMPLE_DIALOGUE_WAV = FIXTURE_DIR / "sample_dialogue.wav"
+SAMPLE_PNG = FIXTURE_DIR / "sample.png"
+
+OCR_TEXT = "MEDIA ENGINE"
 
 SPEECH_TEXT = (
     "The quick brown fox jumps over the lazy dog. "
@@ -177,6 +180,47 @@ def build_sample_dialogue_wav(force: bool = False) -> None:
             f.unlink(missing_ok=True)
 
 
+def build_sample_png(force: bool = False) -> None:
+    """A small PNG with the literal text ``MEDIA ENGINE`` rendered on it.
+
+    Used by ``image.{describe,ocr,classify}`` tests. ``drawtext`` needs an
+    ffmpeg with libfreetype; if that's unavailable we fall back to a plain
+    ``testsrc`` pattern (still a valid Image — OCR real-smoke tests skip
+    cleanly when the text can't be rendered or rapidocr isn't installed).
+    """
+    if SAMPLE_PNG.exists() and not force:
+        return
+    _require_ffmpeg()
+    drawtext = (
+        "color=c=white:s=480x160:d=1,"
+        f"drawtext=text='{OCR_TEXT}':fontcolor=black:fontsize=64:"
+        "x=(w-text_w)/2:y=(h-text_h)/2"
+    )
+    try:
+        subprocess.check_call(
+            [
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", drawtext,
+                "-frames:v", "1",
+                str(SAMPLE_PNG),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        # No libfreetype → still emit a valid PNG so non-OCR tests run.
+        subprocess.check_call(
+            [
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", "testsrc=size=480x160:rate=1",
+                "-frames:v", "1",
+                str(SAMPLE_PNG),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rebuild", action="store_true", help="rebuild even if present")
@@ -187,10 +231,11 @@ def main() -> None:
     build_corrupt_mp4(force=args.rebuild)
     build_sample_speech_wav(force=args.rebuild)
     build_sample_dialogue_wav(force=args.rebuild)
+    build_sample_png(force=args.rebuild)
 
     print(f"Fixtures ready in {FIXTURE_DIR}")
     for f in (SAMPLE_MP4, SAMPLE_M4A, CORRUPT_MP4, SAMPLE_SPEECH_WAV,
-              SAMPLE_DIALOGUE_WAV):
+              SAMPLE_DIALOGUE_WAV, SAMPLE_PNG):
         size = f.stat().st_size if f.exists() else "(missing)"
         print(f"  {f.name:<22} = {size}")
 

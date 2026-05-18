@@ -54,16 +54,28 @@ def _input_schema(op: type[Operation]) -> dict[str, Any]:
     required: list[str] = list(raw_schema.get("required", []))
 
     if op.input_kinds:
-        properties["input_artifact_ids"] = {
-            "type": "array",
-            "items": {"type": "string"},
-            "minItems": len(op.input_kinds),
-            "maxItems": len(op.input_kinds),
-            "description": (
-                f"Sha256 ids of input artifacts in declared order: "
-                f"{[k.value for k in op.input_kinds]}"
-            ),
-        }
+        if op.variadic_inputs:
+            input_ids_schema: dict[str, Any] = {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "description": (
+                    f"Sha256 ids of one or more input artifacts, each one "
+                    f"of: {[k.value for k in op.input_kinds]}"
+                ),
+            }
+        else:
+            input_ids_schema = {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": len(op.input_kinds),
+                "maxItems": len(op.input_kinds),
+                "description": (
+                    f"Sha256 ids of input artifacts in declared order: "
+                    f"{[k.value for k in op.input_kinds]}"
+                ),
+            }
+        properties["input_artifact_ids"] = input_ids_schema
         required.append("input_artifact_ids")
 
     backends = BackendRegistry.for_op(op.name)

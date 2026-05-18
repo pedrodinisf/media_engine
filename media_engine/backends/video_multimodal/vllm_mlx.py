@@ -305,9 +305,20 @@ class VllmMlxVideoMultimodalBackend(Backend):
         return CostEstimate(local_seconds=30.0)
 
 
+# Public re-exports: the vllm-mlx server lifecycle + frame-encoding path is
+# shared verbatim by ``backends.frames_analyze.vllm_mlx`` (same local model,
+# no extraction step). Exposed as public names so that reuse doesn't reach
+# into another module's privates.
+DEFAULT_PORT = _DEFAULT_PORT
+ensure_server = _ensure_server
+frame_data_url = _frame_data_url
+
 __all__ = [
     "BACKEND_NAME",
     "BACKEND_VERSION",
+    "DEFAULT_PORT",
     "VllmMlxVideoMultimodalBackend",
+    "ensure_server",
     "find_vllm_mlx_binary",
+    "frame_data_url",
 ]

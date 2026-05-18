@@ -146,7 +146,12 @@ class Engine:
 
         input_ids = list(inputs or [])
         resolved_inputs = self._resolve_inputs(input_ids)
-        self._validate_input_kinds(op_name, op_class.input_kinds, resolved_inputs)
+        self._validate_input_kinds(
+            op_name,
+            op_class.input_kinds,
+            resolved_inputs,
+            variadic=op_class.variadic_inputs,
+        )
 
         params_model = op_class.params_model(**params)
         params_hash = canonical_params_hash(params_model)
@@ -278,6 +283,8 @@ class Engine:
         op_name: str,
         expected: tuple[Kind, ...],
         resolved: list[AnyArtifact],
+        *,
+        variadic: bool = False,
     ) -> None:
         if not expected:
             if resolved:
@@ -286,6 +293,21 @@ class Engine:
                 )
             return
         actual = tuple(a.kind for a in resolved)
+        if variadic:
+            # One-or-more inputs, each of any declared kind. The op
+            # enforces its own minimum arity in run().
+            if not actual:
+                raise ValueError(
+                    f"{op_name} expects ≥1 input ({list(expected)!r}), got 0"
+                )
+            allowed = set(expected)
+            bad = [k for k in actual if k not in allowed]
+            if bad:
+                raise ValueError(
+                    f"{op_name} input kind mismatch: each input must be one "
+                    f"of {list(expected)!r}, got {list(actual)!r}"
+                )
+            return
         if len(actual) != len(expected):
             raise ValueError(
                 f"{op_name} expects {len(expected)} input(s) "
