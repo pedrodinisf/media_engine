@@ -126,4 +126,13 @@ class IntelligenceClassify(Operation):
         )
 
 
-__all__ = ["ClassifyParams", "IntelligenceClassify"]
+# Public aliases — reused by intelligence.analyze's optional classify pass.
+CLASSIFY_SCHEMA = _SCHEMA
+classify_prompt = _prompt
+
+__all__ = [
+    "CLASSIFY_SCHEMA",
+    "ClassifyParams",
+    "IntelligenceClassify",
+    "classify_prompt",
+]

@@ -38,6 +38,7 @@ console = Console()
 err_console = Console(stderr=True)
 
 # Subcommand groups.
+from media_engine.cli import cost as _cost_cli  # noqa: E402
 from media_engine.cli import daemon as _daemon_cli  # noqa: E402
 from media_engine.cli import mcp as _mcp_cli  # noqa: E402
 from media_engine.cli import profile as _profile_cli  # noqa: E402
@@ -46,6 +47,7 @@ from media_engine.cli.batch import cmd_batch as _cmd_batch  # noqa: E402
 app.add_typer(_daemon_cli.app, name="daemon")
 app.add_typer(_mcp_cli.app, name="mcp")
 app.add_typer(_profile_cli.app, name="profile")
+app.add_typer(_cost_cli.app, name="cost")
 app.command("batch")(_cmd_batch)
 
 
@@ -390,6 +392,89 @@ def cmd_extract_audio(
                 raise
             except Exception as e:
                 err_console.print(f"[red]video.extract_audio failed: {e}[/red]")
+                raise typer.Exit(1) from None
+
+    outputs = asyncio.run(_go())
+    if outputs is not None:
+        _emit_outputs(outputs)
+
+
+@app.command("run")
+def cmd_run(
+    op_name: Annotated[str, typer.Argument(help="Op name, e.g. intelligence.analyze")],
+    input_ids: Annotated[
+        list[str] | None,
+        typer.Option("--input", help="Input artifact id/prefix (repeatable)"),
+    ] = None,
+    backend: Annotated[
+        str | None, typer.Option("--backend", help="Force a backend")
+    ] = None,
+    schema: Annotated[
+        Path | None,
+        typer.Option("--schema", help="JSON schema file → params.schema_def"),
+    ] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--param", help="Extra params (KEY=VAL, repeatable; JSON-decoded)"
+        ),
+    ] = None,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Skip the confirmation prompt"),
+    ] = False,
+) -> None:
+    """Run any registered op. Prints a cost preview first.
+
+    Default: print the estimate and ask before spending. ``--yes`` skips
+    the prompt; the global ``--dry-run`` prints the estimate and exits.
+    """
+    if not OpRegistry.has(op_name):
+        err_console.print(f"[red]unknown op {op_name!r}[/red]")
+        raise typer.Exit(1)
+
+    params: dict[str, Any] = {}
+    for raw in param or []:
+        if "=" not in raw:
+            err_console.print(f"[red]--param expects KEY=VAL, got {raw!r}[/red]")
+            raise typer.Exit(2)
+        k, v = raw.split("=", 1)
+        try:
+            params[k] = _json.loads(v)
+        except _json.JSONDecodeError:
+            params[k] = v
+    if schema is not None:
+        params["schema_def"] = str(schema)
+
+    async def _go() -> list[AnyArtifact] | None:
+        async with open_handle(_load_config()) as h:
+            resolved: list[str] = []
+            for raw_id in input_ids or []:
+                try:
+                    resolved.append(await h.resolve_id(raw_id))
+                except LookupError as e:
+                    err_console.print(f"[red]{e}[/red]")
+                    raise typer.Exit(1) from None
+            try:
+                est = h.estimate_op_cost(op_name, inputs=resolved, **params)
+            except Exception as e:
+                err_console.print(f"[red]cost estimate failed: {e}[/red]")
+                raise typer.Exit(1) from None
+            _print_cost_preview(op_name, est)
+            if _opts.dry_run:
+                return None
+            if not yes and not _opts.json_output and not typer.confirm(
+                "Proceed?", default=True
+            ):
+                raise typer.Exit(0)
+            try:
+                return await h.run(
+                    op_name, inputs=resolved, backend=backend, **params
+                )
+            except typer.Exit:
+                raise
+            except Exception as e:
+                err_console.print(f"[red]{op_name} failed: {e}[/red]")
                 raise typer.Exit(1) from None
 
     outputs = asyncio.run(_go())

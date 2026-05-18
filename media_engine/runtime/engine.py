@@ -17,7 +17,7 @@ import asyncio
 import contextlib
 from datetime import UTC, datetime
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Self, cast
 from uuid import uuid4
 
 from media_engine.artifacts import (
@@ -28,7 +28,8 @@ from media_engine.artifacts import (
 from media_engine.backends import BackendRegistry
 from media_engine.config import EngineConfig
 from media_engine.ops import CostEstimate, Operation, OperationContext, OpRegistry
-from media_engine.runtime.cache import Cache
+from media_engine.runtime.cache import Cache, CostLogEntry
+from media_engine.runtime.cost_tracker import CostSummary, CostTracker
 from media_engine.runtime.dag import (
     DAGResult,
     Pipeline,
@@ -44,6 +45,28 @@ from media_engine.runtime.storage import LocalFSStorage, StorageBackend
 
 if TYPE_CHECKING:
     pass
+
+
+def _actual_usage(
+    outputs: list[AnyArtifact],
+) -> tuple[float, int, int]:
+    """Sum backend-reported usage across an op's outputs.
+
+    Cloud backends stamp ``metadata['usage'] = {cost_cents, input_tokens,
+    output_tokens, ...}``. Local backends report zeros. Returns
+    ``(cents, tokens_in, tokens_out)``.
+    """
+    cents = 0.0
+    tin = 0
+    tout = 0
+    for o in outputs:
+        raw = o.metadata.get("usage")
+        if isinstance(raw, dict):
+            usage: dict[str, Any] = cast("dict[str, Any]", raw)
+            cents += float(usage.get("cost_cents", 0.0) or 0.0)
+            tin += int(usage.get("input_tokens", 0) or 0)
+            tout += int(usage.get("output_tokens", 0) or 0)
+    return cents, tin, tout
 
 
 class Engine:
@@ -225,12 +248,107 @@ class Engine:
             namespace=self.config.namespace,
         )
 
+        # Spend ledger: one row per *actual* execution (cache hits returned
+        # above and never reach here). Actual cents/tokens come from
+        # backend-reported usage on the outputs when available.
+        act_cents, tok_in, tok_out = _actual_usage(raw_outputs)
+        self.cache.record_cost(
+            op_name=op_name,
+            backend_name=backend_name,
+            estimated_cents=cost.cloud_cents,
+            actual_cents=act_cents,
+            tokens_in=tok_in,
+            tokens_out=tok_out,
+            duration_seconds=duration,
+            namespace=self.config.namespace,
+            ts=finished_at,
+        )
+
         final_outputs: list[AnyArtifact] = []
         for o in raw_outputs:
             stamped = o.model_copy(update={"produced_by": run_id})
             self.cache.upsert_artifact(stamped)
             final_outputs.append(stamped)
         return final_outputs
+
+    def cost_summary(
+        self,
+        *,
+        since: datetime | None = None,
+        op_name: str | None = None,
+    ) -> CostSummary:
+        """Per-op spend rollup over the cost ledger (this namespace)."""
+        return CostTracker(self.cache).summary(
+            since=since, op_name=op_name, namespace=self.config.namespace
+        )
+
+    def cost_log_entries(
+        self,
+        *,
+        since: datetime | None = None,
+        op_name: str | None = None,
+        limit: int | None = None,
+    ) -> list[CostLogEntry]:
+        """Recent ledger rows (newest first) for this namespace."""
+        return CostTracker(self.cache).entries(
+            since=since, op_name=op_name,
+            namespace=self.config.namespace, limit=limit,
+        )
+
+    def estimate_pipeline_cost(self, pipeline: Pipeline) -> CostEstimate:
+        """Sum ``op.cost_estimate`` across a DAG without running it.
+
+        Walks nodes in dependency order. A node whose result is already
+        cached contributes zero. Inputs that come from a not-yet-run
+        upstream node are unknown at estimate time, so that node is priced
+        with empty inputs (ops fall back to a conservative default) — the
+        total is a preview, not a guarantee.
+        """
+        from media_engine.runtime.dag import validate_and_sort
+
+        total = CostEstimate()
+        src_ids = {name: a.id for name, a in pipeline.sources.items()}
+        for wave in validate_and_sort(pipeline):
+            for node in wave:
+                op_class = OpRegistry.get(node.op_name)
+                op = op_class()
+                params_model = op_class.params_model(**node.params)
+                input_ids: list[str] = []
+                resolvable = True
+                for ref in node.input_node_ids:
+                    if ref in src_ids:
+                        input_ids.append(src_ids[ref])
+                    else:
+                        # Upstream node output — id unknown pre-run.
+                        resolvable = False
+                resolved = (
+                    self._resolve_inputs(input_ids) if resolvable else []
+                )
+                params_hash = canonical_params_hash(params_model)
+                backend_name, backend_version = self._resolve_backend(
+                    op_class, node.backend
+                )
+                cached = None
+                if resolvable:
+                    cached = self.cache.find_cached_run(
+                        op_name=node.op_name,
+                        op_version=op_class.version,
+                        backend_name=backend_name,
+                        backend_version=backend_version,
+                        params_hash=params_hash,
+                        input_ids=input_ids,
+                        namespace=self.config.namespace,
+                    )
+                if cached is not None:
+                    continue  # cache hit → zero cost
+                est = op.cost_estimate(resolved, params_model)
+                total = CostEstimate(
+                    local_seconds=total.local_seconds + est.local_seconds,
+                    cloud_cents=total.cloud_cents + est.cloud_cents,
+                    tokens_in=total.tokens_in + est.tokens_in,
+                    tokens_out=total.tokens_out + est.tokens_out,
+                )
+        return total
 
     def estimate_op_cost(
         self,

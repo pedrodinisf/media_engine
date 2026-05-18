@@ -130,6 +130,40 @@ class CachedOperationRun(Base):
     )
 
 
+class CostLogEntry(Base):
+    """Append-only spend ledger — one row per *actual* op execution.
+
+    Distinct from ``cached_operation_runs`` (which is keyed by the cache
+    lookup tuple and upserted, so a re-run overwrites history): this table
+    keeps every execution so ``med cost`` can report true spend over time.
+    Cache hits are never logged here (they cost nothing).
+    """
+
+    __tablename__ = "cost_log"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    op_name: Mapped[str] = mapped_column(String, nullable=False)
+    backend_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    namespace: Mapped[str] = mapped_column(
+        String, nullable=False, default="default"
+    )
+    estimated_cents: Mapped[float] = mapped_column(Float, default=0.0)
+    actual_cents: Mapped[float] = mapped_column(Float, default=0.0)
+    tokens_in: Mapped[int] = mapped_column(default=0)
+    tokens_out: Mapped[int] = mapped_column(default=0)
+    duration_seconds: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+
+    __table_args__ = (
+        Index("idx_cost_log_ts", "ts"),
+        Index("idx_cost_log_op", "op_name"),
+    )
+
+
 # ─────────────────────────────────────────────────────────────────
 # Pydantic ↔ SQLAlchemy boundary (the only crossings)
 # ─────────────────────────────────────────────────────────────────
@@ -332,6 +366,59 @@ class Cache:
                 )
             )
         return run_id
+
+    # ── cost ledger ──
+
+    def record_cost(
+        self,
+        *,
+        op_name: str,
+        backend_name: str | None,
+        estimated_cents: float,
+        actual_cents: float,
+        tokens_in: int,
+        tokens_out: int,
+        duration_seconds: float | None,
+        namespace: str = "default",
+        ts: datetime | None = None,
+    ) -> None:
+        """Append one execution to the spend ledger."""
+        with self.session() as s:
+            s.add(
+                CostLogEntry(
+                    id=uuid4().hex,
+                    ts=_ensure_utc(ts or datetime.now(UTC)),
+                    op_name=op_name,
+                    backend_name=backend_name,
+                    namespace=namespace,
+                    estimated_cents=estimated_cents,
+                    actual_cents=actual_cents,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    duration_seconds=duration_seconds,
+                )
+            )
+
+    def cost_log(
+        self,
+        *,
+        since: datetime | None = None,
+        op_name: str | None = None,
+        namespace: str | None = None,
+        limit: int | None = None,
+    ) -> list[CostLogEntry]:
+        """Return ledger rows newest-first, optionally filtered."""
+        with self.session() as s:
+            stmt = select(CostLogEntry).order_by(CostLogEntry.ts.desc())
+            if since is not None:
+                stmt = stmt.where(CostLogEntry.ts >= _ensure_utc(since))
+            if op_name is not None:
+                stmt = stmt.where(CostLogEntry.op_name == op_name)
+            if namespace is not None:
+                stmt = stmt.where(CostLogEntry.namespace == namespace)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            return list(s.scalars(stmt).all())
 
     # ── lineage ──
 

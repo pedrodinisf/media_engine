@@ -41,6 +41,7 @@ def _op_classes() -> list[type]:
     from media_engine.ops.image.classify import ImageClassify
     from media_engine.ops.image.describe import ImageDescribe
     from media_engine.ops.image.ocr import ImageOCR
+    from media_engine.ops.intelligence.analyze import IntelligenceAnalyze
     from media_engine.ops.intelligence.classify import IntelligenceClassify
     from media_engine.ops.intelligence.extract import IntelligenceExtract
     from media_engine.ops.intelligence.summarize import IntelligenceSummarize
@@ -63,6 +64,7 @@ def _op_classes() -> list[type]:
         ImageClassify,
         ImageDescribe,
         ImageOCR,
+        IntelligenceAnalyze,
         IntelligenceClassify,
         IntelligenceExtract,
         IntelligenceSummarize,

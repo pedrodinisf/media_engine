@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import AsyncGenerator
+from datetime import datetime
 from typing import Any, Protocol
 
 from media_engine.artifacts import AnyArtifact, Kind
 from media_engine.config import EngineConfig
 from media_engine.daemon.client import DaemonClient
 from media_engine.ops import CostEstimate
+from media_engine.runtime.cache import CostLogEntry
+from media_engine.runtime.cost_tracker import CostSummary
 from media_engine.runtime.dag import (
     DAGResult,
     Pipeline,
@@ -72,6 +75,18 @@ class EngineHandle(Protocol):
     def estimate_op_cost(
         self, op_name: str, *, inputs: list[str] | None = None, **params: Any
     ) -> CostEstimate: ...
+
+    def cost_summary(
+        self, *, since: datetime | None = None, op_name: str | None = None
+    ) -> CostSummary: ...
+
+    def cost_log_entries(
+        self,
+        *,
+        since: datetime | None = None,
+        op_name: str | None = None,
+        limit: int | None = None,
+    ) -> list[CostLogEntry]: ...
 
     async def aclose(self) -> None: ...
 
@@ -119,6 +134,22 @@ class LocalEngineHandle:
         self, op_name: str, *, inputs: list[str] | None = None, **params: Any
     ) -> CostEstimate:
         return self._engine.estimate_op_cost(op_name, inputs=inputs, **params)
+
+    def cost_summary(
+        self, *, since: datetime | None = None, op_name: str | None = None
+    ) -> CostSummary:
+        return self._engine.cost_summary(since=since, op_name=op_name)
+
+    def cost_log_entries(
+        self,
+        *,
+        since: datetime | None = None,
+        op_name: str | None = None,
+        limit: int | None = None,
+    ) -> list[CostLogEntry]:
+        return self._engine.cost_log_entries(
+            since=since, op_name=op_name, limit=limit
+        )
 
     async def aclose(self) -> None:
         self._engine.close()
@@ -181,6 +212,26 @@ class DaemonEngineHandle:
         # local engine reads inputs from the shared cache.
         with Engine.open_quick(self._config) as local:
             return local.estimate_op_cost(op_name, inputs=inputs, **params)
+
+    def cost_summary(
+        self, *, since: datetime | None = None, op_name: str | None = None
+    ) -> CostSummary:
+        # Ledger lives in the shared cache.db — a transient local engine
+        # reads it without involving the daemon.
+        with Engine.open_quick(self._config) as local:
+            return local.cost_summary(since=since, op_name=op_name)
+
+    def cost_log_entries(
+        self,
+        *,
+        since: datetime | None = None,
+        op_name: str | None = None,
+        limit: int | None = None,
+    ) -> list[CostLogEntry]:
+        with Engine.open_quick(self._config) as local:
+            return local.cost_log_entries(
+                since=since, op_name=op_name, limit=limit
+            )
 
     async def aclose(self) -> None:
         await self._client.close()
