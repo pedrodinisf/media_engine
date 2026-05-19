@@ -41,15 +41,19 @@ def _no_op_emit(_: Event) -> None:  # pragma: no cover (default sink)
 class OperationContext:
     """Per-run handle passed to ``Operation.run``.
 
-    Resource serialization and backend selection are **not** on this context
-    by design:
+    Resource serialization is **not** on this context by design:
 
     * Resource locks (``declared_resources``) are acquired by the DAG
       executor *around* the whole op invocation — ops stay declarative and
       never touch a semaphore. (``runtime.dag._acquire_all``.)
-    * Backend selection happens in ``Engine.run`` / the op's own dispatch
-      before ``run`` is called; an op that delegates does
-      ``BackendRegistry.get(self.name, backend_name)`` directly.
+
+    ``backend`` is the backend name the engine resolved for this run
+    (explicit ``backend=`` wins, else ``Operation.select_backend(params)``,
+    else ``default_backend``). It is the single source of truth: an op with
+    a Backend layer dispatches with ``BackendRegistry.get(self.name,
+    ctx.backend)`` so the backend that actually runs is exactly the one the
+    cache key + cost ledger + provenance record. ``None`` for ops with no
+    Backend layer.
 
     ``run_op`` is the recursion handle injected by ``Engine.run``: composite
     ops call ``await ctx.run_op("audio.transcribe", inputs=[...])`` to invoke
@@ -65,6 +69,7 @@ class OperationContext:
     server_manager: Any | None = None
     model_pool: Any | None = None
     run_op: Callable[..., Any] | None = None
+    backend: str | None = None
 
 
 class Operation(ABC):
@@ -88,6 +93,10 @@ class Operation(ABC):
         enforces these via per-resource semaphores.
       * ``default_backend`` — name of backend to pick when caller doesn't
         specify. ``None`` for ops with embedded logic (no Backend layer).
+      * ``records_cost`` — whether ``Engine.run`` writes a ``cost_log``
+        ledger row for this op. ``False`` for thin composite wrappers that
+        delegate to a sub-op via ``ctx.run_op`` (the sub-op already billed
+        the spend; billing the wrapper too would double-count).
     """
 
     name: ClassVar[str]
@@ -98,6 +107,14 @@ class Operation(ABC):
     params_model: ClassVar[type[BaseModel]]
     declared_resources: ClassVar[tuple[str, ...]] = ()
     default_backend: ClassVar[str | None] = None
+    records_cost: ClassVar[bool] = True
+
+    def select_backend(self, params: BaseModel) -> str | None:
+        """Backend this op will use, derived from ``params`` (e.g. by model
+        prefix). The engine consults this when no explicit ``backend=`` was
+        given, so the resolved backend matches what ``run`` dispatches.
+        Default ``None`` → engine falls back to ``default_backend``."""
+        return None
 
     @abstractmethod
     async def run(

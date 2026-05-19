@@ -130,6 +130,31 @@ async def test_detect_language_cache_hit(
     assert a1.id == a2.id
 
 
+async def test_detect_language_param_change_new_id(
+    engine: Engine, sample_m4a: Path, fake_detect_backend
+) -> None:
+    op = AcquireUpload()
+    [audio] = await op.run([], AcquireUploadParams(source_path=sample_m4a),
+                           _ctx_for(engine))
+    engine.cache.upsert_artifact(audio)
+    [a] = await engine.run("audio.detect_language", inputs=[audio.id])
+    [b] = await engine.run(
+        "audio.detect_language", inputs=[audio.id], model="other-whisper"
+    )
+    assert a.id != b.id
+
+
+async def test_detect_language_rejects_non_audio(
+    engine: Engine, sample_mp4: Path, fake_detect_backend
+) -> None:
+    op = AcquireUpload()
+    [video] = await op.run([], AcquireUploadParams(source_path=sample_mp4),
+                           _ctx_for(engine))
+    engine.cache.upsert_artifact(video)
+    with pytest.raises(ValueError, match="kind mismatch"):
+        await engine.run("audio.detect_language", inputs=[video.id])
+
+
 @pytest.mark.needs_mlx
 @pytest.mark.skipif(not MLX_AVAILABLE, reason="mlx-whisper not installed")
 async def test_real_mlx_whisper_detect_language(

@@ -73,7 +73,10 @@ class PromptProfile(BaseModel):
     description: str = ""
     default_op: str = "video.multimodal"  # adjusted as VLM ops land
     default_backend: str | None = None
-    schema_path: str | None = None  # optional JSON schema for structured output
+    # Frontmatter key is `schema:` (plan §2.4); the field is `schema_path`
+    # because Pydantic reserves `schema`. The alias makes the documented
+    # key actually populate it.
+    schema_path: str | None = Field(default=None, alias="schema")
     body: str = ""  # filled from the markdown body by the loader
 
     model_config = {"populate_by_name": True}

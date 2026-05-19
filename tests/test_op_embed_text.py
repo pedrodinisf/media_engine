@@ -39,7 +39,10 @@ ST_AVAILABLE = importlib.util.find_spec("sentence_transformers") is not None
 
 def test_op_class_attributes() -> None:
     assert EmbedText.name == "embed.text"
-    assert EmbedText.input_kinds == (Kind.Chunks,)
+    assert EmbedText.input_kinds == (
+        Kind.Transcript, Kind.MarkdownArtifact, Kind.Chunks
+    )
+    assert EmbedText.variadic_inputs is True
     assert EmbedText.output_kinds == (Kind.Embedding,)
     assert EmbedText.declared_resources == ("apple_gpu",)
     assert EmbedText.default_backend == "sentence-transformers"
@@ -155,19 +158,9 @@ async def test_embed_transcript_one_vector(
     )
     engine.cache.upsert_artifact(t)
 
-    # Engine validates input_kinds=(Kind.Chunks,) but the op accepts Transcript
-    # at runtime. We must dispatch through the backend directly to bypass the
-    # Engine's strict kind validation for this test.
-    from media_engine.ops import OperationContext
-    backend_cls = BackendRegistry.get("embed.text", "sentence-transformers")
-    ctx = OperationContext(
-        workdir=engine.storage.ensure_workdir("t"),
-        config=engine.config,
-        storage=engine.storage,
-        namespace=engine.config.namespace,
-        emit=engine.event_bus.emit,
-    )
-    embeddings = await backend_cls().execute([t], EmbedTextParams(), ctx)
+    # Transcript reaches embed.text through Engine.run now that the op is
+    # declared variadic over {Transcript, Markdown, Chunks}.
+    embeddings = await engine.run("embed.text", inputs=[t.id])
     assert len(embeddings) == 1
     assert embeddings[0].dimensions == 4
 
@@ -188,6 +181,27 @@ async def test_embed_param_change_yields_new_ids(
     a_ids = {e.id for e in a}
     b_ids = {e.id for e in b}
     assert a_ids.isdisjoint(b_ids)
+
+
+async def test_embed_rejects_wrong_kind(
+    engine: Engine, sample_mp4, fake_embed_backend
+) -> None:
+    from media_engine.ops.acquire.upload import (
+        AcquireUpload,
+        AcquireUploadParams,
+    )
+
+    ctx = OperationContext(
+        workdir=engine.storage.ensure_workdir("e"),
+        config=engine.config, storage=engine.storage,
+        namespace=engine.config.namespace,
+    )
+    [video] = await AcquireUpload().run(
+        [], AcquireUploadParams(source_path=sample_mp4), ctx
+    )
+    engine.cache.upsert_artifact(video)
+    with pytest.raises(ValueError, match="input kind mismatch"):
+        await engine.run("embed.text", inputs=[video.id])
 
 
 @pytest.mark.skipif(not ST_AVAILABLE, reason="sentence-transformers not installed")

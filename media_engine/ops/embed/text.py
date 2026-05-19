@@ -45,8 +45,11 @@ class EmbedText(Operation):
 
     name = "embed.text"
     version = "1.0.0"
-    # Accept Transcript / Markdown / Chunks; second + third validated at run time.
-    input_kinds = (Kind.Chunks,)
+    # One input, Transcript|Markdown|Chunks. variadic_inputs makes the
+    # engine validate kind membership so all three are reachable through
+    # Engine.run; run() pins arity to exactly one.
+    input_kinds = (Kind.Transcript, Kind.MarkdownArtifact, Kind.Chunks)
+    variadic_inputs = True
     output_kinds = (Kind.Embedding,)
     params_model = EmbedTextParams
     declared_resources = ("apple_gpu",)

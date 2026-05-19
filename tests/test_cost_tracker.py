@@ -90,3 +90,27 @@ def test_record_and_filter(engine: Engine) -> None:
     rows = tracker.entries(limit=1)
     assert len(rows) == 1
     assert rows[0].op_name == "intelligence.extract"  # newest first
+
+
+async def test_composite_wrapper_does_not_double_count(engine: Engine) -> None:
+    """intelligence.summarize delegates to intelligence.extract; only the
+    extract spend must hit the ledger (records_cost=False on the wrapper)."""
+    from tests._intel import (
+        make_transcript,
+        register_fake_extract_backend,
+        unregister_fake,
+    )
+
+    register_fake_extract_backend()
+    try:
+        t = make_transcript(engine, "some content to summarize")
+        await engine.run("intelligence.summarize", inputs=[t.id])
+    finally:
+        unregister_fake()
+
+    summary = engine.cost_summary()
+    by_op = {r.op_name: r for r in summary.by_op}
+    assert "intelligence.extract" in by_op
+    assert "intelligence.summarize" not in by_op  # wrapper not billed
+    assert by_op["intelligence.extract"].runs == 1
+    assert summary.runs == 1

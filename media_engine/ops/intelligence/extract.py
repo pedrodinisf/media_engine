@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel
 
@@ -110,6 +110,47 @@ def parse_json_object(text: str) -> dict[str, Any]:
     return cast("dict[str, Any]", obj)
 
 
+def finalize_extract_data(
+    raw_text: str, params: ExtractParams
+) -> dict[str, Any]:
+    """Parse the model reply and validate it against the profile schema.
+
+    The single place parsing + validation happen — shared by the persisting
+    path (``build_extract_analysis``) and the non-persisting per-window path
+    used by ``intelligence.analyze`` (so analyze doesn't write orphan
+    per-window files into the permanent store)."""
+    schema = load_schema(params.schema_def)
+    data = parse_json_object(raw_text)
+    validate(data, schema)  # raises SchemaError on mismatch
+    return data
+
+
+class ExtractInvoker(Protocol):
+    """The non-persisting hook every intelligence.extract backend exposes:
+    run the model, return ``(raw_text, usage)``. ``execute`` builds a
+    persisted Analysis from it; ``intelligence.analyze`` calls it per
+    window and finalizes in-memory (no orphan files)."""
+
+    async def extract_invoke(
+        self,
+        source: AnyArtifact,
+        params: ExtractParams,
+        ctx: OperationContext,
+    ) -> tuple[str, dict[str, Any]]: ...
+
+
+async def invoke_extract_backend(
+    backend: object,
+    source: AnyArtifact,
+    params: ExtractParams,
+    ctx: OperationContext,
+) -> tuple[str, dict[str, Any]]:
+    """Call a resolved intelligence.extract backend's non-persisting hook."""
+    return await cast("ExtractInvoker", backend).extract_invoke(
+        source, params, ctx
+    )
+
+
 def build_extract_analysis(
     *,
     source: AnyArtifact,
@@ -126,9 +167,7 @@ def build_extract_analysis(
     Shared by every ``intelligence.extract`` backend so parsing and
     validation happen in exactly one place.
     """
-    schema = load_schema(params.schema_def)
-    data = parse_json_object(raw_text)
-    validate(data, schema)  # raises SchemaError on mismatch
+    data = finalize_extract_data(raw_text, params)
 
     derived_id = compute_derived_artifact_id(
         kind=Kind.Analysis,
@@ -173,6 +212,10 @@ class IntelligenceExtract(Operation):
     params_model = ExtractParams
     default_backend = "gemini"
 
+    def select_backend(self, params: BaseModel) -> str | None:
+        assert isinstance(params, ExtractParams)
+        return _default_backend_for_model(params.model)
+
     async def run(
         self,
         inputs: list[AnyArtifact],
@@ -188,7 +231,7 @@ class IntelligenceExtract(Operation):
             )
         # Fail fast on a bad schema before spending a model call.
         load_schema(params.schema_def)
-        backend_name = _default_backend_for_model(params.model)
+        backend_name = ctx.backend or _default_backend_for_model(params.model)
         backend_cls = BackendRegistry.get(self.name, backend_name)
         return await backend_cls().execute([inputs[0]], params, ctx)
 
@@ -214,11 +257,14 @@ class IntelligenceExtract(Operation):
 
 
 __all__ = [
+    "ExtractInvoker",
     "ExtractParams",
     "IntelligenceExtract",
     "_default_backend_for_model",
     "artifact_to_text",
     "build_extract_analysis",
     "build_extract_messages",
+    "finalize_extract_data",
+    "invoke_extract_backend",
     "parse_json_object",
 ]

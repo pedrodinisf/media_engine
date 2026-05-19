@@ -42,6 +42,8 @@ from media_engine.ops.intelligence.extract import (
     ExtractParams,
     IntelligenceExtract,
     _default_backend_for_model,
+    finalize_extract_data,
+    invoke_extract_backend,
 )
 from media_engine.runtime.jsonschema import load_schema
 
@@ -151,23 +153,32 @@ class IntelligenceAnalyze(Operation):
 
         for idx, win in enumerate(_windows(segments, params.window)):
             wt = _window_transcript(win, idx, salt)
-            [a] = await backend.execute([wt], extract_params, ctx)
+            # Non-persisting per-window extraction: invoke the backend and
+            # finalize in-memory. (Calling backend.execute would write an
+            # orphan per-window Analysis file into the permanent store.)
+            raw, usage = await invoke_extract_backend(
+                backend, wt, extract_params, ctx
+            )
             seg: dict[str, Any] = {
                 "window_index": idx,
                 "start": win[0].get("start"),
                 "end": win[-1].get("end"),
                 "text": wt.metadata["text"],
-                "analysis": a.metadata.get("data"),
+                "analysis": finalize_extract_data(raw, extract_params),
             }
             speaker = win[0].get("speaker")
             if speaker is not None:
                 seg["speaker"] = speaker
-            _accumulate(agg, a.metadata.get("usage"))
+            _accumulate(agg, usage)
 
             if classify_params is not None:
-                [c] = await backend.execute([wt], classify_params, ctx)
-                seg["classification"] = c.metadata.get("data")
-                _accumulate(agg, c.metadata.get("usage"))
+                c_raw, c_usage = await invoke_extract_backend(
+                    backend, wt, classify_params, ctx
+                )
+                seg["classification"] = finalize_extract_data(
+                    c_raw, classify_params
+                )
+                _accumulate(agg, c_usage)
 
             analyzed.append(seg)
 

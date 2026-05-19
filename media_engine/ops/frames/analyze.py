@@ -54,6 +54,10 @@ class FramesAnalyze(Operation):
     declared_resources = ("apple_neural_engine",)
     default_backend = "gemini"
 
+    def select_backend(self, params: BaseModel) -> str | None:
+        assert isinstance(params, FramesAnalyzeParams)
+        return _backend_for_model(params.model)
+
     async def run(
         self,
         inputs: list[AnyArtifact],
@@ -66,7 +70,7 @@ class FramesAnalyze(Operation):
                 f"frames.analyze expects exactly one FrameSet input, "
                 f"got {[a.kind for a in inputs]}"
             )
-        backend_name = _backend_for_model(params.model)
+        backend_name = ctx.backend or _backend_for_model(params.model)
         backend_cls = BackendRegistry.get(self.name, backend_name)
         return await backend_cls().execute([inputs[0]], params, ctx)
 

@@ -130,6 +130,22 @@ class RetryPolicy:
 LOCAL_DEFAULT = RetryPolicy(max_attempts=1)
 CLOUD_DEFAULT = RetryPolicy(max_attempts=3, backoff="exponential", initial_delay=1.0)
 
+# Backend names whose substring marks a cloud provider → 3 attempts.
+_CLOUD_BACKEND_TAGS = ("openai", "gemini", "claude", "anthropic", "voyage")
+
+
+def policy_for(backend_name: str | None) -> RetryPolicy:
+    """Default policy from a resolved backend name (cloud → 3, else 1).
+
+    A backend may override this via its ``retry_policy`` classvar; callers
+    that have the backend class should prefer that. Shared by the DAG
+    executor and single-op ``Engine.run`` so retry behavior is identical
+    on both paths."""
+    name = backend_name or ""
+    if any(tag in name for tag in _CLOUD_BACKEND_TAGS):
+        return CLOUD_DEFAULT
+    return LOCAL_DEFAULT
+
 
 async def with_retry(
     fn: Callable[[], Awaitable[T]],
@@ -147,6 +163,10 @@ async def with_retry(
     for attempt in range(1, max(1, policy.max_attempts) + 1):
         try:
             return await fn()
+        except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+            # Cancellation/shutdown is never a retryable failure — propagate
+            # immediately so the event loop can tear down cleanly.
+            raise
         except BaseException as e:  # noqa: BLE001 -- intentionally broad
             last_exc = e
             cls = classify_exception(e)

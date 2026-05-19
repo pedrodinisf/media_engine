@@ -95,6 +95,30 @@ async def test_classify_label_change_new_id(
     assert a.id != b.id
 
 
+async def test_classify_rejects_wrong_kind(
+    engine: Engine, sample_mp4, fake_extract
+) -> None:
+    from media_engine.ops import OperationContext
+    from media_engine.ops.acquire.upload import (
+        AcquireUpload,
+        AcquireUploadParams,
+    )
+
+    ctx = OperationContext(
+        workdir=engine.storage.ensure_workdir("c"),
+        config=engine.config, storage=engine.storage,
+        namespace=engine.config.namespace,
+    )
+    [video] = await AcquireUpload().run(
+        [], AcquireUploadParams(source_path=sample_mp4), ctx
+    )
+    engine.cache.upsert_artifact(video)
+    with pytest.raises(ValueError, match="input kind mismatch"):
+        await engine.run(
+            "intelligence.classify", inputs=[video.id], labels=["a", "b"]
+        )
+
+
 def test_cost_estimate_delegates() -> None:
     est = IntelligenceClassify().cost_estimate(
         [], ClassifyParams(labels=["x"])

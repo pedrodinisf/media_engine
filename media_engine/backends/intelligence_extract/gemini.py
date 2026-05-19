@@ -89,21 +89,24 @@ class GeminiExtractBackend(Backend):
     version = BACKEND_VERSION
     requires = BackendRequirements(env=["GEMINI_API_KEY"])
 
-    async def execute(
+    async def extract_invoke(
         self,
-        inputs: list[AnyArtifact],
-        params: BaseModel,
+        source: AnyArtifact,
+        params: ExtractParams,
         ctx: OperationContext,
-    ) -> list[AnyArtifact]:
-        assert isinstance(params, ExtractParams)
-        source = inputs[0]
+    ) -> tuple[str, dict[str, Any]]:
+        """Run the model and return ``(raw_text, usage)`` — no persistence.
+
+        ``execute`` materializes an Analysis from this; ``intelligence.
+        analyze`` calls it per window WITHOUT persisting (so it doesn't
+        write orphan per-window files into the permanent store)."""
         api_key = _require_api_key()
         schema = load_schema(params.schema_def)
         content = artifact_to_text(source)
         system, user = build_extract_messages(
             params=params, schema=schema, content=content
         )
-        text, usage = await asyncio.to_thread(
+        return await asyncio.to_thread(
             _gemini_text_sync,
             api_key=api_key,
             model=params.model,
@@ -112,6 +115,16 @@ class GeminiExtractBackend(Backend):
             temperature=params.temperature,
             max_tokens=params.max_tokens,
         )
+
+    async def execute(
+        self,
+        inputs: list[AnyArtifact],
+        params: BaseModel,
+        ctx: OperationContext,
+    ) -> list[AnyArtifact]:
+        assert isinstance(params, ExtractParams)
+        source = inputs[0]
+        text, usage = await self.extract_invoke(source, params, ctx)
         return [
             build_extract_analysis(
                 source=source,

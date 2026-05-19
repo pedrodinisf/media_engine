@@ -90,6 +90,28 @@ async def test_summarize_rejects_no_input(
         await engine.run("intelligence.summarize", inputs=[])
 
 
+async def test_summarize_rejects_wrong_kind(
+    engine: Engine, sample_mp4, fake_extract
+) -> None:
+    from media_engine.ops import OperationContext
+    from media_engine.ops.acquire.upload import (
+        AcquireUpload,
+        AcquireUploadParams,
+    )
+
+    ctx = OperationContext(
+        workdir=engine.storage.ensure_workdir("s"),
+        config=engine.config, storage=engine.storage,
+        namespace=engine.config.namespace,
+    )
+    [video] = await AcquireUpload().run(
+        [], AcquireUploadParams(source_path=sample_mp4), ctx
+    )
+    engine.cache.upsert_artifact(video)
+    with pytest.raises(ValueError, match="input kind mismatch"):
+        await engine.run("intelligence.summarize", inputs=[video.id])
+
+
 def test_cost_estimate_delegates() -> None:
     est = IntelligenceSummarize().cost_estimate([], SummarizeParams())
     assert est.cloud_cents > 0

@@ -64,7 +64,8 @@ def test_op_class_attributes() -> None:
 
 def test_params_defaults() -> None:
     p = ImageOCRParams()
-    assert p.backend == "rapidocr"
+    assert p.model == "gemini-2.5-flash"  # only the gemini-vision backend uses it
+    assert not hasattr(p, "backend")  # backend is engine-selected, not a param
 
 
 @pytest.fixture
@@ -147,6 +148,15 @@ async def test_ocr_cache_hit(
     assert o1.id == o2.id
 
 
+async def test_ocr_param_change_new_id(
+    engine: Engine, sample_png: Path, fake_ocr_backend
+) -> None:
+    img = await _image(engine, sample_png)
+    [a] = await engine.run("image.ocr", inputs=[img.id])
+    [b] = await engine.run("image.ocr", inputs=[img.id], model="other-model")
+    assert a.id != b.id
+
+
 async def test_ocr_rejects_non_image(
     engine: Engine, sample_mp4: Path, fake_ocr_backend
 ) -> None:
@@ -158,13 +168,54 @@ async def test_ocr_rejects_non_image(
         await engine.run("image.ocr", inputs=[video.id])
 
 
-def test_cost_estimate_local_vs_cloud() -> None:
-    op = ImageOCR()
-    local = op.cost_estimate([], ImageOCRParams())
-    assert local.local_seconds > 0
-    assert local.cloud_cents == 0
-    cloud = op.cost_estimate([], ImageOCRParams(backend="gemini-vision"))
-    assert cloud.cloud_cents > 0
+def test_cost_estimate_is_local_default() -> None:
+    # cost_estimate has no ctx → reflects the default (local rapidocr) path.
+    est = ImageOCR().cost_estimate([], ImageOCRParams())
+    assert est.local_seconds > 0
+    assert est.cloud_cents == 0
+
+
+async def test_backend_kwarg_selects_non_default(
+    engine: Engine, sample_png: Path
+) -> None:
+    """`--backend gemini-vision` / backend= must actually route there (the
+    field/kwarg collision is gone; ctx.backend drives dispatch)."""
+    BackendRegistry.unregister("image.ocr", "gemini-vision")
+
+    @register_backend
+    class _FakeGV(Backend):
+        op_name = "image.ocr"
+        name = "gemini-vision"
+        version = "0.0.0-fake"
+        requires = BackendRequirements()
+
+        async def execute(self, inputs, params, ctx):
+            from media_engine.ops.image.ocr import build_ocr_artifact
+
+            return [
+                build_ocr_artifact(
+                    image=inputs[0], params=params,
+                    backend_name=self.name, backend_version=self.version,
+                    workdir_path=ctx.workdir, storage=ctx.storage,
+                    regions=[], full_text="from gemini-vision",
+                )
+            ]
+
+        def cost_estimate(self, inputs, params):
+            return CostEstimate(cloud_cents=0.5)
+
+    try:
+        img = await _image(engine, sample_png)
+        [ocr] = await engine.run(
+            "image.ocr", inputs=[img.id], backend="gemini-vision"
+        )
+        assert ocr.metadata["text"] == "from gemini-vision"
+        assert ocr.metadata["backend"] == "gemini-vision"
+    finally:
+        BackendRegistry.unregister("image.ocr", "gemini-vision")
+        from media_engine.bootstrap import register_all
+
+        register_all(force=True)
 
 
 @pytest.mark.skipif(
@@ -201,11 +252,8 @@ async def test_real_gemini_vision_smoke(
     if not os.environ.get("GEMINI_API_KEY"):
         pytest.skip("GEMINI_API_KEY not set")
     img = await _image(engine, sample_png)
-    # `backend` is an op param (collides with Engine.run's reserved
-    # `backend=` kwarg), so the non-default backend is selected by
-    # invoking the op directly with explicit params.
-    [ocr] = await ImageOCR().run(
-        [img], ImageOCRParams(backend="gemini-vision"), _ctx_for(engine)
+    [ocr] = await engine.run(
+        "image.ocr", inputs=[img.id], backend="gemini-vision"
     )
     assert isinstance(ocr, OCRText)
     assert isinstance(ocr.metadata["text"], str)

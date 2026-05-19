@@ -258,3 +258,61 @@ async def test_real_mlx_lm_smoke(engine: Engine) -> None:
         model="mlx-community/Qwen2.5-7B-Instruct-4bit",
     )
     assert isinstance(a, Analysis)
+
+
+async def test_provenance_records_model_dispatched_backend(
+    engine: Engine,
+) -> None:
+    """Model-prefix dispatch (claude-*) must be the backend recorded in the
+    cost ledger + run row — not the op's default_backend (gemini)."""
+    from media_engine.backends import (
+        Backend,
+        BackendRegistry,
+        BackendRequirements,
+        register_backend,
+    )
+
+    BackendRegistry.unregister("intelligence.extract", "claude")
+
+    @register_backend
+    class _FakeClaude(Backend):
+        op_name = "intelligence.extract"
+        name = "claude"
+        version = "0.0.0-fake"
+        requires = BackendRequirements()
+
+        async def extract_invoke(self, source, params, ctx):
+            return '{"topic":"t","entities":[]}', {
+                "input_tokens": 10, "output_tokens": 2, "cost_cents": 0.01,
+            }
+
+        async def execute(self, inputs, params, ctx):
+            raw, usage = await self.extract_invoke(inputs[0], params, ctx)
+            return [
+                build_extract_analysis(
+                    source=inputs[0], params=params,
+                    backend_name=self.name, backend_version=self.version,
+                    workdir_path=ctx.workdir, storage=ctx.storage,
+                    raw_text=raw, usage=usage,
+                )
+            ]
+
+        def cost_estimate(self, inputs, params):
+            from media_engine.ops import CostEstimate
+
+            return CostEstimate(cloud_cents=0.01)
+
+    try:
+        t = make_transcript(engine, "claude-routed content")
+        [a] = await engine.run(
+            "intelligence.extract", inputs=[t.id], prompt="x",
+            schema_def=_SCHEMA, model="claude-haiku-4",
+        )
+        assert a.metadata["backend"] == "claude"
+        rows = engine.cost_log_entries()
+        assert rows and rows[0].backend_name == "claude"
+    finally:
+        BackendRegistry.unregister("intelligence.extract", "claude")
+        from media_engine.bootstrap import register_all
+
+        register_all(force=True)

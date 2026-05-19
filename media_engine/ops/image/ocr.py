@@ -32,7 +32,9 @@ from media_engine.ops import (
 
 
 class ImageOCRParams(BaseModel):
-    backend: str = "rapidocr"  # or "gemini-vision"
+    # Backend is selected the engine-standard way (``--backend
+    # gemini-vision`` / ``backend=`` / DAGNode.backend), not a param —
+    # default is ``rapidocr`` (see Operation.default_backend).
     model: str = "gemini-2.5-flash"  # only used by the gemini-vision backend
 
 
@@ -59,21 +61,18 @@ class ImageOCR(Operation):
                 f"image.ocr expects exactly one Image input, "
                 f"got {[a.kind for a in inputs]}"
             )
-        backend_cls = BackendRegistry.get(self.name, params.backend)
+        backend_name = ctx.backend or self.default_backend
+        assert backend_name is not None
+        backend_cls = BackendRegistry.get(self.name, backend_name)
         return await backend_cls().execute([inputs[0]], params, ctx)
 
     def cost_estimate(
         self, inputs: list[AnyArtifact], params: BaseModel
     ) -> CostEstimate:
         assert isinstance(params, ImageOCRParams)
-        if params.backend == "gemini-vision":
-            from media_engine.backends._pricing import estimate_cost_cents
-
-            return CostEstimate(
-                cloud_cents=estimate_cost_cents(params.model, 258, 512),
-                tokens_in=258,
-                tokens_out=512,
-            )
+        # Default (rapidocr) is local; the gemini-vision backend reports its
+        # own cloud usage post-run. cost_estimate has no ctx, so the pre-run
+        # estimate reflects the default local path.
         return CostEstimate(local_seconds=1.0)
 
 

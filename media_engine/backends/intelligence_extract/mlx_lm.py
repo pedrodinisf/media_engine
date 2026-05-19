@@ -76,14 +76,14 @@ class MlxLmExtractBackend(Backend):
         services=["mlx-lm"], hardware=["apple_silicon"], min_memory_gb=8.0
     )
 
-    async def execute(
+    async def extract_invoke(
         self,
-        inputs: list[AnyArtifact],
-        params: BaseModel,
+        source: AnyArtifact,
+        params: ExtractParams,
         ctx: OperationContext,
-    ) -> list[AnyArtifact]:
-        assert isinstance(params, ExtractParams)
-        source = inputs[0]
+    ) -> tuple[str, dict[str, Any]]:
+        """Run the local model and return ``(raw_text, usage)`` — no
+        persistence (see GeminiExtractBackend.extract_invoke)."""
         schema = load_schema(params.schema_def)
         content = artifact_to_text(source)
         system, user = build_extract_messages(
@@ -107,12 +107,23 @@ class MlxLmExtractBackend(Backend):
             user=user,
             max_tokens=params.max_tokens,
         )
-        usage = {
+        usage: dict[str, Any] = {
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
             "cost_cents": 0.0,
         }
+        return text, usage
+
+    async def execute(
+        self,
+        inputs: list[AnyArtifact],
+        params: BaseModel,
+        ctx: OperationContext,
+    ) -> list[AnyArtifact]:
+        assert isinstance(params, ExtractParams)
+        source = inputs[0]
+        text, usage = await self.extract_invoke(source, params, ctx)
         return [
             build_extract_analysis(
                 source=source,

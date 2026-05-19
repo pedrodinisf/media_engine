@@ -64,7 +64,7 @@ def test_params_require_labels() -> None:
     with pytest.raises(ValidationError):
         ImageClassifyParams(labels=[])
     p = ImageClassifyParams(labels=["cat", "dog"])
-    assert p.backend == "open-clip"
+    assert not hasattr(p, "backend")  # backend is engine-selected, not a param
 
 
 @pytest.fixture
@@ -176,15 +176,11 @@ async def test_classify_rejects_non_image(
         )
 
 
-def test_cost_estimate_local_vs_cloud() -> None:
-    op = ImageClassify()
-    local = op.cost_estimate([], ImageClassifyParams(labels=["a"]))
-    assert local.local_seconds > 0
-    assert local.cloud_cents == 0
-    cloud = op.cost_estimate(
-        [], ImageClassifyParams(labels=["a"], backend="gemini")
-    )
-    assert cloud.cloud_cents > 0
+def test_cost_estimate_is_local_default() -> None:
+    # cost_estimate has no ctx → reflects the default (local open-clip) path.
+    est = ImageClassify().cost_estimate([], ImageClassifyParams(labels=["a"]))
+    assert est.local_seconds > 0
+    assert est.cloud_cents == 0
 
 
 @pytest.mark.skipif(
@@ -211,14 +207,11 @@ async def test_real_gemini_smoke(engine: Engine, sample_png: Path) -> None:
     if not os.environ.get("GEMINI_API_KEY"):
         pytest.skip("GEMINI_API_KEY not set")
     img = await _image(engine, sample_png)
-    # `backend` collides with Engine.run's reserved kwarg → invoke directly.
-    [analysis] = await ImageClassify().run(
-        [img],
-        ImageClassifyParams(
-            labels=["a screenshot of text", "a photo of a dog"],
-            backend="gemini",
-        ),
-        _ctx_for(engine),
+    [analysis] = await engine.run(
+        "image.classify",
+        inputs=[img.id],
+        labels=["a screenshot of text", "a photo of a dog"],
+        backend="gemini",
     )
     assert isinstance(analysis, Analysis)
     assert analysis.data["top"] in analysis.data["labels"]

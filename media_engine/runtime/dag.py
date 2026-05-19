@@ -26,7 +26,7 @@ from typing import Any
 
 from media_engine.artifacts import AnyArtifact
 from media_engine.ops import OpRegistry
-from media_engine.runtime.retry import CLOUD_DEFAULT, LOCAL_DEFAULT, RetryPolicy, with_retry
+from media_engine.runtime.retry import RetryPolicy, policy_for, with_retry
 
 # ─────────────────────────────────────────────────────────────────
 # Pipeline shape
@@ -220,13 +220,7 @@ def _policy_for_op(node: DAGNode) -> RetryPolicy:
             ).retry_policy
             if declared is not None:
                 return declared
-    # Heuristic: ops with a backend that smells cloud → retry; else local.
-    if any(
-        tag in backend_name
-        for tag in ("openai", "gemini", "claude", "anthropic")
-    ):
-        return CLOUD_DEFAULT
-    return LOCAL_DEFAULT
+    return policy_for(backend_name)
 
 
 async def execute_pipeline(

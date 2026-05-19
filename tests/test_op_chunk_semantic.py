@@ -18,7 +18,8 @@ from media_engine.runtime.engine import Engine
 
 def test_op_class_attributes() -> None:
     assert ChunkSemantic.name == "chunk.semantic"
-    assert ChunkSemantic.input_kinds == (Kind.Transcript,)
+    assert ChunkSemantic.input_kinds == (Kind.Transcript, Kind.MarkdownArtifact)
+    assert ChunkSemantic.variadic_inputs is True
     assert ChunkSemantic.output_kinds == (Kind.Chunks,)
     assert ChunkSemantic.default_backend == "default"
 

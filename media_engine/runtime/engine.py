@@ -20,6 +20,8 @@ from types import TracebackType
 from typing import TYPE_CHECKING, Any, Self, cast
 from uuid import uuid4
 
+from pydantic import BaseModel
+
 from media_engine.artifacts import (
     AnyArtifact,
     Kind,
@@ -45,6 +47,7 @@ from media_engine.runtime.events import (
 )
 from media_engine.runtime.lineage import LineageNode
 from media_engine.runtime.model_pool import ModelPool
+from media_engine.runtime.retry import RetryPolicy, policy_for, with_retry
 from media_engine.runtime.server_manager import ServerManager
 from media_engine.runtime.storage import LocalFSStorage, StorageBackend
 
@@ -202,7 +205,9 @@ class Engine:
         params_model = op_class.params_model(**params)
         params_hash = canonical_params_hash(params_model)
 
-        backend_name, backend_version = self._resolve_backend(op_class, backend)
+        backend_name, backend_version = self._resolve_backend(
+            op, op_class, backend, params_model
+        )
 
         # Disk-space precondition: refuse to start if the permanent_store
         # filesystem is below the configured floor. Cache hits skip this
@@ -241,6 +246,7 @@ class Engine:
             server_manager=self.server_manager,
             model_pool=self.model_pool,
             run_op=self.run,
+            backend=backend_name,
         )
 
         started_at = datetime.now(UTC)
@@ -255,8 +261,13 @@ class Engine:
                 params=params_model.model_dump(mode="json"),
             )
         )
+        retry_policy = self._retry_policy(op_name, backend_name)
+
+        async def _attempt() -> list[AnyArtifact]:
+            return await op.run(resolved_inputs, params_model, ctx)
+
         try:
-            raw_outputs = await op.run(resolved_inputs, params_model, ctx)
+            raw_outputs = await with_retry(_attempt, policy=retry_policy)
         except BaseException as exc:  # noqa: BLE001 -- envelope, then re-raise
             self.event_bus.emit(
                 build_op_failed(exc, op_run_id=job_id, job_id=job_id)
@@ -289,19 +300,23 @@ class Engine:
 
         # Spend ledger: one row per *actual* execution (cache hits returned
         # above and never reach here). Actual cents/tokens come from
-        # backend-reported usage on the outputs when available.
+        # backend-reported usage on the outputs when available. Thin
+        # composite wrappers (records_cost=False) skip this — their sub-op
+        # already billed the spend, so billing the wrapper too (it returns
+        # the sub-op's artifact with the same usage) would double-count.
         act_cents, tok_in, tok_out = _actual_usage(raw_outputs)
-        self.cache.record_cost(
-            op_name=op_name,
-            backend_name=backend_name,
-            estimated_cents=cost.cloud_cents,
-            actual_cents=act_cents,
-            tokens_in=tok_in,
-            tokens_out=tok_out,
-            duration_seconds=duration,
-            namespace=self.config.namespace,
-            ts=finished_at,
-        )
+        if op_class.records_cost:
+            self.cache.record_cost(
+                op_name=op_name,
+                backend_name=backend_name,
+                estimated_cents=cost.cloud_cents,
+                actual_cents=act_cents,
+                tokens_in=tok_in,
+                tokens_out=tok_out,
+                duration_seconds=duration,
+                namespace=self.config.namespace,
+                ts=finished_at,
+            )
 
         self.event_bus.emit(
             OpCompleted(
@@ -393,7 +408,7 @@ class Engine:
                 )
                 params_hash = canonical_params_hash(params_model)
                 backend_name, backend_version = self._resolve_backend(
-                    op_class, node.backend
+                    op, op_class, node.backend, params_model
                 )
                 cached = None
                 if resolvable:
@@ -505,8 +520,22 @@ class Engine:
                 )
 
     @staticmethod
+    def _retry_policy(op_name: str, backend_name: str | None) -> RetryPolicy:
+        """Retry policy for a single-op run: a backend's declared
+        ``retry_policy`` wins, else the cloud/local default by name. Same
+        rule the DAG executor applies, so both paths behave identically."""
+        if backend_name and BackendRegistry.has(op_name, backend_name):
+            declared = BackendRegistry.get(op_name, backend_name).retry_policy
+            if declared is not None:
+                return declared
+        return policy_for(backend_name)
+
+    @staticmethod
     def _resolve_backend(
-        op_class: type[Operation], requested: str | None
+        op: Operation,
+        op_class: type[Operation],
+        requested: str | None,
+        params_model: BaseModel,
     ) -> tuple[str | None, str | None]:
         op_name = op_class.name
         registered = BackendRegistry.for_op(op_name)
@@ -514,7 +543,13 @@ class Engine:
         if not registered and default is None:
             # No backend layer for this op (logic embedded in Operation).
             return (None, None)
-        chosen: str | None = requested or default
+        # Precedence: explicit backend= > op.select_backend(params) (e.g.
+        # model-prefix dispatch) > default_backend. The result is the
+        # single source of truth — cache key, ctx.backend, cost ledger and
+        # provenance all use it, so the backend recorded is the one that ran.
+        chosen: str | None = (
+            requested or op.select_backend(params_model) or default
+        )
         if chosen is None:
             raise ValueError(
                 f"{op_name} requires a backend; available: {registered}"

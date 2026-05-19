@@ -33,7 +33,8 @@ from media_engine.ops import (
 
 class ImageClassifyParams(BaseModel):
     labels: list[str]
-    backend: str = "open-clip"  # or "gemini"
+    # Backend is selected the engine-standard way (``--backend gemini`` /
+    # ``backend=`` / DAGNode.backend); default ``open-clip``.
     model: str = "ViT-B-32"  # CLIP arch for open-clip; gemini model otherwise
 
     @field_validator("labels")
@@ -67,21 +68,17 @@ class ImageClassify(Operation):
                 f"image.classify expects exactly one Image input, "
                 f"got {[a.kind for a in inputs]}"
             )
-        backend_cls = BackendRegistry.get(self.name, params.backend)
+        backend_name = ctx.backend or self.default_backend
+        assert backend_name is not None
+        backend_cls = BackendRegistry.get(self.name, backend_name)
         return await backend_cls().execute([inputs[0]], params, ctx)
 
     def cost_estimate(
         self, inputs: list[AnyArtifact], params: BaseModel
     ) -> CostEstimate:
         assert isinstance(params, ImageClassifyParams)
-        if params.backend == "gemini":
-            from media_engine.backends._pricing import estimate_cost_cents
-
-            return CostEstimate(
-                cloud_cents=estimate_cost_cents(params.model, 258, 128),
-                tokens_in=258,
-                tokens_out=128,
-            )
+        # Default (open-clip) is local; the gemini backend reports its own
+        # cloud usage post-run. cost_estimate has no ctx → reflects default.
         return CostEstimate(local_seconds=0.5)
 
 

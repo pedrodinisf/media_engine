@@ -60,6 +60,10 @@ class VideoMultimodal(Operation):
     declared_resources = ("apple_neural_engine",)  # local path; cloud is a no-op lock
     default_backend = "gemini"
 
+    def select_backend(self, params: BaseModel) -> str | None:
+        assert isinstance(params, MultimodalVideoParams)
+        return _default_backend_for_model(params.model)
+
     async def run(
         self,
         inputs: list[AnyArtifact],
@@ -73,7 +77,9 @@ class VideoMultimodal(Operation):
                 f"got {[a.kind for a in inputs]}"
             )
         video: Video = inputs[0]
-        backend_name = _default_backend_for_model(params.model)
+        # ctx.backend is the engine-resolved backend (explicit backend=
+        # wins, else select_backend). Fall back for direct Operation.run.
+        backend_name = ctx.backend or _default_backend_for_model(params.model)
         backend_cls = BackendRegistry.get(self.name, backend_name)
         return await backend_cls().execute([video], params, ctx)
 

@@ -80,7 +80,9 @@ class IntelligenceClassify(Operation):
     variadic_inputs = True
     output_kinds = (Kind.Analysis,)
     params_model = ClassifyParams
-    # Composite: no backend layer — delegates to intelligence.extract.
+    # Composite: no backend layer — delegates to intelligence.extract,
+    # which bills the spend. records_cost=False avoids double-counting.
+    records_cost = False
 
     async def run(
         self,

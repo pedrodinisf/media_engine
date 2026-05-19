@@ -189,6 +189,32 @@ async def test_transcribe_diarized_cache_hit(
     assert t1.id == t2.id
 
 
+async def test_transcribe_diarized_param_change_new_id(
+    engine: Engine, sample_m4a: Path, fake_transcribe_and_diarize_backends
+) -> None:
+    op = AcquireUpload()
+    [audio] = await op.run([], AcquireUploadParams(source_path=sample_m4a),
+                           _ctx_for(engine))
+    engine.cache.upsert_artifact(audio)
+    [t1] = await engine.run("audio.transcribe_diarized", inputs=[audio.id])
+    [t2] = await engine.run(
+        "audio.transcribe_diarized", inputs=[audio.id],
+        transcribe_model="other-whisper",
+    )
+    assert t1.id != t2.id
+
+
+async def test_transcribe_diarized_rejects_non_audio(
+    engine: Engine, sample_mp4: Path, fake_transcribe_and_diarize_backends
+) -> None:
+    op = AcquireUpload()
+    [video] = await op.run([], AcquireUploadParams(source_path=sample_mp4),
+                           _ctx_for(engine))
+    engine.cache.upsert_artifact(video)
+    with pytest.raises(ValueError, match="kind mismatch"):
+        await engine.run("audio.transcribe_diarized", inputs=[video.id])
+
+
 async def test_transcribe_diarized_requires_run_op(
     engine: Engine, sample_m4a: Path, fake_transcribe_and_diarize_backends
 ) -> None:

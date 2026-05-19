@@ -72,6 +72,17 @@ def register_fake_extract_backend() -> type[Backend]:
         version = "0.0.0-fake"
         requires = BackendRequirements()
 
+        async def extract_invoke(self, source, params, ctx):
+            assert isinstance(params, ExtractParams)
+            from media_engine.runtime.jsonschema import load_schema
+
+            schema = load_schema(params.schema_def)
+            # Touch the source so the read path is covered too.
+            _ = artifact_to_text(source)
+            return json.dumps(example_for_schema(schema)), {
+                "input_tokens": 500, "output_tokens": 20, "cost_cents": 0.03,
+            }
+
         async def execute(
             self,
             inputs: list[AnyArtifact],
@@ -79,12 +90,7 @@ def register_fake_extract_backend() -> type[Backend]:
             ctx: OperationContext,
         ) -> list[AnyArtifact]:
             assert isinstance(params, ExtractParams)
-            from media_engine.runtime.jsonschema import load_schema
-
-            schema = load_schema(params.schema_def)
-            # Touch the source so the read path is covered too.
-            _ = artifact_to_text(inputs[0])
-            payload = example_for_schema(schema)
+            raw, usage = await self.extract_invoke(inputs[0], params, ctx)
             return [
                 build_extract_analysis(
                     source=inputs[0],
@@ -93,9 +99,8 @@ def register_fake_extract_backend() -> type[Backend]:
                     backend_version=self.version,
                     workdir_path=ctx.workdir,
                     storage=ctx.storage,
-                    raw_text=json.dumps(payload),
-                    usage={"input_tokens": 500, "output_tokens": 20,
-                           "cost_cents": 0.03},
+                    raw_text=raw,
+                    usage=usage,
                 )
             ]
 

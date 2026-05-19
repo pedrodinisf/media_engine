@@ -56,7 +56,11 @@ class ChunkSemantic(Operation):
 
     name = "chunk.semantic"
     version = "1.0.0"
-    input_kinds = (Kind.Transcript,)  # also accepts MarkdownArtifact via run-time check
+    # One input, Transcript OR Markdown. variadic_inputs makes the engine
+    # validate kind *membership* (not a fixed positional signature) so both
+    # are reachable through Engine.run; run() pins arity to exactly one.
+    input_kinds = (Kind.Transcript, Kind.MarkdownArtifact)
+    variadic_inputs = True
     output_kinds = (Kind.Chunks,)
     params_model = ChunkSemanticParams
     default_backend = "default"
