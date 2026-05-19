@@ -204,11 +204,11 @@ in-memory (`finalize_extract_data`).
 > never GC-visible). The `extract_invoke` split removes persistence from
 > the per-window path entirely.
 
-### 4.4 Op catalog (Phases 0–2 + Phase 3 in progress, 23 ops)
+### 4.4 Op catalog (Phases 0–2 + Phase 3 in progress, 24 ops)
 
 | Group | Ops | Backend layer |
 |---|---|---|
-| acquire | upload, url | upload: — (local-fs) · url: yt-dlp/playwright-hls |
+| acquire | upload, url, livestream | upload: — (local-fs) · url: yt-dlp/playwright-hls · livestream: ffmpeg-recorder |
 | metadata | scrape_page | — (embedded playwright, lazy) |
 | video | extract_audio, trim, sample_frames, multimodal | sample_frames: ffmpeg-uniform/pyscenedetect · multimodal: gemini/vllm-mlx |
 | audio | transcribe, detect_language, diarize, transcribe_diarized | transcribe/detect: mlx-whisper · diarize: pyannote · t_d: composite |
@@ -324,8 +324,9 @@ the executor consumes.
 - **CLI (`cli/`)** — Typer. `med acquire/extract-audio/ls/show/lineage/
   ops/config`; `med run <op>` (generic: cost preview -> confirm unless
   `--yes`; global `--dry-run` prints & exits; `--input/--backend/
-  --param k=v/--schema`); `med profile ls|show|run`; `med batch`; `med
-  cost ls|summary`; `med events tail|history`; `med daemon|mcp`.
+  --param k=v/--schema`); `med profile ls|show|run`; `med batch`;
+  `med acquire-live` (live HLS capture; SIGUSR1 / pynput-hotkey
+  segmentation); `med cost ls|summary`; `med events tail|history`; `med daemon|mcp`.
   `cli/_handle.py` is the daemon-aware seam: a 50 ms ping picks a
   daemon-routed handle or falls back to in-process `open_quick` — command
   code never branches on "is the daemon up?".
@@ -372,7 +373,7 @@ media_engine/
 ├── config.py              pydantic-settings, MEDIA_ENGINE_* env, config.toml
 ├── logging_setup.py       text default, JSON via MEDIA_ENGINE_LOG_FORMAT
 ├── artifacts/             base (Kind/Artifact/hashing) · media · text · analysis
-├── ops/                   _base · _registry · <group>/<verb>.py (23 ops)
+├── ops/                   _base · _registry · <group>/<verb>.py (24 ops)
 ├── backends/              _base · _pricing · _gemini_vision · <group>_<verb>/<provider>.py
 ├── runtime/               engine · cache · storage · dag · retry · events
 │                          cost_tracker · lineage · model_pool · server_manager
@@ -389,9 +390,10 @@ media_engine/
 ## 11. Status & deviations from the plan
 
 **Phases 0–2 complete** (commits 1–22 + two audit-fix commits); **Phase
-3 in progress** (commit 23: `acquire.url` + `metadata.scrape_page`).
-Suite: 521 passed / 22 skipped (dependency/API-key/network gated);
-`ruff` and strict `pyright` clean.
+3 in progress** (commits 23–24: `acquire.url`, `metadata.scrape_page`,
+`acquire.livestream` + `med acquire-live`). Suite: 536 passed / 22
+skipped (dependency/API-key/network gated); `ruff` and strict `pyright`
+clean.
 
 Reasonable, intentional divergences from the plan text (the plan is the
 roadmap; this section is the reconciliation):

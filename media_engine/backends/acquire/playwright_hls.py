@@ -78,10 +78,12 @@ def _select_best_stream(m3u8_urls: list[str]) -> str | None:
     return unique[0]
 
 
-def _sniff_m3u8(url: str, *, nav_timeout_ms: int, settle_ms: int) -> tuple[str | None, str | None]:
+def sniff_m3u8(url: str, *, nav_timeout_ms: int, settle_ms: int) -> tuple[str | None, str | None]:
     """Headless-Chromium sniff. Returns (best_m3u8_url, page_title).
 
     Synchronous (Playwright sync API) — call via ``asyncio.to_thread``.
+    Reused by the ``ffmpeg-recorder`` backend so a livestream page URL
+    funnels through the same sniff logic.
     """
     sync_playwright = _import_playwright()
     m3u8_urls: list[str] = []
@@ -207,7 +209,7 @@ class PlaywrightHlsAcquireBackend(Backend):
         run_id = uuid4().hex
         _emit(ctx, run_id, 0.05, "loading page")
         stream_url, title = await asyncio.to_thread(
-            _sniff_m3u8, params.url, nav_timeout_ms=30000, settle_ms=15000
+            sniff_m3u8, params.url, nav_timeout_ms=30000, settle_ms=15000
         )
         if not stream_url:
             raise RuntimeError(

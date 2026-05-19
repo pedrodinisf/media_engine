@@ -236,12 +236,16 @@ def build_tiny_hls(force: bool = False) -> None:
     TINY_HLS_DIR.mkdir(parents=True, exist_ok=True)
     for old in TINY_HLS_DIR.glob("*.ts"):
         old.unlink()
+    # Force a keyframe every 1 s (``-g 10`` at 10 fps + ``-keyint_min 10`` +
+    # ``-sc_threshold 0``) so stream-copy segmenters can cut on whole-second
+    # boundaries — the ``acquire.livestream`` segment-muxer test depends on it.
     subprocess.check_call(
         [
             "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "testsrc=duration=2:size=160x120:rate=10",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-f", "lavfi", "-i", "testsrc=duration=3:size=160x120:rate=10",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
             "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-g", "10", "-keyint_min", "10", "-sc_threshold", "0",
             "-c:a", "aac", "-shortest",
             "-f", "hls", "-hls_time", "1", "-hls_list_size", "0",
             "-hls_segment_filename", str(TINY_HLS_DIR / "seg_%03d.ts"),

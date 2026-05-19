@@ -26,6 +26,7 @@ _done = False
 
 
 def _op_classes() -> list[type]:
+    from media_engine.ops.acquire.livestream import AcquireLivestream
     from media_engine.ops.acquire.upload import AcquireUpload
     from media_engine.ops.acquire.url import AcquireURL
     from media_engine.ops.audio.detect_language import AudioDetectLanguage
@@ -53,6 +54,7 @@ def _op_classes() -> list[type]:
     from media_engine.ops.video.trim import VideoTrim
 
     return [
+        AcquireLivestream,
         AcquireUpload,
         AcquireURL,
         AudioDetectLanguage,
@@ -80,6 +82,9 @@ def _op_classes() -> list[type]:
 
 
 def _backend_classes() -> list[type]:
+    from media_engine.backends.acquire.ffmpeg_recorder import (
+        FfmpegRecorderBackend,
+    )
     from media_engine.backends.acquire.ytdlp import YtdlpAcquireBackend
     from media_engine.backends.chunk_semantic.default import (
         DefaultChunkSemanticBackend,
@@ -100,6 +105,7 @@ def _backend_classes() -> list[type]:
 
     classes: list[type] = [
         YtdlpAcquireBackend,
+        FfmpegRecorderBackend,
         MlxWhisperTranscribeBackend,
         MlxWhisperDetectLanguageBackend,
         FfmpegUniformBackend,
