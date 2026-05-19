@@ -154,6 +154,28 @@ across builds; cross-machine cache hits would otherwise fail.
 For composite Ops (e.g. `audio.transcribe_diarized`), include the sub-op
 output ids in `input_ids` so changes ripple into the composite id.
 
+## 5b. Optional Operation mechanisms
+
+Beyond the core contract, three opt-in class attributes cover common
+shapes (all default to "off" — see `docs/architecture.md` §4 for the
+rationale):
+
+- `variadic_inputs = True` — the op takes one input that may be one of
+  several `input_kinds`, or ≥2 inputs each of a kind set. The engine
+  validates *membership* instead of a fixed positional signature; your
+  `run()` enforces the exact arity. (e.g. `embed.text`,
+  `frames.compare`, `intelligence.*`.)
+- `def select_backend(self, params) -> str | None` — pick the backend
+  from params (e.g. by model prefix). The engine's precedence is
+  `explicit backend= > select_backend > default_backend`; dispatch off
+  `ctx.backend` in `run()` so the backend that runs is the one recorded
+  in the cache key / cost ledger / provenance. Never read a `backend`
+  field off your params model — that collides with `Engine.run`'s
+  reserved `backend=` kwarg.
+- `records_cost = False` — for a thin composite that delegates to a
+  sub-op via `ctx.run_op`; the sub-op already bills the spend, so the
+  wrapper must not double-count.
+
 ## 6. Register tests
 
 Drop `tests/test_op_<group>_<verb>.py`. Cover:
@@ -170,12 +192,14 @@ Drop `tests/test_op_<group>_<verb>.py`. Cover:
 If your Op uses an optional ML library, gate the integration test with
 `@pytest.mark.needs_<feature>` + `pytest.importorskip(...)`.
 
-## 7. Wire the test fixture autouse
+## 7. Wire it into the catalog
 
-`tests/conftest.py::_ensure_all_ops_registered` explicitly registers
-each production Op class. Add yours to that list — without it, tests
-that clear `OpRegistry` will leave a ghost-stripped catalog for
-later tests.
+Add your Op class to `media_engine/bootstrap.py::_op_classes()` (and any
+new backend to `_backend_classes()` — optional-dep backends go in a
+`try/except ImportError` block). `bootstrap.register_all()` is the single
+catalog every transport and the test suite's autouse
+`conftest.py::_ensure_registries` fixture call; without the entry your op
+is invisible and registry-clearing tests won't restore it.
 
 ## 8. Verify
 
