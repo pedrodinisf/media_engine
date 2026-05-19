@@ -25,6 +25,7 @@ CORRUPT_MP4 = FIXTURE_DIR / "corrupt.mp4"
 SAMPLE_SPEECH_WAV = FIXTURE_DIR / "sample_speech.wav"
 SAMPLE_DIALOGUE_WAV = FIXTURE_DIR / "sample_dialogue.wav"
 SAMPLE_PNG = FIXTURE_DIR / "sample.png"
+TINY_HLS_DIR = FIXTURE_DIR / "tiny_hls"
 
 OCR_TEXT = "MEDIA ENGINE"
 
@@ -221,6 +222,36 @@ def build_sample_png(force: bool = False) -> None:
         )
 
 
+def build_tiny_hls(force: bool = False) -> None:
+    """A 2 s synthetic HLS stream: ``index.m3u8`` + tiny ``.ts`` segments.
+
+    Served by a stdlib ``http.server`` in the ``playwright-hls`` /
+    ``acquire.livestream`` tests so they never touch the network. Total
+    payload stays well under 200 KB.
+    """
+    playlist = TINY_HLS_DIR / "index.m3u8"
+    if playlist.exists() and not force:
+        return
+    _require_ffmpeg()
+    TINY_HLS_DIR.mkdir(parents=True, exist_ok=True)
+    for old in TINY_HLS_DIR.glob("*.ts"):
+        old.unlink()
+    subprocess.check_call(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "testsrc=duration=2:size=160x120:rate=10",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest",
+            "-f", "hls", "-hls_time", "1", "-hls_list_size", "0",
+            "-hls_segment_filename", str(TINY_HLS_DIR / "seg_%03d.ts"),
+            str(playlist),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rebuild", action="store_true", help="rebuild even if present")
@@ -232,6 +263,7 @@ def main() -> None:
     build_sample_speech_wav(force=args.rebuild)
     build_sample_dialogue_wav(force=args.rebuild)
     build_sample_png(force=args.rebuild)
+    build_tiny_hls(force=args.rebuild)
 
     print(f"Fixtures ready in {FIXTURE_DIR}")
     for f in (SAMPLE_MP4, SAMPLE_M4A, CORRUPT_MP4, SAMPLE_SPEECH_WAV,

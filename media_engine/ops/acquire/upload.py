@@ -38,8 +38,12 @@ class AcquireUploadParams(BaseModel):
     link_mode: Literal["copy", "hardlink"] = "copy"
 
 
-def _extract_metadata(probe_data: dict[str, Any], kind: Kind) -> dict[str, Any]:
-    """Pull common fields from ffprobe JSON into the artifact metadata dict."""
+def extract_probe_metadata(probe_data: dict[str, Any], kind: Kind) -> dict[str, Any]:
+    """Pull common fields from ffprobe JSON into the artifact metadata dict.
+
+    Shared with ``acquire.url`` (and any op that ingests an external file)
+    so probe → typed-metadata mapping lives in exactly one place.
+    """
     fmt = probe_data.get("format", {})
     streams = probe_data.get("streams", [])
     md: dict[str, Any] = {}
@@ -124,7 +128,7 @@ class AcquireUpload(Operation):
         dest = ctx.storage.store_file(src, sha, ext, link_mode=params.link_mode)
 
         # 4. Build typed artifact.
-        metadata = _extract_metadata(probe_data, kind)
+        metadata = extract_probe_metadata(probe_data, kind)
         if params.original_filename is not None:
             metadata["original_filename"] = params.original_filename
         return [_construct_artifact(sha=sha, dest=dest, kind=kind, metadata=metadata)]

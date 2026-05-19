@@ -27,6 +27,7 @@ _done = False
 
 def _op_classes() -> list[type]:
     from media_engine.ops.acquire.upload import AcquireUpload
+    from media_engine.ops.acquire.url import AcquireURL
     from media_engine.ops.audio.detect_language import AudioDetectLanguage
     from media_engine.ops.audio.diarize import AudioDiarize
     from media_engine.ops.audio.transcribe import AudioTranscribe
@@ -45,6 +46,7 @@ def _op_classes() -> list[type]:
     from media_engine.ops.intelligence.classify import IntelligenceClassify
     from media_engine.ops.intelligence.extract import IntelligenceExtract
     from media_engine.ops.intelligence.summarize import IntelligenceSummarize
+    from media_engine.ops.metadata.scrape_page import MetadataScrapePage
     from media_engine.ops.video.extract_audio import VideoExtractAudio
     from media_engine.ops.video.multimodal import VideoMultimodal
     from media_engine.ops.video.sample_frames import VideoSampleFrames
@@ -52,6 +54,7 @@ def _op_classes() -> list[type]:
 
     return [
         AcquireUpload,
+        AcquireURL,
         AudioDetectLanguage,
         AudioDiarize,
         AudioTranscribe,
@@ -68,6 +71,7 @@ def _op_classes() -> list[type]:
         IntelligenceClassify,
         IntelligenceExtract,
         IntelligenceSummarize,
+        MetadataScrapePage,
         VideoExtractAudio,
         VideoMultimodal,
         VideoSampleFrames,
@@ -76,6 +80,7 @@ def _op_classes() -> list[type]:
 
 
 def _backend_classes() -> list[type]:
+    from media_engine.backends.acquire.ytdlp import YtdlpAcquireBackend
     from media_engine.backends.chunk_semantic.default import (
         DefaultChunkSemanticBackend,
     )
@@ -94,6 +99,7 @@ def _backend_classes() -> list[type]:
     )
 
     classes: list[type] = [
+        YtdlpAcquireBackend,
         MlxWhisperTranscribeBackend,
         MlxWhisperDetectLanguageBackend,
         FfmpegUniformBackend,
@@ -104,6 +110,13 @@ def _backend_classes() -> list[type]:
 
     # Optional-dep backends: import-clean even when the ML lib is absent,
     # so register them too — the dep is only needed at execute() time.
+    try:
+        from media_engine.backends.acquire.playwright_hls import (
+            PlaywrightHlsAcquireBackend,
+        )
+        classes.append(PlaywrightHlsAcquireBackend)
+    except ImportError:
+        pass
     try:
         from media_engine.backends.diarize.pyannote import (
             PyannoteDiarizeBackend,

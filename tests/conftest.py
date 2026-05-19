@@ -96,6 +96,17 @@ def sample_png() -> Path:
 
 
 @pytest.fixture
+def tiny_hls_dir() -> Path:
+    """Directory holding the synthetic ``index.m3u8`` + ``.ts`` segments."""
+    d = FIXTURE_DIR / "tiny_hls"
+    if not (d / "index.m3u8").exists():
+        pytest.skip(
+            "tiny_hls/ missing — run `python tests/fixtures/build_fixtures.py`"
+        )
+    return d
+
+
+@pytest.fixture
 def sample_speech_wav() -> Path:
     p = FIXTURE_DIR / "sample_speech.wav"
     if not p.exists():
