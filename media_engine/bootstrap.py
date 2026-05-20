@@ -48,6 +48,8 @@ def _op_classes() -> list[type]:
     from media_engine.ops.intelligence.extract import IntelligenceExtract
     from media_engine.ops.intelligence.summarize import IntelligenceSummarize
     from media_engine.ops.metadata.scrape_page import MetadataScrapePage
+    from media_engine.ops.transcript.merge import TranscriptMerge
+    from media_engine.ops.transcript.parse import TranscriptParse
     from media_engine.ops.video.extract_audio import VideoExtractAudio
     from media_engine.ops.video.multimodal import VideoMultimodal
     from media_engine.ops.video.sample_frames import VideoSampleFrames
@@ -74,6 +76,8 @@ def _op_classes() -> list[type]:
         IntelligenceExtract,
         IntelligenceSummarize,
         MetadataScrapePage,
+        TranscriptMerge,
+        TranscriptParse,
         VideoExtractAudio,
         VideoMultimodal,
         VideoSampleFrames,
