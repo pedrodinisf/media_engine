@@ -20,12 +20,22 @@ Python package + CLI (`med`) + daemon + REST + MCP.
 
 ## How to add a new backend
 1. Pick the op (e.g. `audio.transcribe`).
-2. Create `media_engine/backends/<group>_<verb>/<provider>.py`. Implement the
+2. Create the backend file under `media_engine/backends/`. Single-verb groups
+   like `transcribe` or `diarize` go in `backends/<verb>/<provider>.py`;
+   multi-verb groups go in `backends/<group>_<verb>/<provider>.py`
+   (e.g. `frames_analyze/gemini.py`); group-only families like
+   `backends/acquire/`, `backends/document/`, `backends/web/`,
+   `backends/search/` keep the verb in the file name. Implement the
    `Backend` ABC.
-3. Register via `BackendRegistry.register(YourBackend)`.
+3. Register via `BackendRegistry.register(YourBackend)` and add the class
+   to `media_engine/bootstrap.py::_backend_classes()`. Optional-dep
+   backends go in a `try/except ImportError` block and must be **import-
+   clean** (lazy `importlib` inside the call path; the dep is only needed
+   at `execute()` time, not registration time).
 4. Declare `BackendRequirements` (env, binaries, services, hardware,
    `min_memory_gb`).
-5. Test in `tests/test_backend_<group>_<verb>_<provider>.py`.
+5. Test in `tests/test_backend_<descriptor>.py` (or fold into the op test
+   when there's only one backend per op).
 
 ## How to write a profile
 See `docs/writing_a_profile.md` (Phase 1). Two flavors: prompt (markdown with
@@ -46,13 +56,29 @@ YAML frontmatter) or pipeline (YAML DAG).
 
 ## Common commands
 - `uv sync` — install
-- `uv run pytest -q` — all tests
-- `uv run pyright media_engine` — typecheck
+- `uv run pytest -q` — all tests (~620 passing, ~25 dep-gated skips)
+- `uv run pyright media_engine` — strict typecheck
 - `uv run ruff check` / `uv run ruff format` — lint/format
-- `uv run med daemon start|status|stop` — daemon lifecycle (Phase 1+)
-- `uv run med ops` — list registered operations
-- `uv run med profile ls` — list discovered profiles
-- `uv run med config` — print effective config
+- `uv run med ops` — list registered operations (31 as of Phase 3)
+- `uv run med config` — print effective configuration
+- `uv run med daemon start|status|stop` — warm-engine daemon lifecycle
+- `uv run med profile ls|show|run` — discover / inspect / execute profiles
+- `uv run med acquire <file>` — `acquire.upload` shortcut (local files)
+- `uv run med acquire-url <url> [--quality] [--backend]` — `acquire.url`
+- `uv run med acquire-live <url> [--max-duration N] [--segment-seconds N]
+  [--hotkey "cmd+shift+j"]` — `acquire.livestream` recorder (SIGUSR1 splits)
+- `uv run med extract-audio <video-id>` — `video.extract_audio` shortcut
+- `uv run med run <op> [--input ID] [--param K=V] [--backend B] [--schema P]`
+  — generic single-op runner (cost preview, `--yes` to skip the prompt)
+- `uv run med batch <file> [--op] [--input-arg] [--param]` — fan an op
+  over a list of inputs through the DAG executor
+- `uv run med search "<query>" [--mode fulltext|semantic|hybrid] [--top-k]
+  [--kind] [--refresh]` — query the catalog
+- `uv run med cost summary|ls` — actuals from `cost_log`
+- `uv run med events tail|history` — engine event tail / history
+- `uv run med lineage <id> [--depth N]` — render the upstream tree
+- `uv run med mcp tools-json` — emit the MCP tool schema (full MCP stdio
+  server lands in Phase 4)
 - `uv run med health` / `med ready` — operational checks (Phase 4+)
 
 ## Storage

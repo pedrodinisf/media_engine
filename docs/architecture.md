@@ -296,8 +296,11 @@ events older than 7 days on open (best-effort, swallowed on error).
 What an op receives: `workdir`, `config`, `storage`, `namespace`,
 `emit`, `server_manager`, `model_pool`, `run_op` (composite recursion
 handle), `backend` (engine-resolved name — the dispatch source of
-truth). Resource semaphores are acquired by the DAG executor *around*
-the op, so ops stay declarative and never touch a lock.
+truth), and `cache` (read-only handle, set by `Engine.run`, used by
+index-building ops like `search.*` to enumerate persisted artifacts
+across runs — `None` outside Engine.run). Resource semaphores are
+acquired by the DAG executor *around* the op, so ops stay declarative
+and never touch a lock.
 
 ---
 
@@ -431,7 +434,7 @@ media_engine/
 │                          hardware · disk_guard · ffprobe · jsonschema
 ├── profiles/              schema · loader · pipeline
 ├── cli/                   __init__(entry) · _handle · run/cost/events/profile/
-│                          daemon/mcp/batch
+│                          daemon/mcp/batch · acquire_live · search
 ├── daemon/                protocol · server · client · entry
 └── mcp/                   exporter
 ```
@@ -477,11 +480,30 @@ roadmap; this section is the reconciliation):
 - New mechanisms not in the original plan, added because the
   capability charter required them: `Operation.variadic_inputs`,
   `Operation.select_backend` + `ctx.backend`, `Operation.records_cost`,
-  the `extract_invoke` non-persisting hook, `runtime/jsonschema.py`.
+  the `extract_invoke` non-persisting hook, `runtime/jsonschema.py`,
+  `OperationContext.cache` (Phase 3 — read-only handle for index-
+  building ops like `search.*`), and `LineageNode.truncated_reason`
+  (surfaces *why* a lineage walk stopped — `"max_depth"` today;
+  `"cycle"` reserved for a future case content addressing makes
+  impossible).
+- Phase-3 charter reshapings: `search.semantic` accepts only an
+  `Embedding` input (the charter's `str|Embedding` is split across
+  layers — the CLI / `search.hybrid` embed the string and feed the
+  resulting id to the op); `search.*` outputs an `Analysis` wrapping
+  `{results: [...], …}` rather than a bare `list[Artifact+score]`
+  (engine ops must return `list[AnyArtifact]`); `acquire.livestream`
+  ships one `ffmpeg-recorder` backend that internally calls the
+  `playwright-hls` sniff (charter "playwright-hls + ffmpeg-recorder"
+  read as pipeline, not two backends); `document.parse` ships the
+  nullary path only — `unstructured` and the `Document→Document`
+  re-process path land when a profile actually consumes them;
+  `pgvector` / `postgres-tsvector` move to Phase 4 with the Postgres
+  migration.
 
-Audit-driven correctness fixes (commit `fix(phase-2): close pre-Phase-3
-audit findings`) are called out inline above as *Design note (audit
-fix)*.
+Audit-driven correctness fixes are called out inline as *Design note
+(audit fix)*. Reconciliation commits: `fix(phase-1): close audit
+findings`, `fix(phase-2): close pre-Phase-3 audit findings`,
+`fix(phase-3): close pre-Phase-4 audit findings`.
 
 Phase 3 (acquisition + transcript ingest + non-video media + search,
 commits 23–28) is complete; Phase 4 (REST + full MCP + Postgres +
