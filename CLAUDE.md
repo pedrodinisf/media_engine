@@ -79,6 +79,8 @@ YAML frontmatter) or pipeline (YAML DAG).
 - `uv run med lineage <id> [--depth N]` — render the upstream tree
 - `uv run med mcp tools-json` — emit the MCP tool schema (full MCP stdio
   server lands in Phase 4)
+- `uv run med api start [--host] [--port]` — boot the FastAPI REST surface
+- `uv run med api token create|ls|revoke` — manage bearer tokens
 - `uv run med health` / `med ready` — operational checks (Phase 4+)
 
 ## Storage

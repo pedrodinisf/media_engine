@@ -38,6 +38,7 @@ console = Console()
 err_console = Console(stderr=True)
 
 # Subcommand groups.
+from media_engine.cli import api as _api_cli  # noqa: E402
 from media_engine.cli import cost as _cost_cli  # noqa: E402
 from media_engine.cli import daemon as _daemon_cli  # noqa: E402
 from media_engine.cli import events as _events_cli  # noqa: E402
@@ -54,6 +55,7 @@ app.add_typer(_mcp_cli.app, name="mcp")
 app.add_typer(_profile_cli.app, name="profile")
 app.add_typer(_cost_cli.app, name="cost")
 app.add_typer(_events_cli.app, name="events")
+app.add_typer(_api_cli.app, name="api")
 app.command("batch")(_cmd_batch)
 app.command("acquire-live")(_cmd_acquire_live)
 app.command("search")(_cmd_search)

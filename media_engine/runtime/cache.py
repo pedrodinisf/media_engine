@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from pydantic import BaseModel
 from sqlalchemy import (
     DateTime,
     Float,
@@ -192,6 +193,79 @@ class EventLogEntry(Base):
     )
 
 
+class JobRow(Base):
+    """REST-submitted unit of work (single op or compiled pipeline).
+
+    The REST surface in Phase 4 is async-first: ``POST /run`` /
+    ``POST /pipelines`` accept work and return a ``job_id`` immediately;
+    the actual op execution runs in an asyncio background task whose
+    progress is observable via ``GET /jobs/{id}`` and
+    ``GET /jobs/{id}/events`` (SSE). One row per submission; the
+    ``op_run_ids`` and ``output_artifact_ids`` JSON columns accumulate
+    as ops complete inside the job.
+    """
+
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    pipeline_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    pipeline_yaml: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    op_run_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]"
+    )
+    output_artifact_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]"
+    )
+    namespace: Mapped[str] = mapped_column(
+        String, nullable=False, default="default"
+    )
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("idx_jobs_status", "status"),
+        Index("idx_jobs_submitted", "submitted_at"),
+    )
+
+
+class ApiToken(Base):
+    """Bearer tokens for the REST surface.
+
+    Tokens are hashed at rest (sha256 of the raw 32-byte secret). The
+    raw secret is returned exactly once at creation time; the server
+    only ever compares hashes thereafter. ``label`` is a human-readable
+    name (e.g. ``"laptop-cli"``).
+    """
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True
+    )
+    label: Mapped[str] = mapped_column(String, nullable=False, default="")
+    namespace: Mapped[str] = mapped_column(
+        String, nullable=False, default="default"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (Index("idx_tokens_hash", "token_hash"),)
+
+
 # ─────────────────────────────────────────────────────────────────
 # Pydantic ↔ SQLAlchemy boundary (the only crossings)
 # ─────────────────────────────────────────────────────────────────
@@ -226,6 +300,57 @@ def to_pydantic(row: CachedArtifact) -> AnyArtifact:
         produced_by=row.produced_by,
         namespace=row.namespace,
         created_at=_ensure_utc(row.created_at),
+    )
+
+
+class Job(BaseModel):
+    """REST job — one async unit of work submitted via the API.
+
+    A job wraps either a single op (``POST /run``) or a compiled pipeline
+    (``POST /pipelines``). The row is created in ``pending`` immediately on
+    submission so the client always has an id to poll; the background
+    runner flips it to ``running`` and finally to ``completed`` /
+    ``failed`` / ``cancelled``.
+    """
+
+    id: str
+    pipeline_name: str | None = None
+    status: str  # pending | running | completed | failed | cancelled
+    op_run_ids: list[str] = []
+    output_artifact_ids: list[str] = []
+    namespace: str = "default"
+    submitted_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: dict[str, Any] | None = None
+
+
+class ApiTokenInfo(BaseModel):
+    """Public projection of an API token row (no hash, no secret)."""
+
+    id: str
+    label: str
+    namespace: str
+    created_at: datetime
+    revoked_at: datetime | None = None
+
+
+def _job_from_row(row: JobRow) -> Job:
+    return Job(
+        id=row.id,
+        pipeline_name=row.pipeline_name,
+        status=row.status,
+        op_run_ids=list(json.loads(row.op_run_ids_json)),
+        output_artifact_ids=list(json.loads(row.output_artifact_ids_json)),
+        namespace=row.namespace,
+        submitted_at=_ensure_utc(row.submitted_at),
+        started_at=(
+            _ensure_utc(row.started_at) if row.started_at else None
+        ),
+        finished_at=(
+            _ensure_utc(row.finished_at) if row.finished_at else None
+        ),
+        error=json.loads(row.error_json) if row.error_json else None,
     )
 
 
@@ -494,6 +619,143 @@ class Cache:
             if limit is not None:
                 stmt = stmt.limit(limit)
             return list(s.scalars(stmt).all())
+
+    # ── jobs (Phase 4 REST surface) ──
+
+    def insert_job(
+        self,
+        *,
+        job_id: str,
+        pipeline_name: str | None,
+        pipeline_yaml: str | None,
+        namespace: str = "default",
+        submitted_at: datetime | None = None,
+    ) -> None:
+        with self.session() as s:
+            s.add(
+                JobRow(
+                    id=job_id,
+                    pipeline_name=pipeline_name,
+                    pipeline_yaml=pipeline_yaml,
+                    status="pending",
+                    op_run_ids_json="[]",
+                    output_artifact_ids_json="[]",
+                    namespace=namespace,
+                    submitted_at=_ensure_utc(submitted_at or datetime.now(UTC)),
+                )
+            )
+
+    def update_job(
+        self,
+        *,
+        job_id: str,
+        status: str | None = None,
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
+        op_run_ids: list[str] | None = None,
+        output_artifact_ids: list[str] | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        with self.session() as s:
+            row = s.get(JobRow, job_id)
+            if row is None:
+                return
+            if status is not None:
+                row.status = status
+            if started_at is not None:
+                row.started_at = _ensure_utc(started_at)
+            if finished_at is not None:
+                row.finished_at = _ensure_utc(finished_at)
+            if op_run_ids is not None:
+                row.op_run_ids_json = json.dumps(op_run_ids)
+            if output_artifact_ids is not None:
+                row.output_artifact_ids_json = json.dumps(output_artifact_ids)
+            if error is not None:
+                row.error_json = json.dumps(error, sort_keys=True)
+
+    def get_job(self, job_id: str, namespace: str = "default") -> Job | None:
+        with self.session() as s:
+            row = s.get(JobRow, job_id)
+            if row is None or row.namespace != namespace:
+                return None
+            return _job_from_row(row)
+
+    def list_jobs(
+        self,
+        *,
+        status: str | None = None,
+        namespace: str = "default",
+        limit: int = 100,
+    ) -> list[Job]:
+        with self.session() as s:
+            stmt = select(JobRow).where(JobRow.namespace == namespace)
+            if status is not None:
+                stmt = stmt.where(JobRow.status == status)
+            stmt = stmt.order_by(JobRow.submitted_at.desc()).limit(limit)
+            return [_job_from_row(r) for r in s.scalars(stmt).all()]
+
+    # ── api tokens (Phase 4 REST surface) ──
+
+    def insert_api_token(
+        self,
+        *,
+        token_id: str,
+        token_hash: str,
+        label: str,
+        namespace: str = "default",
+        created_at: datetime | None = None,
+    ) -> None:
+        with self.session() as s:
+            s.add(
+                ApiToken(
+                    id=token_id,
+                    token_hash=token_hash,
+                    label=label,
+                    namespace=namespace,
+                    created_at=_ensure_utc(created_at or datetime.now(UTC)),
+                )
+            )
+
+    def list_api_tokens(self, *, include_revoked: bool = False) -> list[ApiTokenInfo]:
+        with self.session() as s:
+            stmt = select(ApiToken)
+            if not include_revoked:
+                stmt = stmt.where(ApiToken.revoked_at.is_(None))
+            stmt = stmt.order_by(ApiToken.created_at.desc())
+            return [
+                ApiTokenInfo(
+                    id=r.id,
+                    label=r.label,
+                    namespace=r.namespace,
+                    created_at=_ensure_utc(r.created_at),
+                    revoked_at=(
+                        _ensure_utc(r.revoked_at) if r.revoked_at else None
+                    ),
+                )
+                for r in s.scalars(stmt).all()
+            ]
+
+    def find_api_token_by_hash(self, token_hash: str) -> ApiTokenInfo | None:
+        with self.session() as s:
+            stmt = select(ApiToken).where(ApiToken.token_hash == token_hash)
+            row = s.scalars(stmt).first()
+            if row is None or row.revoked_at is not None:
+                return None
+            return ApiTokenInfo(
+                id=row.id,
+                label=row.label,
+                namespace=row.namespace,
+                created_at=_ensure_utc(row.created_at),
+                revoked_at=None,
+            )
+
+    def revoke_api_token(self, token_id: str) -> bool:
+        with self.session() as s:
+            row = s.get(ApiToken, token_id)
+            if row is None or row.revoked_at is not None:
+                return False
+            row.revoked_at = datetime.now(UTC)
+            return True
 
     def prune_events(self, *, older_than: datetime) -> int:
         """Delete events older than ``older_than``. Returns rows removed."""

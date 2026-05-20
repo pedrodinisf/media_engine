@@ -1,0 +1,78 @@
+"""CLI surface for ``med api`` — token CRUD.
+
+``med api start`` boots uvicorn and we don't exercise that here (it's
+covered indirectly by ``test_api.py`` through ``build_app``). The token
+subcommands talk to the cache directly so the first token can be
+minted before any server is running.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from media_engine.cli import app
+
+
+@pytest.fixture
+def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("MEDIA_ENGINE_PERMANENT_STORE", str(tmp_path / "store"))
+    monkeypatch.setenv("MEDIA_ENGINE_WORKDIR", str(tmp_path / "work"))
+    monkeypatch.setenv(
+        "MEDIA_ENGINE_CACHE_DB_URL",
+        f"sqlite+pysqlite:///{tmp_path / 'cache.db'}",
+    )
+    monkeypatch.setenv("MEDIA_ENGINE_MIN_FREE_GB", "0")
+    return tmp_path
+
+
+@pytest.fixture
+def runner() -> CliRunner:
+    return CliRunner()
+
+
+def test_token_create_then_list(runner: CliRunner, cli_env: Path) -> None:
+    create = runner.invoke(
+        app, ["api", "token", "create", "--label", "ci", "--json"]
+    )
+    assert create.exit_code == 0, create.stdout
+    payload = json.loads(create.stdout)
+    assert payload["label"] == "ci"
+    assert payload["secret"]
+    token_id = payload["token_id"]
+
+    listed = runner.invoke(app, ["api", "token", "ls", "--json"])
+    assert listed.exit_code == 0
+    rows = json.loads(listed.stdout)
+    assert any(r["id"] == token_id for r in rows)
+
+
+def test_token_revoke(runner: CliRunner, cli_env: Path) -> None:
+    payload = json.loads(
+        runner.invoke(
+            app, ["api", "token", "create", "--json"]
+        ).stdout
+    )
+    revoke = runner.invoke(app, ["api", "token", "revoke", payload["token_id"]])
+    assert revoke.exit_code == 0
+    # The list should show no live tokens now (default excludes revoked).
+    listed = runner.invoke(app, ["api", "token", "ls", "--json"])
+    assert listed.exit_code == 0
+    assert json.loads(listed.stdout) == []
+
+
+def test_token_revoke_unknown_returns_nonzero(
+    runner: CliRunner, cli_env: Path
+) -> None:
+    r = runner.invoke(app, ["api", "token", "revoke", "00000000"])
+    assert r.exit_code != 0
+
+
+def test_api_help(runner: CliRunner, cli_env: Path) -> None:
+    r = runner.invoke(app, ["api", "--help"])
+    assert r.exit_code == 0
+    assert "token" in r.stdout
+    assert "start" in r.stdout
