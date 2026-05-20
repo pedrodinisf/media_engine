@@ -1,12 +1,27 @@
 """MCP exposure for the engine.
 
-Phase 1 (commit 9) ships the *exporter* only — every Operation auto-renders
-as an MCP tool definition. The actual MCP server (over stdio) lands in
-Phase 4 commit 30, but the exposure mechanism is shipped now so that
-``med mcp tools-json`` already produces the schemas a Claude Code
-``claude mcp add`` config could consume.
+Two surfaces live here:
+
+- ``exporter.py`` (Phase 1) — turns every registered Operation into an
+  MCP tool spec; powers ``med mcp tools-json`` and the runtime server.
+- ``server.py`` (Phase 4 commit 30) — runs an actual MCP server over
+  stdio with an allow-list of exposed ops, dispatching ``tools/call`` to
+  ``Engine.run`` and exposing artifacts as ``media://`` resources.
 """
 
 from .exporter import export_all_ops, export_op_as_mcp_tool
+from .server import (
+    DEFAULT_ALLOWED_OPS,
+    MCPSecurityConfig,
+    build_mcp_server,
+    serve_stdio,
+)
 
-__all__ = ["export_all_ops", "export_op_as_mcp_tool"]
+__all__ = [
+    "DEFAULT_ALLOWED_OPS",
+    "MCPSecurityConfig",
+    "build_mcp_server",
+    "export_all_ops",
+    "export_op_as_mcp_tool",
+    "serve_stdio",
+]
