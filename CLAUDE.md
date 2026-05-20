@@ -82,6 +82,10 @@ YAML frontmatter) or pipeline (YAML DAG).
   server (default policy: read-only — only `search.*` ops exposed)
 - `uv run med api start [--host] [--port]` — boot the FastAPI REST surface
 - `uv run med api token create|ls|revoke` — manage bearer tokens
+- `uv run med db migrate [--db-url]` — alembic upgrade head against the
+  configured cache (sqlite or postgres)
+- `uv run med db dump-sqlite-to-postgres --to <url>` — one-shot SQLite →
+  Postgres copy with pre/post sha256 verification
 - `uv run med health` / `med ready` — operational checks (Phase 4+)
 
 ## Storage

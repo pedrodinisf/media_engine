@@ -252,6 +252,25 @@ def _backend_classes() -> list[type]:
     except ImportError:
         pass
 
+    # Postgres-backed search backends (Phase 4 commit 31). Import-clean:
+    # the modules themselves only need ``psycopg`` at execute-time. We
+    # still gate by ImportError so deployments without psycopg installed
+    # at all don't see the import fail.
+    try:
+        from media_engine.backends.search.pgvector import (
+            PgVectorSemanticBackend,
+        )
+        classes.append(PgVectorSemanticBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.search.postgres_tsvector import (
+            PostgresTsvectorBackend,
+        )
+        classes.append(PostgresTsvectorBackend)
+    except ImportError:
+        pass
+
     return classes
 
 
