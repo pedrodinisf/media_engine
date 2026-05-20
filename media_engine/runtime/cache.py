@@ -45,7 +45,7 @@ from media_engine.artifacts.text import (
     Transcript,
     WebPage,
 )
-from media_engine.runtime.lineage import LineageNode, OperationRunRef
+from media_engine.runtime.lineage import LineageNode, OperationRunRef, TruncatedReason
 
 # Map Kind enum → concrete Pydantic class (for to_pydantic dispatch).
 _KIND_TO_CLASS: dict[Kind, type[AnyArtifact]] = {
@@ -563,12 +563,23 @@ class Cache:
             return None
         op_run = self.get_run(artifact.produced_by) if artifact.produced_by else None
         parents: list[LineageNode] = []
+        truncated_reason: TruncatedReason | None = None
         if depth_remaining > 0:
             for pid in artifact.derived_from:
                 child = self._build_lineage(pid, namespace, depth_remaining - 1, seen)
                 if child is not None:
                     parents.append(child)
-        return LineageNode(artifact=artifact, op_run=op_run, parents=parents)
+        elif artifact.derived_from:
+            # Out of depth budget but the artifact still has parents we
+            # haven't walked — flag the truncation so callers can render
+            # it instead of silently flattening the tree.
+            truncated_reason = "max_depth"
+        return LineageNode(
+            artifact=artifact,
+            op_run=op_run,
+            parents=parents,
+            truncated_reason=truncated_reason,
+        )
 
     def close(self) -> None:
         self.engine.dispose()

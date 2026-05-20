@@ -367,6 +367,52 @@ the executor consumes.
   `retry_policy`; 429/transient retried (honoring `Retry-After`),
   auth/deterministic not, cancellation propagated immediately.
 
+### 9.1 Reanalysis recipe (cache-hit math by example)
+
+Content addressing makes "the same job again, but with one knob
+tweaked" cheap by construction. Walk the bundled
+`profiles/examples/url-to-summary.yaml` four-node DAG:
+
+```
+video      = acquire.url(url="…", quality="best")
+audio      = video.extract_audio(video)
+transcript = audio.transcribe(audio,  language="en")
+summary    = intelligence.summarize(transcript, focus="main argument")
+```
+
+**First run.** No cache hits — every node fetches its inputs, runs,
+writes a `cached_operation_runs` row, persists the artifact, and a
+`cost_log` row. The total spend is the sum of all four.
+
+**Second run, summarize focus changed to `"counterarguments"`.** The
+derived id of `summary` is `sha256(kind="analysis", op="intelligence.summarize",
+op_version, backend, backend_version, canonical_params={focus:…},
+sorted(input_ids=[transcript.id]))` — the params dict changed, so
+the id changes. But the *upstream* nodes' params are identical, the
+upstream input ids are identical, the upstream op versions are
+identical → their derived ids are unchanged → they each hit the
+cache. `med cost summary` shows a single new row (the summarize call);
+the other three contribute 0.
+
+**Force a fresh fetch upstream.** Two knobs:
+
+1. **Bump `op.version`** on the upstream op (in source). Every derived
+   id downstream of that op recomputes. This is the right move when
+   the op's *semantics* changed (e.g., transcribe now emits
+   word-level timestamps).
+2. **Pass a `refresh_nonce`** param (currently honored by `search.*`)
+   or change an input param. This is the right move when the *outside
+   world* changed (the page at that URL was updated; the live stream
+   was re-recorded) but the op itself didn't.
+
+The same recipe works for the heavier davos / framepulse profiles
+landing in Phase 5 — the math is identical, just with more nodes.
+
+`med lineage <id>` renders the upstream tree end-to-end (depth-limited
++ cycle-safe + tagged with `truncated_reason` when a branch is
+elided). `--json` returns the full structure for REST consumers in
+Phase 4.
+
 ---
 
 ## 10. Module map (one line each)
@@ -395,10 +441,13 @@ media_engine/
 ## 11. Status & deviations from the plan
 
 **Phases 0–2 complete** (commits 1–22 + two audit-fix commits); **Phase
-3 in progress** (commits 23–27: `acquire.url`, `metadata.scrape_page`,
-`acquire.livestream` + `med acquire-live`, `transcript.parse` +
-`transcript.merge`, `document.parse` + `web.fetch`, `search.*` +
-`med search`). Suite: 613 passed / 23 skipped
+3 complete** (commits 23–28). Phase 3 added `acquire.url` +
+`acquire.livestream`, `metadata.scrape_page`, `transcript.parse` +
+`transcript.merge`, `document.parse` + `web.fetch`, the
+`search.semantic`/`fulltext`/`hybrid` trio + `med search`, and the
+final hardening pass (lineage `truncated_reason`, `med acquire-url`
+shortcut, `profiles/examples/url-to-summary.yaml`, reanalysis recipe
+in §9.1). **31 ops.** Suite: 621 passed / 23 skipped
 (dependency/API-key/network gated); `ruff` and strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
@@ -435,7 +484,8 @@ audit findings`) are called out inline above as *Design note (audit
 fix)*.
 
 Phase 3 (acquisition + transcript ingest + non-video media + search,
-commits 23–28) starts from a green, reconciled base.
+commits 23–28) is complete; Phase 4 (REST + full MCP + Postgres +
+IaaC) is the next work.
 
 ---
 

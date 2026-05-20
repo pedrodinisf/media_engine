@@ -321,6 +321,34 @@ def test_lineage_tree_depth_limit(cache: Cache, tmp_path: Path) -> None:
     # depth=1 means the audio node still resolves but its further parents don't
     assert tree.parents[0].artifact.id == "audio000"
     assert tree.parents[0].parents == []
+    # The truncated audio node carries the explicit "we stopped here" flag
+    # so REST / CLI consumers can render it rather than silently lying.
+    assert tree.parents[0].truncated_reason == "max_depth"
+    assert tree.truncated_reason is None  # the root walked successfully
+
+
+def test_lineage_tree_depth_zero_flags_truncation(
+    cache: Cache, tmp_path: Path
+) -> None:
+    """``max_depth=0`` truncates immediately if the artifact has parents."""
+    v = _video("video111", tmp_path)
+    cache.upsert_artifact(v)
+    a = _audio("audio111", tmp_path, parent_id="video111")
+    cache.upsert_artifact(a)
+    tree = cache.lineage_tree("audio111", max_depth=0)
+    assert tree is not None
+    assert tree.parents == []
+    assert tree.truncated_reason == "max_depth"
+
+
+def test_lineage_tree_leaf_no_truncation(cache: Cache, tmp_path: Path) -> None:
+    """A leaf (no ``derived_from``) is never flagged truncated, even at
+    depth 0."""
+    v = _video("video222", tmp_path)
+    cache.upsert_artifact(v)
+    tree = cache.lineage_tree("video222", max_depth=0)
+    assert tree is not None
+    assert tree.truncated_reason is None
 
 
 # ─────────────────────────────────────────────────────────────────

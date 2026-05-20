@@ -299,6 +299,10 @@ def _lineage_label(node: LineageNode) -> str:
     base = f"[cyan]{_short_id(a.id)}[/cyan] {a.kind.value}"
     if node.op_run is not None:
         base += f" via [yellow]{node.op_run.op_name}[/yellow]@{node.op_run.op_version}"
+    if node.truncated_reason == "max_depth":
+        base += " [dim](… parents truncated; pass --depth N to expand)[/dim]"
+    elif node.truncated_reason == "cycle":
+        base += " [dim](cycle — branch elided)[/dim]"
     return base
 
 
@@ -309,8 +313,46 @@ def _render_lineage(node: LineageNode, tree: Tree) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-# Run-style shortcuts: `med acquire`, `med extract-audio`
+# Run-style shortcuts: `med acquire`, `med acquire-url`, `med extract-audio`
 # ─────────────────────────────────────────────────────────────────
+
+
+@app.command("acquire-url")
+def cmd_acquire_url(
+    url: Annotated[str, typer.Argument(help="Page or media URL to acquire")],
+    quality: Annotated[
+        str,
+        typer.Option("--quality", help="yt-dlp format selector (or 'best')"),
+    ] = "best",
+    backend: Annotated[
+        str | None,
+        typer.Option(
+            "--backend",
+            help="Force a backend (yt-dlp | playwright-hls)",
+        ),
+    ] = None,
+) -> None:
+    """Fetch a remote video into the typed store (``acquire.url``)."""
+    async def _go() -> list[AnyArtifact] | None:
+        async with open_handle(_load_config()) as h:
+            kwargs: dict[str, Any] = {"url": url, "quality": quality}
+            if backend is not None:
+                kwargs["backend"] = backend
+            if _opts.dry_run:
+                est = h.estimate_op_cost("acquire.url", **kwargs)
+                _print_cost_preview("acquire.url", est)
+                return None
+            try:
+                return await h.run("acquire.url", **kwargs)
+            except typer.Exit:
+                raise
+            except Exception as e:
+                err_console.print(f"[red]acquire.url failed: {e}[/red]")
+                raise typer.Exit(1) from None
+
+    outputs = asyncio.run(_go())
+    if outputs is not None:
+        _emit_outputs(outputs)
 
 
 @app.command("acquire")

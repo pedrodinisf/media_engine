@@ -56,6 +56,49 @@ def test_lineage_node_recursive_round_trip(tmp_path: Path) -> None:
     assert back.parents[0].artifact.id == "vid"
 
 
+def test_truncated_reason_round_trips(tmp_path: Path) -> None:
+    node = LineageNode(
+        artifact=_video(tmp_path), truncated_reason="max_depth"
+    )
+    back = LineageNode.model_validate_json(node.model_dump_json())
+    assert back.truncated_reason == "max_depth"
+
+
+def test_flatten_ids_preorder(tmp_path: Path) -> None:
+    grandparent = LineageNode(artifact=_video(tmp_path, "1"))
+    parent = LineageNode(
+        artifact=Audio(
+            id="aud-mid",
+            path=tmp_path / "m.wav",
+            derived_from=("vid1",),
+            created_at=_now(),
+        ),
+        parents=[grandparent],
+    )
+    child = LineageNode(
+        artifact=Audio(
+            id="aud-top",
+            path=tmp_path / "t.wav",
+            derived_from=("aud-mid",),
+            created_at=_now(),
+        ),
+        parents=[parent],
+    )
+    # Pre-order: top → mid → bottom.
+    assert child.flatten_ids() == ["aud-top", "aud-mid", "vid1"]
+
+
+def test_to_dict_is_json_safe(tmp_path: Path) -> None:
+    import json as _json
+
+    node = LineageNode(artifact=_video(tmp_path), truncated_reason="cycle")
+    payload = node.to_dict()
+    # Round-trips through JSON without losing the truncation flag.
+    rt = _json.loads(_json.dumps(payload))
+    assert rt["truncated_reason"] == "cycle"
+    assert rt["artifact"]["kind"] == "video"
+
+
 def test_lineage_node_three_levels_deep(tmp_path: Path) -> None:
     grandparent = LineageNode(artifact=_video(tmp_path, "1"))
     parent = LineageNode(

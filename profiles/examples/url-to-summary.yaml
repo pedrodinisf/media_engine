@@ -1,0 +1,43 @@
+profile_schema_version: "1.0"
+name: url-to-summary
+kind: pipeline
+description: >
+  URL → Video → Audio → Transcript → Summary. End-to-end example
+  pipeline whose primary purpose is to demonstrate the engine's
+  **reanalysis** behavior: bump the summarize prompt and only the
+  ``summary`` node re-runs — acquire / extract_audio / transcribe stay
+  on cache. The reanalysis recipe in ``docs/architecture.md`` walks the
+  math node-by-node.
+
+  Edit the ``url`` param below to point at your own session before
+  running. The youtube link is the canonical "first video ever
+  uploaded" — short, public, predictable, and stable enough to be a
+  smoke target. Real backends (yt-dlp, mlx-whisper, Gemini /
+  intelligence.summarize) are needed at execute time; bump
+  ``focus`` and re-run to watch only the summary cost reappear in
+  ``med cost summary``.
+inputs: []
+graph:
+  - id: video
+    op: acquire.url
+    params:
+      url: "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+      quality: "best"
+
+  - id: audio
+    op: video.extract_audio
+    inputs: { in: video }
+
+  - id: transcript
+    op: audio.transcribe
+    inputs: { in: audio }
+    params:
+      language: en
+
+  - id: summary
+    op: intelligence.summarize
+    inputs: { in: transcript }
+    params:
+      focus: "main argument"
+
+outputs: [summary]
