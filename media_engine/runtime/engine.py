@@ -247,6 +247,7 @@ class Engine:
             model_pool=self.model_pool,
             run_op=self.run,
             backend=backend_name,
+            cache=self.cache,
         )
 
         started_at = datetime.now(UTC)

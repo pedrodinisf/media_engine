@@ -70,6 +70,11 @@ class OperationContext:
     model_pool: Any | None = None
     run_op: Callable[..., Any] | None = None
     backend: str | None = None
+    # Read-only handle to the engine's cache — used by ops that need to
+    # enumerate artifacts across runs (e.g. ``search.*`` building an
+    # index over every persisted Transcript / Embedding / Document).
+    # ``None`` outside of ``Engine.run``.
+    cache: Any | None = None
 
 
 class Operation(ABC):

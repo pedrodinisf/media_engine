@@ -49,6 +49,9 @@ def _op_classes() -> list[type]:
     from media_engine.ops.intelligence.extract import IntelligenceExtract
     from media_engine.ops.intelligence.summarize import IntelligenceSummarize
     from media_engine.ops.metadata.scrape_page import MetadataScrapePage
+    from media_engine.ops.search.fulltext import SearchFulltext
+    from media_engine.ops.search.hybrid import SearchHybrid
+    from media_engine.ops.search.semantic import SearchSemantic
     from media_engine.ops.transcript.merge import TranscriptMerge
     from media_engine.ops.transcript.parse import TranscriptParse
     from media_engine.ops.video.extract_audio import VideoExtractAudio
@@ -79,6 +82,9 @@ def _op_classes() -> list[type]:
         IntelligenceExtract,
         IntelligenceSummarize,
         MetadataScrapePage,
+        SearchFulltext,
+        SearchHybrid,
+        SearchSemantic,
         TranscriptMerge,
         TranscriptParse,
         VideoExtractAudio,
@@ -103,6 +109,8 @@ def _backend_classes() -> list[type]:
     from media_engine.backends.sample_frames.ffmpeg_uniform import (
         FfmpegUniformBackend,
     )
+    from media_engine.backends.search.sqlite import SqliteSemanticBackend
+    from media_engine.backends.search.sqlite_fts5 import SqliteFts5Backend
     from media_engine.backends.transcribe.mlx_whisper import (
         MlxWhisperDetectLanguageBackend,
         MlxWhisperTranscribeBackend,
@@ -116,6 +124,8 @@ def _backend_classes() -> list[type]:
         YtdlpAcquireBackend,
         FfmpegRecorderBackend,
         HttpxWebFetchBackend,
+        SqliteSemanticBackend,
+        SqliteFts5Backend,
         MlxWhisperTranscribeBackend,
         MlxWhisperDetectLanguageBackend,
         FfmpegUniformBackend,

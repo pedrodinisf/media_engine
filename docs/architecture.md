@@ -204,7 +204,7 @@ in-memory (`finalize_extract_data`).
 > never GC-visible). The `extract_invoke` split removes persistence from
 > the per-window path entirely.
 
-### 4.4 Op catalog (Phases 0–2 + Phase 3 in progress, 28 ops)
+### 4.4 Op catalog (Phases 0–2 + Phase 3 in progress, 31 ops)
 
 | Group | Ops | Backend layer |
 |---|---|---|
@@ -213,6 +213,7 @@ in-memory (`finalize_extract_data`).
 | transcript | parse, merge | — (pure-Python; one parser for srt/speakered_txt/vtt) |
 | document | parse | pymupdf (unstructured deferred) |
 | web | fetch | httpx (static); playwright (render_js=True) |
+| search | semantic, fulltext, hybrid | semantic: sqlite (brute-force cosine) · fulltext: sqlite-fts5 · hybrid: composite (RRF) |
 | video | extract_audio, trim, sample_frames, multimodal | sample_frames: ffmpeg-uniform/pyscenedetect · multimodal: gemini/vllm-mlx |
 | audio | transcribe, detect_language, diarize, transcribe_diarized | transcribe/detect: mlx-whisper · diarize: pyannote · t_d: composite |
 | frames | subsample, analyze, compare | analyze: gemini/vllm-mlx · compare: gemini |
@@ -329,7 +330,8 @@ the executor consumes.
   `--yes`; global `--dry-run` prints & exits; `--input/--backend/
   --param k=v/--schema`); `med profile ls|show|run`; `med batch`;
   `med acquire-live` (live HLS capture; SIGUSR1 / pynput-hotkey
-  segmentation); `med cost ls|summary`; `med events tail|history`; `med daemon|mcp`.
+  segmentation); `med search` (`--mode fulltext|semantic|hybrid`,
+  `--kind`, `--top-k`, `--refresh`); `med cost ls|summary`; `med events tail|history`; `med daemon|mcp`.
   `cli/_handle.py` is the daemon-aware seam: a 50 ms ping picks a
   daemon-routed handle or falls back to in-process `open_quick` — command
   code never branches on "is the daemon up?".
@@ -376,7 +378,7 @@ media_engine/
 ├── config.py              pydantic-settings, MEDIA_ENGINE_* env, config.toml
 ├── logging_setup.py       text default, JSON via MEDIA_ENGINE_LOG_FORMAT
 ├── artifacts/             base (Kind/Artifact/hashing) · media · text · analysis
-├── ops/                   _base · _registry · <group>/<verb>.py (28 ops)
+├── ops/                   _base · _registry · <group>/<verb>.py (31 ops)
 ├── backends/              _base · _pricing · _gemini_vision · <group>_<verb>/<provider>.py
 ├── runtime/               engine · cache · storage · dag · retry · events
 │                          cost_tracker · lineage · model_pool · server_manager
@@ -393,11 +395,18 @@ media_engine/
 ## 11. Status & deviations from the plan
 
 **Phases 0–2 complete** (commits 1–22 + two audit-fix commits); **Phase
-3 in progress** (commits 23–26: `acquire.url`, `metadata.scrape_page`,
+3 in progress** (commits 23–27: `acquire.url`, `metadata.scrape_page`,
 `acquire.livestream` + `med acquire-live`, `transcript.parse` +
-`transcript.merge`, `document.parse` + `web.fetch`). Suite: 577 passed
-/ 23 skipped (dependency/API-key/network gated); `ruff` and strict
-`pyright` clean.
+`transcript.merge`, `document.parse` + `web.fetch`, `search.*` +
+`med search`). Suite: 613 passed / 23 skipped
+(dependency/API-key/network gated); `ruff` and strict `pyright` clean.
+
+> *Charter deviation (commit 27).* The plan §3 names the semantic
+> backend ``sqlite-vss`` (loadable extension). We ship a plain SQLite
+> + brute-force cosine implementation as backend ``sqlite`` — same
+> storage schema, no optional dep, sub-1k-artifact corpora stay snappy.
+> An ``sqlite-vss`` backend can land later as a *separate* backend
+> name (cache keys are backend-versioned, so swapping is non-breaking).
 
 Reasonable, intentional divergences from the plan text (the plan is the
 roadmap; this section is the reconciliation):
