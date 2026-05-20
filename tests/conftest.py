@@ -96,6 +96,17 @@ def sample_png() -> Path:
 
 
 @pytest.fixture
+def tiny_pdf() -> Path:
+    p = FIXTURE_DIR / "tiny.pdf"
+    if not p.exists():
+        pytest.skip(
+            "tiny.pdf missing — run `python tests/fixtures/build_fixtures.py` "
+            "(requires `uv sync --extra document`)"
+        )
+    return p
+
+
+@pytest.fixture
 def tiny_hls_dir() -> Path:
     """Directory holding the synthetic ``index.m3u8`` + ``.ts`` segments."""
     d = FIXTURE_DIR / "tiny_hls"

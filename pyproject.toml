@@ -71,6 +71,7 @@ markers = [
     "needs_postgres: requires MEDIA_ENGINE_TEST_POSTGRES_URL",
     "needs_ytdlp: requires the yt-dlp binary + network (CI optional)",
     "needs_playwright: requires playwright + a chromium browser install",
+    "needs_pymupdf: requires pymupdf (uv sync --extra document)",
 ]
 
 [tool.ruff]

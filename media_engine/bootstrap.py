@@ -36,6 +36,7 @@ def _op_classes() -> list[type]:
         AudioTranscribeDiarized,
     )
     from media_engine.ops.chunk.semantic import ChunkSemantic
+    from media_engine.ops.document.parse import DocumentParse
     from media_engine.ops.embed.text import EmbedText
     from media_engine.ops.frames.analyze import FramesAnalyze
     from media_engine.ops.frames.compare import FramesCompare
@@ -54,6 +55,7 @@ def _op_classes() -> list[type]:
     from media_engine.ops.video.multimodal import VideoMultimodal
     from media_engine.ops.video.sample_frames import VideoSampleFrames
     from media_engine.ops.video.trim import VideoTrim
+    from media_engine.ops.web.fetch import WebFetch
 
     return [
         AcquireLivestream,
@@ -64,6 +66,7 @@ def _op_classes() -> list[type]:
         AudioTranscribe,
         AudioTranscribeDiarized,
         ChunkSemantic,
+        DocumentParse,
         EmbedText,
         FramesAnalyze,
         FramesCompare,
@@ -82,6 +85,7 @@ def _op_classes() -> list[type]:
         VideoMultimodal,
         VideoSampleFrames,
         VideoTrim,
+        WebFetch,
     ]
 
 
@@ -106,10 +110,12 @@ def _backend_classes() -> list[type]:
     from media_engine.backends.video_multimodal.vllm_mlx import (
         VllmMlxVideoMultimodalBackend,
     )
+    from media_engine.backends.web.httpx import HttpxWebFetchBackend
 
     classes: list[type] = [
         YtdlpAcquireBackend,
         FfmpegRecorderBackend,
+        HttpxWebFetchBackend,
         MlxWhisperTranscribeBackend,
         MlxWhisperDetectLanguageBackend,
         FfmpegUniformBackend,
@@ -125,6 +131,18 @@ def _backend_classes() -> list[type]:
             PlaywrightHlsAcquireBackend,
         )
         classes.append(PlaywrightHlsAcquireBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.document.pymupdf import PyMuPdfBackend
+        classes.append(PyMuPdfBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.web.playwright import (
+            PlaywrightWebFetchBackend,
+        )
+        classes.append(PlaywrightWebFetchBackend)
     except ImportError:
         pass
     try:

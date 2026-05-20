@@ -26,6 +26,7 @@ SAMPLE_SPEECH_WAV = FIXTURE_DIR / "sample_speech.wav"
 SAMPLE_DIALOGUE_WAV = FIXTURE_DIR / "sample_dialogue.wav"
 SAMPLE_PNG = FIXTURE_DIR / "sample.png"
 TINY_HLS_DIR = FIXTURE_DIR / "tiny_hls"
+TINY_PDF = FIXTURE_DIR / "tiny.pdf"
 
 OCR_TEXT = "MEDIA ENGINE"
 
@@ -256,6 +257,36 @@ def build_tiny_hls(force: bool = False) -> None:
     )
 
 
+def build_tiny_pdf(force: bool = False) -> None:
+    """A 2-page PDF with known text for ``document.parse`` tests.
+
+    Built via pymupdf if installed (``uv sync --extra document``);
+    otherwise the committed ``tiny.pdf`` is left in place so the test
+    suite still has the fixture.
+    """
+    if TINY_PDF.exists() and not force:
+        return
+    try:
+        import fitz  # type: ignore  # noqa: I001,PGH003
+    except ImportError:
+        sys.stderr.write(
+            "skipping tiny.pdf: pymupdf not installed "
+            "(uv sync --extra document to rebuild)\n"
+        )
+        return
+    doc = fitz.open()
+    try:
+        page = doc.new_page(width=300, height=200)
+        page.insert_text((40, 60), "media-engine test document")
+        page.insert_text((40, 90), "Page one body text.")
+        page = doc.new_page(width=300, height=200)
+        page.insert_text((40, 60), "Second page line.")
+        doc.set_metadata({"title": "Tiny Test PDF"})
+        doc.save(str(TINY_PDF))
+    finally:
+        doc.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rebuild", action="store_true", help="rebuild even if present")
@@ -268,6 +299,7 @@ def main() -> None:
     build_sample_dialogue_wav(force=args.rebuild)
     build_sample_png(force=args.rebuild)
     build_tiny_hls(force=args.rebuild)
+    build_tiny_pdf(force=args.rebuild)
 
     print(f"Fixtures ready in {FIXTURE_DIR}")
     for f in (SAMPLE_MP4, SAMPLE_M4A, CORRUPT_MP4, SAMPLE_SPEECH_WAV,
