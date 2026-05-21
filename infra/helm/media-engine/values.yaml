@@ -1,0 +1,49 @@
+# media_engine — Helm values.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/anthropics/media-engine
+  tag: ""        # falls back to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+# Postgres connection string the engine should use. Required for any
+# production deployment — the default is a placeholder.
+db:
+  url: "postgresql+psycopg://media_engine:CHANGEME@postgres:5432/media_engine"
+
+storage:
+  permanentStore: "/var/lib/media_engine"
+  pvc:
+    enabled: true
+    storageClassName: ""
+    size: 100Gi
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: media-engine.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+# Set true to mount a Secret named ``media-engine-config`` at
+# /home/engine/.config/media_engine/.
+externalConfig:
+  enabled: false
+  secretName: ""

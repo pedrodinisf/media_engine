@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 
 from media_engine.api._state import AppState
+from media_engine.api.health import router as health_router
 from media_engine.api.routes import router
 from media_engine.bootstrap import register_all
 from media_engine.config import EngineConfig
@@ -73,6 +74,7 @@ def build_app(
         ),
         lifespan=lifespan,
     )
+    app.include_router(health_router)
     app.include_router(router)
     return app
 

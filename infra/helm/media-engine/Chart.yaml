@@ -1,0 +1,16 @@
+apiVersion: v2
+name: media-engine
+description: Universal media-processing engine — typed artifacts, composable operations, pluggable backends.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/anthropics/media_engine
+sources:
+  - https://github.com/anthropics/media_engine
+keywords:
+  - media
+  - video
+  - pipeline
+  - mcp
+maintainers:
+  - name: media_engine

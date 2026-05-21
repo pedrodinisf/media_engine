@@ -50,6 +50,7 @@ from media_engine.cli.acquire_live import (  # noqa: E402
     cmd_acquire_live as _cmd_acquire_live,
 )
 from media_engine.cli.batch import cmd_batch as _cmd_batch  # noqa: E402
+from media_engine.cli.health import cmd_health, cmd_ready  # noqa: E402
 from media_engine.cli.search import cmd_search as _cmd_search  # noqa: E402
 
 app.add_typer(_daemon_cli.app, name="daemon")
@@ -60,6 +61,8 @@ app.add_typer(_events_cli.app, name="events")
 app.add_typer(_api_cli.app, name="api")
 app.add_typer(_db_cli.app, name="db")
 app.add_typer(_storage_cli.app, name="storage")
+app.command("health")(cmd_health)
+app.command("ready")(cmd_ready)
 app.command("batch")(_cmd_batch)
 app.command("acquire-live")(_cmd_acquire_live)
 app.command("search")(_cmd_search)
