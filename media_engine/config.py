@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,7 +42,14 @@ class EngineConfig(BaseSettings):
     permanent_store: Path = Field(default_factory=_default_permanent_store)
     workdir: Path = Field(default_factory=_default_workdir)
     config_dir: Path = Field(default_factory=_default_config_dir)
-    cache_db_url: str | None = None
+    # Accept both ``MEDIA_ENGINE_CACHE_DB_URL`` (the canonical field name) and
+    # ``MEDIA_ENGINE_DB_URL`` (the shorter alias the plan + IaaC docs use).
+    cache_db_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "MEDIA_ENGINE_CACHE_DB_URL", "MEDIA_ENGINE_DB_URL", "cache_db_url"
+        ),
+    )
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
     log_format: Literal["text", "json"] = "text"

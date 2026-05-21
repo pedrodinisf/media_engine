@@ -19,9 +19,9 @@ single-video studio) into one substrate so future apps are written as
 The substrate is five layers and four transports:
 
 ```
-Transports   cli/  ·  daemon/  ·  mcp/        (REST = Phase 4)
-                 \      |        /
-                  v     v       v
+Transports   cli/  ·  daemon/  ·  api/ (REST + SSE)  ·  mcp/
+                 \      |          |                 /
+                  v     v          v                v
 Engine        runtime/engine.py  -- runtime/dag.py (async DAG executor)
                   |
 Ops           ops/<group>/<verb>.py        capability-named verbs
@@ -30,7 +30,8 @@ Backends      backends/<group>_<verb>/<provider>.py   swappable impls
                   |  read/write
 Artifacts     artifacts/  typed, frozen, content-addressed (sha256)
                   |  persisted / indexed
-Runtime infra storage.py · cache.py · events.py · cost_tracker.py · ...
+Runtime infra storage.py · cache.py · events.py · cost_tracker.py ·
+              gc.py · eviction.py · resources.py · health.py · ...
 ```
 
 Every transport calls the same `Engine`. The Engine resolves an op +
@@ -345,10 +346,26 @@ the executor consumes.
   `EventNotification` frames. Pipelines run client-side dispatching each
   node's op through the daemon (warm models, no `RunPipeline` RPC
   needed — both sides share one `cache.db` + store).
+- **REST (`api/`)** — FastAPI app (Phase 4 commit 29). Endpoints:
+  `POST /run`, `POST /pipelines` (both return 202 + `job_id`),
+  `GET/DELETE /jobs[/id]`, `GET /jobs/{id}/events` (SSE through
+  `sse-starlette`), `GET /artifacts[/id][/file][/lineage]`,
+  `GET/POST /profiles`, `GET /operations[/name]`,
+  `GET /backends[/name]`, `POST/GET/DELETE /tokens`, plus
+  un-authenticated `/health` + `/ready` probes. Bearer-token auth
+  (32-byte secrets hashed at rest in `api_tokens`); the token's
+  namespace scopes every read/write. `med api start` boots uvicorn
+  against `build_app()`; `med api token create` mints the first
+  bootstrap token directly against the cache (no chicken-and-egg).
 - **MCP (`mcp/`)** — `exporter.py` turns every registered op into an MCP
   tool (`.`->`__`, params schema + `input_artifact_ids` + `backend`
-  enum; variadic ops get an unbounded `minItems:1` array). `med mcp
-  tools-json` today; full stdio server in Phase 4.
+  enum; variadic ops get an unbounded `minItems:1` array).
+  `server.py` (Phase 4 commit 30) is the stdio server: `tools/list`
+  filtered by `MCPSecurityConfig` (default = read-only `search.*`),
+  `tools/call` dispatches to `Engine.run`, `resources/list` +
+  `resources/read` surface artifacts as `media://<kind>/<id>`. `med
+  mcp serve [--allow OP] [--deny OP]` is what
+  `claude mcp add media-engine "med mcp serve"` invokes.
 
 ---
 
@@ -431,26 +448,35 @@ media_engine/
 ├── backends/              _base · _pricing · _gemini_vision · <group>_<verb>/<provider>.py
 ├── runtime/               engine · cache · storage · dag · retry · events
 │                          cost_tracker · lineage · model_pool · server_manager
-│                          hardware · disk_guard · ffprobe · jsonschema
+│                          hardware · disk_guard · gc · eviction · resources
+│                          ffprobe · jsonschema · health
 ├── profiles/              schema · loader · pipeline
 ├── cli/                   __init__(entry) · _handle · run/cost/events/profile/
 │                          daemon/mcp/batch · acquire_live · search
+│                          api · db · storage · health
 ├── daemon/                protocol · server · client · entry
-└── mcp/                   exporter
+├── api/                   app · routes · auth · jobs · sse · health · _state
+└── mcp/                   exporter · server
+
+alembic/                   env.py + versions/0001_initial_schema (migrations)
+infra/                     docker (Dockerfile + compose) · helm · terraform
 ```
 
 ---
 
 ## 11. Status & deviations from the plan
 
-**Phases 0–2 complete** (commits 1–22 + two audit-fix commits); **Phase
-3 complete** (commits 23–28). Phase 3 added `acquire.url` +
-`acquire.livestream`, `metadata.scrape_page`, `transcript.parse` +
-`transcript.merge`, `document.parse` + `web.fetch`, the
-`search.semantic`/`fulltext`/`hybrid` trio + `med search`, and the
-final hardening pass (lineage `truncated_reason`, `med acquire-url`
-shortcut, `profiles/examples/url-to-summary.yaml`, reanalysis recipe
-in §9.1). **31 ops.** Suite: 621 passed / 23 skipped
+**Phases 0–3 complete** (commits 1–28 + three audit-fix commits);
+**Phase 4 complete** (commits 29–34). Phase 4 added the FastAPI REST
+surface + `Job` concept + bearer-token auth (commit 29); the full MCP
+stdio server with read-only-by-default allow-list (commit 30); the
+Postgres / pgvector / postgres-tsvector backends + alembic migrations
++ `med db migrate|dump-sqlite-to-postgres` (commit 31); LRU eviction
++ workdir GC + `med storage stats|gc|migrate` (commit 32); the IaaC
+package (Dockerfile, docker-compose, Helm chart, Terraform module),
+`/health` + `/ready` probes + `med health|ready`, and
+`docs/deployment.md` (commit 33); and the `resources.yaml` loader
+(commit 34). **31 ops.** Suite: 687 passed / 28 skipped
 (dependency/API-key/network gated); `ruff` and strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
@@ -499,15 +525,55 @@ roadmap; this section is the reconciliation):
   re-process path land when a profile actually consumes them;
   `pgvector` / `postgres-tsvector` move to Phase 4 with the Postgres
   migration.
+- Phase-4 ratified deviations:
+  - **`pgvector` + `postgres-tsvector` land as *separate* backend
+    names** alongside `sqlite` / `sqlite-fts5`, not replacements. Plan
+    §11 commit 31 reads "pgvector replaces sqlite-vss when Postgres is
+    the cache"; the engine's cache key embeds `(backend_name,
+    backend_version)`, so swapping is non-breaking only if the names
+    differ. Existing SQLite-cached results stay reachable.
+  - **MCP default allow-list is `{search.semantic, search.fulltext,
+    search.hybrid}`.** Plan §11 commit 30 reads "default = read-only
+    ops — search/ls/show/lineage". `ls`/`show`/`lineage` are
+    CLI/REST verbs, not registered ops; the equivalent read-only
+    access is `resources/list` + `resources/read`, which are part of
+    the MCP protocol regardless of the op allow-list. So the
+    op-allow-list defaults to the searchable family; `tools/list`
+    only exposes those, while `resources/list` always works.
+  - **Configurable cache URL accepts two env aliases.** Plan §11 +
+    docker-compose + Helm use `MEDIA_ENGINE_DB_URL`; the Pydantic
+    field is `cache_db_url` (env: `MEDIA_ENGINE_CACHE_DB_URL`). A
+    `validation_alias` accepts both so either spelling works.
+  - **`med storage migrate` rewrites cache rows, not config.** Plan
+    §11 commit 32 says "atomic path update"; we read it as the
+    cache-side rewrite. Operators move the files themselves
+    (`rsync`/`mv`) and then run the command to fix every artifact
+    `path` column. The engine's `permanent_store` config is a
+    separate edit.
+  - **Namespacing isolates the cache, not the on-disk layout.** Plan
+    §11 commit 32 sketches `{permanent_store}/namespaces/{ns}/
+    artifacts/`. The cache already enforces full isolation
+    (`namespace` is in every row's primary-key tuple), so on-disk
+    sharding is operator clarity only — deferred until an explicit
+    need lands.
+  - **`med api token create|ls|revoke`** (not `list`) — matches the
+    `cost ls` / `events tail` convention already established for
+    every other `med <group>` subcommand.
+  - **`Operation.declared_resources` is mutable at runtime** when
+    `resources.yaml` remaps an op. The snapshot of the compile-time
+    tuple is kept in `runtime/resources.py` so a later config that
+    drops the op restores its original claim — repeated applies are
+    idempotent.
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit
 findings`, `fix(phase-2): close pre-Phase-3 audit findings`,
-`fix(phase-3): close pre-Phase-4 audit findings`.
+`fix(phase-3): close pre-Phase-4 audit findings`, `fix(phase-4): close
+pre-Phase-5 audit findings`.
 
-Phase 3 (acquisition + transcript ingest + non-video media + search,
-commits 23–28) is complete; Phase 4 (REST + full MCP + Postgres +
-IaaC) is the next work.
+Phase 4 (REST + full MCP + Postgres + IaaC) is complete; Phase 5
+(domain profiles + speakers + reports + final polish) is the next
+work.
 
 ---
 
