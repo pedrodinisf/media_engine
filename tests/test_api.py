@@ -270,6 +270,35 @@ def test_artifacts_listing_empty_store(
     assert page["next_offset"] is None
 
 
+def test_lifespan_resets_orphaned_running_jobs(
+    api_engine: Engine, tmp_path: Path
+) -> None:
+    """If a previous process crashed mid-run the jobs stay "running"
+    forever. The lifespan startup sweep flips them to "failed" with
+    a clear ``InterruptedRun`` envelope so clients see a terminal
+    state rather than a phantom in-flight row.
+    """
+    # Plant an orphaned "running" job from a "previous process".
+    api_engine.cache.insert_job(
+        job_id="orphan-1",
+        pipeline_name=None,
+        pipeline_yaml=None,
+        namespace=api_engine.config.namespace,
+    )
+    api_engine.cache.update_job(job_id="orphan-1", status="running")
+    # Now boot the API; the lifespan should sweep the orphan.
+    app_ = build_app(engine=api_engine)
+    with TestClient(app_):
+        pass
+    recovered = api_engine.cache.get_job(
+        "orphan-1", namespace=api_engine.config.namespace
+    )
+    assert recovered is not None
+    assert recovered.status == "failed"
+    assert recovered.error is not None
+    assert recovered.error["error_class"] == "InterruptedRun"
+
+
 def test_artifacts_pagination_round_trip(
     client: TestClient, auth: dict[str, str], api_engine: Engine, tmp_path: Path
 ) -> None:

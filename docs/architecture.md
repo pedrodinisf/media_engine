@@ -481,7 +481,7 @@ Postgres / pgvector / postgres-tsvector backends + alembic migrations
 package (Dockerfile, docker-compose, Helm chart, Terraform module),
 `/health` + `/ready` probes + `med health|ready`, and
 `docs/deployment.md` (commit 33); and the `resources.yaml` loader
-(commit 34). **31 ops.** Suite: 699 passed / 29 skipped
+(commit 34). **31 ops.** Suite: 702 passed / 29 skipped
 (dependency/API-key/network gated); `ruff` and strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
@@ -641,6 +641,21 @@ roadmap; this section is the reconciliation):
     callers to tag the release with a cluster identifier; passes
     through to the chart as `MEDIA_ENGINE_CLUSTER_LABEL` (pure
     metadata, no behavior change).
+  - **`cache.prune_events` is namespace-scoped.** Engine startup
+    prune used to delete every event row older than the cutoff
+    across all namespaces; the call now passes
+    ``self.config.namespace`` so a multi-tenant deployment
+    (one API process per namespace sharing one cache.db) keeps
+    each tenant's event tail intact.
+  - **MCP `_call_tool` defensively pops `inputs`** so a client that
+    smuggles it into `arguments` (alongside the schema-declared
+    `input_artifact_ids`) doesn't crash with
+    `TypeError: got multiple values for keyword argument 'inputs'`.
+  - **API startup recovers orphaned jobs.** New
+    `Cache.fail_orphaned_jobs` sweeps `running`/`pending` rows on
+    lifespan boot and flips them to `failed` with an
+    `InterruptedRun` envelope so clients see a terminal state
+    after a crash instead of a permanently in-flight row.
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit

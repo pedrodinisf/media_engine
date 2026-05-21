@@ -723,6 +723,55 @@ class Cache:
             stmt = stmt.order_by(JobRow.submitted_at.desc()).limit(limit)
             return [_job_from_row(r) for r in s.scalars(stmt).all()]
 
+    def fail_orphaned_jobs(
+        self,
+        *,
+        namespace: str | None = None,
+        error_message: str = "process restarted while this job was running",
+    ) -> list[str]:
+        """Reset ``running``/``pending`` jobs to ``failed`` on startup.
+
+        If the API process crashes mid-job, the row stays at
+        ``running`` forever — there's no live task to flip it to
+        ``completed``/``failed``. The API lifespan calls this at boot
+        to sweep up any such rows that belong to the engine's
+        namespace (so a multi-tenant deployment doesn't have one
+        tenant's restart trip another tenant's in-flight job).
+        Returns the ids that were reset.
+        """
+        from sqlalchemy import or_, update
+
+        now = datetime.now(UTC)
+        error_payload = json.dumps(
+            {
+                "error_class": "InterruptedRun",
+                "message": error_message,
+                "retryable": True,
+            },
+            sort_keys=True,
+        )
+        with self.session() as s:
+            # Find the candidates first so we can return their ids;
+            # the UPDATE then writes the new status atomically.
+            stmt = select(JobRow.id).where(
+                or_(JobRow.status == "running", JobRow.status == "pending")
+            )
+            if namespace is not None:
+                stmt = stmt.where(JobRow.namespace == namespace)
+            ids = list(s.scalars(stmt).all())
+            if not ids:
+                return []
+            s.execute(
+                update(JobRow)
+                .where(JobRow.id.in_(ids))
+                .values(
+                    status="failed",
+                    finished_at=now,
+                    error_json=error_payload,
+                )
+            )
+            return ids
+
     # ── api tokens (Phase 4 REST surface) ──
 
     def insert_api_token(
@@ -786,16 +835,31 @@ class Cache:
             row.revoked_at = datetime.now(UTC)
             return True
 
-    def prune_events(self, *, older_than: datetime) -> int:
-        """Delete events older than ``older_than``. Returns rows removed."""
+    def prune_events(
+        self,
+        *,
+        older_than: datetime,
+        namespace: str | None = None,
+    ) -> int:
+        """Delete events older than ``older_than``. Returns rows removed.
+
+        ``namespace`` scopes the deletion. The Engine passes
+        ``self.config.namespace`` at startup so a multi-tenant
+        deployment (each tenant a separate process sharing the same
+        cache.db) doesn't have tenant A's housekeeping nuke tenant B's
+        events. Passing ``namespace=None`` (the cross-tenant admin
+        path) still works for ``med`` operators who want to prune
+        everything at once.
+        """
         from sqlalchemy import delete
 
         with self.session() as s:
-            res = s.execute(
-                delete(EventLogEntry).where(
-                    EventLogEntry.ts < _ensure_utc(older_than)
-                )
+            stmt = delete(EventLogEntry).where(
+                EventLogEntry.ts < _ensure_utc(older_than)
             )
+            if namespace is not None:
+                stmt = stmt.where(EventLogEntry.namespace == namespace)
+            res = s.execute(stmt)
             return int(getattr(res, "rowcount", 0) or 0)
 
     # ── lineage ──

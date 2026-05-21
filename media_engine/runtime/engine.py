@@ -111,10 +111,15 @@ class Engine:
         self._resource_capacities: dict[str, int] = {}
         # Durable event tail + weekly rotation (best-effort; a broken
         # sink must never wedge a producer — EventBus swallows sink errors).
+        # Scope the prune to this engine's namespace so a multi-tenant
+        # deployment (separate API processes per tenant sharing the
+        # same cache.db) doesn't have one tenant's housekeeping wipe
+        # another tenant's recent events.
         self.event_bus.add_sink(self._persist_event)
         with contextlib.suppress(Exception):
             self.cache.prune_events(
-                older_than=datetime.now(UTC) - timedelta(days=7)
+                older_than=datetime.now(UTC) - timedelta(days=7),
+                namespace=self.config.namespace,
             )
 
     def _persist_event(self, event: Any) -> None:

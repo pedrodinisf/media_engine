@@ -155,6 +155,13 @@ def build_mcp_server(
         args = dict(arguments or {})
         input_ids = list(args.pop("input_artifact_ids", []) or [])
         backend = args.pop("backend", None)
+        # Defensively drop ``inputs`` if the client smuggled it into
+        # ``arguments`` — the MCP schema we generate exposes
+        # ``input_artifact_ids`` only, but a buggy or malicious client
+        # could still send ``inputs``, and the ``**args`` expansion
+        # below would otherwise raise
+        # ``TypeError: got multiple values for keyword argument 'inputs'``.
+        args.pop("inputs", None)
         if backend is not None and not BackendRegistry.has(op_name, backend):
             raise ValueError(
                 f"backend {backend!r} not registered for {op_name!r}"

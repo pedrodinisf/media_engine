@@ -58,6 +58,15 @@ def build_app(
         app.state.app_state = AppState(
             engine=local_engine, cache=local_engine.cache
         )
+        # Recovery: if a previous process crashed mid-run, jobs are
+        # frozen in "running"/"pending" forever. Flip them to
+        # "failed" so clients see a clear terminal state instead of
+        # a phantom in-flight row. Scoped to this engine's namespace
+        # so a tenant restart can't trip another tenant's jobs.
+        with contextlib.suppress(Exception):
+            local_engine.cache.fail_orphaned_jobs(
+                namespace=local_engine.config.namespace
+            )
         # Workdir garbage collection. ``Engine.run`` already cleans up
         # the per-job tmp dir on success/failure paths, but a process
         # crash mid-run leaves residue. The periodic sweep catches

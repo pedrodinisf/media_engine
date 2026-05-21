@@ -138,6 +138,40 @@ async def test_call_denied_op_raises_clear_error(engine: Engine) -> None:
 
 
 @pytest.mark.asyncio
+async def test_call_tool_tolerates_inputs_in_arguments(
+    engine: Engine,
+) -> None:
+    """A client that sneaks ``inputs`` into ``arguments`` must not
+    crash the server with a TypeError.
+
+    The schema exposes ``input_artifact_ids`` only, but the SDK
+    accepts arbitrary additionalProperties, so we defend by popping
+    ``inputs`` before the ``**args`` expansion. The expected outcome
+    is *failure with a clear error*, not a TypeError that surfaces
+    as a 500-ish to the consumer.
+    """
+    sec = MCPSecurityConfig(allowed_ops=None, deny_ops=frozenset())
+    server = build_mcp_server(engine, security=sec)
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "acquire__upload",
+            arguments={
+                "input_artifact_ids": [],
+                "inputs": ["should-be-ignored"],  # would have collided
+                "source_path": "/tmp/intentionally-missing",
+            },
+        )
+    # The acquire.upload op will fail because the file doesn't exist —
+    # that's fine. What we care about is that it didn't crash with
+    # "multiple values for keyword argument 'inputs'".
+    assert result.isError
+    text = " ".join(
+        block.text for block in result.content if hasattr(block, "text")
+    )
+    assert "multiple values" not in text.lower()
+
+
+@pytest.mark.asyncio
 async def test_resources_list_returns_persisted_artifacts(
     engine: Engine, tmp_path: Path
 ) -> None:

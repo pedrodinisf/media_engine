@@ -68,3 +68,34 @@ def test_prune_events_drops_old_rows(engine: Engine) -> None:
     assert removed == 1
     remaining = engine.cache.event_log()
     assert [e.op_run_id for e in remaining] == ["r2"]
+
+
+def test_prune_events_respects_namespace_scope(engine: Engine) -> None:
+    """A multi-tenant deployment (one API process per namespace
+    sharing one cache.db) used to have tenant A's startup prune wipe
+    tenant B's events. ``prune_events(namespace=…)`` now scopes the
+    deletion so each engine only touches its own tenant's tail.
+    """
+    old = datetime.now(UTC) - timedelta(days=30)
+    engine.cache.record_event(
+        ts=old, event_type="op_started", op_run_id="ra",
+        op_name="x.y", payload_json="{}", namespace="tenant-a",
+    )
+    engine.cache.record_event(
+        ts=old, event_type="op_started", op_run_id="rb",
+        op_name="x.y", payload_json="{}", namespace="tenant-b",
+    )
+    # Tenant A prunes — tenant B's row must survive.
+    removed = engine.cache.prune_events(
+        older_than=datetime.now(UTC) - timedelta(days=7),
+        namespace="tenant-a",
+    )
+    assert removed == 1
+    survivors = engine.cache.event_log(namespace="tenant-b")
+    assert [e.op_run_id for e in survivors] == ["rb"]
+    # And the cross-tenant admin path still works (namespace=None
+    # wipes both).
+    engine.cache.prune_events(
+        older_than=datetime.now(UTC) - timedelta(days=7), namespace=None
+    )
+    assert engine.cache.event_log() == []
