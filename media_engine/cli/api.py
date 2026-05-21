@@ -117,11 +117,18 @@ def cmd_token_create(
             )
         )
         return
-    console.print(f"[green]Token created.[/green]  id=[cyan]{token.token_id}[/cyan]")
-    console.print(f"[bold]Secret (shown once):[/bold] {token.secret}")
-    console.print(
+    # Default text output is deliberately script-friendly: the secret is
+    # the only thing on stdout (so ``TOKEN=$(med api token create)``
+    # works straight from the plan §11 gate), while context goes to
+    # stderr where it doesn't poison capture.
+    err_console.print(
+        f"[green]Token created.[/green]  id=[cyan]{token.token_id}[/cyan]  "
         f"namespace=[i]{token.namespace}[/i]  label=[i]{token.label or '—'}[/i]"
     )
+    err_console.print(
+        "[dim]The secret below is shown once — save it now.[/dim]"
+    )
+    typer.echo(token.secret)
 
 
 @token_app.command("ls")

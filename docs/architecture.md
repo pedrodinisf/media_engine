@@ -205,7 +205,7 @@ in-memory (`finalize_extract_data`).
 > never GC-visible). The `extract_invoke` split removes persistence from
 > the per-window path entirely.
 
-### 4.4 Op catalog (Phases 0–2 + Phase 3 in progress, 31 ops)
+### 4.4 Op catalog (Phases 0–4 complete, 31 ops)
 
 | Group | Ops | Backend layer |
 |---|---|---|
@@ -214,7 +214,7 @@ in-memory (`finalize_extract_data`).
 | transcript | parse, merge | — (pure-Python; one parser for srt/speakered_txt/vtt) |
 | document | parse | pymupdf (unstructured deferred) |
 | web | fetch | httpx (static); playwright (render_js=True) |
-| search | semantic, fulltext, hybrid | semantic: sqlite (brute-force cosine) · fulltext: sqlite-fts5 · hybrid: composite (RRF) |
+| search | semantic, fulltext, hybrid | semantic: sqlite / pgvector · fulltext: sqlite-fts5 / postgres-tsvector · hybrid: composite (RRF) |
 | video | extract_audio, trim, sample_frames, multimodal | sample_frames: ffmpeg-uniform/pyscenedetect · multimodal: gemini/vllm-mlx |
 | audio | transcribe, detect_language, diarize, transcribe_diarized | transcribe/detect: mlx-whisper · diarize: pyannote · t_d: composite |
 | frames | subsample, analyze, compare | analyze: gemini/vllm-mlx · compare: gemini |
@@ -257,7 +257,7 @@ protocol) reused by `intelligence.analyze`.
 | Module | Responsibility |
 |---|---|
 | `engine.py` | Public API. `open_quick`/`open_session`; `run` (single op: cached, retried, evented, ledgered); `run_pipeline`; `estimate_pipeline_cost`; `cost_summary`/`cost_log_entries`/`event_log_entries`; read surface (`get_artifact`, `list_artifacts`, `lineage`, `resolve_id`). |
-| `cache.py` | SQLAlchemy 2.0 (SQLite + WAL pragmas). Tables: `cached_artifacts`, `cached_operation_runs` (unique on the cache-key tuple), `cost_log` (append-only spend ledger), `events` (durable event tail). `to_orm`/`to_pydantic` are the only Pydantic<->ORM crossings. |
+| `cache.py` | SQLAlchemy 2.0 (SQLite + WAL pragmas; Postgres in Phase 4). Tables: `cached_artifacts`, `cached_operation_runs` (unique on the cache-key tuple), `cost_log` (append-only spend ledger), `events` (durable event tail), `jobs` (REST submissions, Phase 4 commit 29), `api_tokens` (bearer-token hashes, Phase 4 commit 29). `to_orm`/`to_pydantic` are the only Pydantic<->ORM crossings. |
 | `storage.py` | `StorageBackend` Protocol + `LocalFSStorage`: atomic `.tmp`+rename, sha256 2-char sharding, hardlink mode, per-job workdir. |
 | `dag.py` | `Pipeline`/`DAGNode` dataclasses; topological wave sort (cycle/unknown-dep detection); `asyncio.TaskGroup` per ready-wave; per-resource `asyncio.Semaphore` pool; per-node retry; **partial completion** (a failed node fails its dependents as `FailedDependency`, siblings still run). |
 | `retry.py` | `RetryPolicy` (exponential/fixed backoff + jitter); `classify_exception` -> (retryable, retry_after, error_class, suggested_action); `with_retry` (honors server `Retry-After`, skips deterministic/auth, propagates cancellation); `policy_for(backend_name)` shared by DAG + single-op paths. |
@@ -270,6 +270,10 @@ protocol) reused by `intelligence.analyze`.
 | `disk_guard.py` | `assert_free_space` precondition (refuse to start a writing op below `MEDIA_ENGINE_MIN_FREE_GB`); skipped on cache hits. |
 | `ffprobe.py` | `probe()` + `classify()` (codec -> Kind) for `acquire.upload`. |
 | `jsonschema.py` | Zero-dependency JSON-Schema validator (type/required/properties/additionalProperties/items/enum/min-max). Keeps the core dependency list lean; lenient (unknown keywords ignored). |
+| `gc.py` | Workdir garbage collection (Phase 4 commit 32). `sweep_workdirs` drops subdirs older than the retention window; `periodic_workdir_gc` is the async loop the daemon spawns at startup (interval from `MEDIA_ENGINE_GC_INTERVAL`). |
+| `eviction.py` | Opt-in LRU eviction (Phase 4 commit 32). Walks the cache oldest-first and deletes non-protected artifacts (files + cache rows + dependent operation_runs) until total bytes fit under `eviction_max_gb`. Protected kinds (Video/Audio by default) are never evicted. Dry-run mode reports what *would* happen. |
+| `resources.py` | `resources.yaml` loader (Phase 4 commit 34). Loads `{config_dir}/resources.yaml` to override semaphore capacities and remap which ops claim which resource; the original `declared_resources` is snapshotted so a later config that drops the op restores its default. |
+| `health.py` | Liveness + readiness probes (Phase 4 commit 33). `liveness()` is unconditional; `readiness()` walks (storage writable, cache reachable, daemon socket present) and returns a structured `HealthReport`. |
 
 ### 6.1 The `Engine.run` lifecycle
 
@@ -476,7 +480,7 @@ Postgres / pgvector / postgres-tsvector backends + alembic migrations
 package (Dockerfile, docker-compose, Helm chart, Terraform module),
 `/health` + `/ready` probes + `med health|ready`, and
 `docs/deployment.md` (commit 33); and the `resources.yaml` loader
-(commit 34). **31 ops.** Suite: 687 passed / 28 skipped
+(commit 34). **31 ops.** Suite: 690 passed / 29 skipped
 (dependency/API-key/network gated); `ruff` and strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
@@ -564,6 +568,27 @@ roadmap; this section is the reconciliation):
     tuple is kept in `runtime/resources.py` so a later config that
     drops the op restores its original claim — repeated applies are
     idempotent.
+  - **REST does not route through the daemon.** Plan §11 commit 29
+    text says "if daemon up, REST routes through it". The
+    implemented model is one-or-the-other: each transport boots its
+    own warm engine. They share the same `cache.db` + permanent_store
+    (content-addressed, so reads cross transports cleanly), so
+    artifacts produced through one appear in the other immediately.
+    Running both is fine but redundant — production picks the
+    transport that fits.
+  - **MCP `notifications/progress` is deferred.** `tools/call`
+    completes synchronously today; threading the engine's `EventBus`
+    through the MCP request context is left until an actual MCP
+    consumer asks for it.
+  - **MCP `resources/read` returns inline JSON for every kind** (the
+    plan mentions "signed URL or inline if small"). Signed URLs
+    presume an HTTP backend reachable from the MCP client; today the
+    stdio transport carries JSON payloads only, and clients fetch
+    binary bytes through `GET /artifacts/{id}/file` over REST.
+  - **`med api token create` writes only the secret to stdout** so
+    the plan's gate (`TOKEN=$(med api token create)`) works
+    straight. Context (id, namespace, label, "save it now" notice)
+    goes to stderr; `--json` retains the structured form.
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit
@@ -578,5 +603,6 @@ work.
 ---
 
 *Companion docs:* `adding_an_operation.md` (how to add an op + backend),
-`writing_a_profile.md` (YAML pipeline vs MD prompt). API reference and
-deployment docs land in Phase 4.
+`writing_a_profile.md` (YAML pipeline vs MD prompt), `deployment.md`
+(env vars + volumes + probes + scaling, Phase 4). A REST/MCP API
+reference is scheduled for Phase 5 commit 38.

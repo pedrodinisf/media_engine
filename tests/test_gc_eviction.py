@@ -176,6 +176,40 @@ def test_storage_stats_runs(runner: CliRunner, cli_env: Path) -> None:
     payload = _json.loads(res.stdout)
     assert "permanent_store" in payload
     assert "per_kind" in payload
+    # Plan §11 commit 32 lists kind / age / op breakdowns.
+    assert "per_age" in payload
+    assert "per_op" in payload
+
+
+def test_storage_stats_buckets_artifacts_by_age_and_op(
+    runner: CliRunner, cli_env: Path
+) -> None:
+    cache = Cache(f"sqlite+pysqlite:///{cli_env / 'cache.db'}")
+    blob = cli_env / "blob.bin"
+    blob.write_bytes(b"0" * 100)
+    cache.upsert_artifact(
+        MarkdownArtifact(
+            id="9" * 64,
+            kind=Kind.MarkdownArtifact,
+            path=str(blob),  # type: ignore[arg-type]
+            metadata={},
+            derived_from=(),
+            produced_by=None,
+            created_at=datetime.now(UTC),
+        )
+    )
+    cache.close()
+    res = runner.invoke(app, ["storage", "stats", "--json"])
+    assert res.exit_code == 0, res.stdout
+    import json as _json
+
+    payload = _json.loads(res.stdout)
+    age = payload["per_age"]
+    assert age["<1h"]["count"] == 1
+    assert age["<1h"]["bytes"] >= 100
+    # No produced_by → falls into the synthetic (upload) bucket.
+    assert "(upload)" in payload["per_op"]
+    assert payload["per_op"]["(upload)"]["count"] == 1
 
 
 def test_storage_gc_dry_run(runner: CliRunner, cli_env: Path) -> None:
@@ -224,6 +258,67 @@ def test_storage_migrate_rewrites_paths(
         art = cache.get_artifact("m" * 64)
         assert art is not None
         assert str(art.path).startswith(str(new_root))
+    finally:
+        cache.close()
+
+
+def test_storage_migrate_does_not_match_sibling_prefix(
+    runner: CliRunner, cli_env: Path
+) -> None:
+    """`--from /old` must not also touch artifacts living under `/older`.
+
+    Regression: an earlier implementation used ``LIKE '<from>%'`` which
+    matched both prefixes; we now require the slash separator (or an
+    exact match on the bare prefix).
+    """
+    cache = Cache(f"sqlite+pysqlite:///{cli_env / 'cache.db'}")
+    old_root = cli_env / "old"
+    older_root = cli_env / "older"
+    new_root = cli_env / "new"
+    for d in (old_root, older_root, new_root):
+        d.mkdir()
+    in_old = old_root / "a.bin"
+    in_older = older_root / "b.bin"
+    in_old.write_bytes(b"x")
+    in_older.write_bytes(b"y")
+    cache.upsert_artifact(
+        MarkdownArtifact(
+            id="0" * 64,
+            kind=Kind.MarkdownArtifact,
+            path=str(in_old),  # type: ignore[arg-type]
+            metadata={},
+            derived_from=(),
+            produced_by=None,
+            created_at=datetime.now(UTC),
+        )
+    )
+    cache.upsert_artifact(
+        MarkdownArtifact(
+            id="1" * 64,
+            kind=Kind.MarkdownArtifact,
+            path=str(in_older),  # type: ignore[arg-type]
+            metadata={},
+            derived_from=(),
+            produced_by=None,
+            created_at=datetime.now(UTC),
+        )
+    )
+    cache.close()
+    res = runner.invoke(
+        app,
+        ["storage", "migrate", "--from", str(old_root), "--to", str(new_root)],
+    )
+    assert res.exit_code == 0, res.stdout
+    cache = Cache(f"sqlite+pysqlite:///{cli_env / 'cache.db'}")
+    try:
+        # Under `/old` → rewritten to `/new`.
+        a = cache.get_artifact("0" * 64)
+        assert a is not None
+        assert str(a.path).startswith(str(new_root))
+        # Under `/older` → untouched.
+        b = cache.get_artifact("1" * 64)
+        assert b is not None
+        assert str(b.path).startswith(str(older_root))
     finally:
         cache.close()
 

@@ -262,8 +262,13 @@ async def post_pipeline(
     else:
         # Inline YAML body — write to a tmp path and reuse the loader so
         # validation + error reporting stays consistent with the on-disk
-        # case.
-        tmp = state.engine.storage.ensure_workdir(f"inline-{token.id}")
+        # case. The workdir is per-request (uuid suffix) so concurrent
+        # submissions with the same token don't trample each other.
+        from uuid import uuid4
+
+        tmp = state.engine.storage.ensure_workdir(
+            f"inline-{token.id}-{uuid4().hex}"
+        )
         tmp_path = tmp / "inline.yaml"
         tmp_path.write_text(body.pipeline_yaml or "", encoding="utf-8")
         try:
@@ -271,8 +276,12 @@ async def post_pipeline(
         except ProfileLoadError as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
         finally:
-            with __import__("contextlib").suppress(Exception):
+            import contextlib as _ctx
+
+            with _ctx.suppress(Exception):
                 tmp_path.unlink()
+            with _ctx.suppress(Exception):
+                tmp.rmdir()
 
     # Resolve sources via the cache (the API surface speaks artifact ids).
     sources: dict[str, AnyArtifact] = {}

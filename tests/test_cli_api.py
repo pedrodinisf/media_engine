@@ -76,3 +76,39 @@ def test_api_help(runner: CliRunner, cli_env: Path) -> None:
     assert r.exit_code == 0
     assert "token" in r.stdout
     assert "start" in r.stdout
+
+
+def test_token_create_stdout_is_just_the_secret(
+    runner: CliRunner, cli_env: Path
+) -> None:
+    """End-of-phase-4 gate expects ``TOKEN=$(med api token create)``.
+
+    The default text mode must put the secret — and only the secret —
+    on stdout; context lines go to stderr.
+    """
+    r = runner.invoke(app, ["api", "token", "create", "--label", "shell"])
+    assert r.exit_code == 0
+    secret = r.stdout.strip()
+    assert secret, "stdout must carry the token secret"
+    # The secret is a urlsafe_b64 string — pure ASCII, no whitespace,
+    # no rich markup.
+    assert "\n" not in secret
+    assert " " not in secret
+    assert "[" not in secret  # no Rich markup escaped onto stdout
+
+    # Authenticate using the captured secret to prove it round-trips.
+    from fastapi.testclient import TestClient
+
+    from media_engine.api.app import build_app
+    from media_engine.config import EngineConfig
+    from media_engine.runtime.engine import Engine
+
+    cfg = EngineConfig.load()
+    cfg.validate_storage()
+    with Engine.open_quick(cfg) as eng:
+        app_ = build_app(engine=eng)
+        with TestClient(app_) as c:
+            ok = c.get(
+                "/operations", headers={"Authorization": f"Bearer {secret}"}
+            )
+            assert ok.status_code == 200

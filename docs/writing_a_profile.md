@@ -164,3 +164,36 @@ Once compiled, the profile is a `runtime.dag.Pipeline`. The DAG executor:
   profile is data and easy to edit.
 - **Bundled starters**: `profiles/examples/transcribe-and-diarize.yaml`
   is the smallest end-to-end shape worth copying.
+
+## Running profiles over REST
+
+Phase 4 added `POST /pipelines` for submitting profiles over the REST
+surface. Two body shapes:
+
+```jsonc
+// Server-known profile (must appear in `med profile ls` on the API host):
+{
+  "profile_name": "davos-full",
+  "sources": [{"name": "source", "artifact_id": "79e6b42c2b2b..."}]
+}
+
+// Inline profile (the YAML lives in the request, the server parses
+// it through the same loader):
+{
+  "pipeline_yaml": "name: ad-hoc\nkind: pipeline\ngraph: [...]\n",
+  "sources": [{"name": "source", "artifact_id": "..."}]
+}
+```
+
+Either form returns `202 { "job_id": "..." }`. Subscribe to
+`GET /jobs/{id}/events` (SSE) for live progress; poll
+`GET /jobs/{id}` for final status. Sources must already be in the
+cache (use `POST /run` with `acquire.upload` / `acquire.url` first).
+
+## Uploading a profile
+
+`POST /profiles` validates and persists a profile under
+`{config_dir}/profiles/` so `GET /profiles` and subsequent
+`POST /pipelines` calls can use it by name. The body is the same
+schema documented above; `kind: pipeline` and `kind: prompt` are both
+accepted.

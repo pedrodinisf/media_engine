@@ -4,7 +4,11 @@
 #   engine    — REST API + warm engine (container built from infra/docker/Dockerfile)
 #   postgres  — pgvector/pgvector:pg16 (Postgres + pgvector extension)
 #
-# Storage is a host bind-mount so artifacts survive container restarts.
+# Storage uses two named Docker volumes (``engine-store`` for the
+# artifact tree at MEDIA_ENGINE_PERMANENT_STORE, ``postgres-data`` for
+# the database). To use host bind-mounts instead, replace the volume
+# entries under ``services.engine.volumes`` / ``services.postgres.volumes``
+# with ``./local/store:/var/lib/media_engine`` style mappings.
 # Adjust ``MEDIA_ENGINE_DB_URL`` if you want to point at an external
 # Postgres instead.
 

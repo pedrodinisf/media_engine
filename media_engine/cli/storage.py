@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -46,7 +46,19 @@ def cmd_stats(
         typer.Option("--json", help="Emit machine-readable JSON"),
     ] = False,
 ) -> None:
-    """Show bytes by kind + free space on the storage volume."""
+    """Show bytes by kind / age bucket / producing op + free space.
+
+    The breakdowns answer three common operator questions:
+    *which kind eats the most space*, *which spend buckets are
+    growing*, *which op is producing the bytes*. Per-op stats come
+    from ``cached_artifacts.produced_by`` joined to the run table.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from media_engine.runtime.cache import CachedArtifact, CachedOperationRun
+
     cfg = _load_config()
     cache = Cache(cfg.resolve_cache_db_url())
     try:
@@ -64,31 +76,107 @@ def cmd_stats(
                     continue
             per_kind[kind.value] = {"count": len(items), "bytes": kind_bytes}
             total += kind_bytes
+
+        # Age + per-op rollups walk the full row set once. We bucket by
+        # age relative to "now" so the buckets stay stable across
+        # invocations.
+        now = datetime.now(UTC)
+        buckets: list[tuple[str, timedelta | None]] = [
+            ("<1h", timedelta(hours=1)),
+            ("<24h", timedelta(hours=24)),
+            ("<7d", timedelta(days=7)),
+            ("<30d", timedelta(days=30)),
+            ("older", None),
+        ]
+        per_age: dict[str, dict[str, int]] = {
+            label: {"count": 0, "bytes": 0} for label, _ in buckets
+        }
+        per_op: dict[str, dict[str, int]] = {}
+        with cache.session() as s:
+            artifact_rows = list(
+                s.scalars(
+                    select(CachedArtifact).where(
+                        CachedArtifact.namespace == cfg.namespace
+                    )
+                ).all()
+            )
+            run_op_by_id: dict[str, str] = {
+                r.id: r.op_name
+                for r in s.scalars(select(CachedOperationRun)).all()
+            }
+        for row in artifact_rows:
+            try:
+                size = Path(row.path).stat().st_size
+            except OSError:
+                size = 0
+            created = row.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            age = now - created
+            for label, threshold in buckets:
+                if threshold is None or age < threshold:
+                    per_age[label]["count"] += 1
+                    per_age[label]["bytes"] += size
+                    break
+            op_name = (
+                run_op_by_id.get(row.produced_by, "(upload)")
+                if row.produced_by is not None
+                else "(upload)"
+            )
+            slot = per_op.setdefault(op_name, {"count": 0, "bytes": 0})
+            slot["count"] += 1
+            slot["bytes"] += size
     finally:
         cache.close()
 
     free_gb_val = free_gb(cfg.permanent_store)
-    payload = {
+    payload: dict[str, Any] = {
         "permanent_store": str(cfg.permanent_store),
         "workdir": str(cfg.workdir),
         "namespace": cfg.namespace,
         "free_gb": free_gb_val,
         "total_bytes": total,
         "per_kind": per_kind,
+        "per_age": per_age,
+        "per_op": per_op,
     }
     if json_out:
         typer.echo(json.dumps(payload, indent=2))
         return
-    table = Table(title="Storage")
-    table.add_column("Kind", style="cyan")
-    table.add_column("Count", justify="right")
-    table.add_column("Bytes", justify="right")
+    kind_table = Table(title="Storage — by kind")
+    kind_table.add_column("Kind", style="cyan")
+    kind_table.add_column("Count", justify="right")
+    kind_table.add_column("Bytes", justify="right")
     for kind_name, row in sorted(per_kind.items()):
         if row["count"] == 0:
             continue
-        table.add_row(kind_name, str(row["count"]), f"{row['bytes']:,}")
-    table.add_row("[bold]total[/bold]", "", f"[bold]{total:,}[/bold]")
-    console.print(table)
+        kind_table.add_row(kind_name, str(row["count"]), f"{row['bytes']:,}")
+    kind_table.add_row(
+        "[bold]total[/bold]", "", f"[bold]{total:,}[/bold]"
+    )
+    console.print(kind_table)
+
+    age_table = Table(title="Storage — by age")
+    age_table.add_column("Bucket", style="cyan")
+    age_table.add_column("Count", justify="right")
+    age_table.add_column("Bytes", justify="right")
+    for label, _ in buckets:
+        slot = per_age[label]
+        if slot["count"] == 0:
+            continue
+        age_table.add_row(label, str(slot["count"]), f"{slot['bytes']:,}")
+    console.print(age_table)
+
+    op_table = Table(title="Storage — by producing op")
+    op_table.add_column("Op", style="cyan")
+    op_table.add_column("Count", justify="right")
+    op_table.add_column("Bytes", justify="right")
+    for op_name, slot in sorted(
+        per_op.items(), key=lambda kv: -kv[1]["bytes"]
+    ):
+        op_table.add_row(op_name, str(slot["count"]), f"{slot['bytes']:,}")
+    console.print(op_table)
+
     console.print(
         f"permanent_store: [i]{cfg.permanent_store}[/i]  "
         f"free: [bold]{free_gb_val:.1f}[/bold] GB"
@@ -114,21 +202,30 @@ def cmd_migrate(
     cfg = _load_config()
     cache = Cache(cfg.resolve_cache_db_url())
     try:
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
 
         from media_engine.runtime.cache import CachedArtifact
 
+        # Match either the bare prefix (a path stored exactly as the
+        # root, unlikely but valid) or `<prefix>/<anything>`. Using
+        # `<prefix>%` alone would also match `/older` when the operator
+        # passed `/old`; the `/` separator prevents that collision.
+        from_str = str(from_path)
+        sep_prefix = from_str.rstrip("/") + "/"
         with cache.session() as s:
             rows = list(
                 s.scalars(
                     select(CachedArtifact).where(
-                        CachedArtifact.path.like(f"{from_path}%")
+                        or_(
+                            CachedArtifact.path == from_str,
+                            CachedArtifact.path.like(f"{sep_prefix}%"),
+                        )
                     )
                 ).all()
             )
             for row in rows:
                 row.path = str(row.path).replace(
-                    str(from_path), str(to_path), 1
+                    from_str, str(to_path), 1
                 )
         console.print(
             f"[green]Migrated[/green] {len(rows)} cache rows from "

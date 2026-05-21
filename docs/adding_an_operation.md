@@ -211,5 +211,11 @@ uv run med ops              # confirm your op shows up
 uv run med mcp tools-json   # confirm the MCP schema is sensible
 ```
 
+Phase 4 surfaces (REST + MCP stdio server) pick up new ops
+automatically — `GET /operations` lists them, `GET /operations/<name>`
+returns the params schema, and `med mcp serve --allow <name>` exposes
+the op as a tool. No extra registration is needed beyond
+`bootstrap._op_classes()`.
+
 That's it. The engine handles content addressing, cache, lineage,
 events, and retry around your `run()`.

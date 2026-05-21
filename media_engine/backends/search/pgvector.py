@@ -169,28 +169,30 @@ def _search(
     """Return ``[(embedding_id, score, source_artifact_id, source_kind)]``.
 
     Postgres returns ``1 - cosine_distance`` as the score so the value
-    matches the SQLite backend's "higher is better" convention.
+    matches the SQLite backend's "higher is better" convention. The
+    query vector is bound twice (once for the score projection, once
+    for the ORDER BY); we keep the binding parameters and SQL
+    placeholders in lock-step instead of post-processing the string.
     """
     where = ""
-    args: list[Any] = [query_vector]
+    kind_args: list[str] = []
     if kind_filter:
         placeholders = ",".join(["%s"] * len(kind_filter))
         where = f"WHERE source_kind IN ({placeholders})"
-        args.extend(k.value for k in kind_filter)
-    args.append(top_k)
+        kind_args = [k.value for k in kind_filter]
+    sql = f"""
+        SELECT artifact_id,
+               1 - (vector <=> %s::vector) AS score,
+               source_artifact_id,
+               source_kind
+        FROM {_TABLE}
+        {where}
+        ORDER BY vector <=> %s::vector
+        LIMIT %s
+    """
+    params: list[Any] = [query_vector, *kind_args, query_vector, top_k]
     with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT artifact_id, 1 - (vector <=> %s::vector), source_artifact_id, source_kind
-            FROM {_TABLE}
-            {where}
-            ORDER BY vector <=> %s::vector
-            LIMIT %s
-            """.replace(
-                "%s::vector", "%s::vector"
-            ),
-            [query_vector, *args[1:-1], query_vector, args[-1]],
-        )
+        cur.execute(sql, params)
         return [
             (row[0], float(row[1]), row[2], row[3]) for row in cur.fetchall()
         ]

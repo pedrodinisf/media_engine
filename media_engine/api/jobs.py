@@ -25,8 +25,15 @@ from media_engine.runtime.events import build_op_failed
 from media_engine.runtime.lineage import OperationRunRef
 
 
-def _classify_error(exc: BaseException) -> dict[str, Any]:
-    envelope = build_op_failed(exc, op_run_id="")
+def _classify_error(exc: BaseException, *, job_id: str) -> dict[str, Any]:
+    """Wrap an exception into the same OpFailed envelope the engine uses.
+
+    ``op_run_id`` carries the REST job_id so the persisted error trail
+    can be correlated against the cache row even though there's no
+    ``cached_operation_runs`` row when the failure is at the
+    submission/wrapper level.
+    """
+    envelope = build_op_failed(exc, op_run_id=job_id, job_id=job_id)
     return {
         "error_class": envelope.error_class,
         "message": envelope.message,
@@ -125,7 +132,7 @@ async def _run_single_op(
             job_id=job_id,
             status="failed",
             finished_at=datetime.now(UTC),
-            error=_classify_error(exc),
+            error=_classify_error(exc, job_id=job_id),
         )
         return
     finally:
@@ -155,7 +162,7 @@ async def _run_pipeline(
             job_id=job_id,
             status="failed",
             finished_at=datetime.now(UTC),
-            error=_classify_error(exc),
+            error=_classify_error(exc, job_id=job_id),
         )
         return
     finally:

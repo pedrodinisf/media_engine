@@ -120,27 +120,29 @@ def _search(
     top_k: int,
     kind_filter: list[Kind] | None,
 ) -> list[tuple[str, str, float, str]]:
+    """The query string is bound twice (score projection + WHERE clause);
+    we keep the SQL placeholders and the parameter list in lock-step
+    rather than juggling indices."""
     where = "WHERE tsv @@ plainto_tsquery('english', %s)"
-    args: list[Any] = [query]
+    kind_args: list[str] = []
     if kind_filter:
         placeholders = ",".join(["%s"] * len(kind_filter))
         where += f" AND kind IN ({placeholders})"
-        args.extend(k.value for k in kind_filter)
-    args.append(query)
-    args.append(top_k)
+        kind_args = [k.value for k in kind_filter]
+    sql = f"""
+        SELECT artifact_id, kind,
+               ts_rank_cd(tsv, plainto_tsquery('english', %s)) AS score,
+               body
+        FROM {_TABLE}
+        {where}
+        ORDER BY score DESC
+        LIMIT %s
+    """
+    # Bindings (left → right): score-projection query, WHERE-clause
+    # query, optional kind list, LIMIT.
+    params: list[Any] = [query, query, *kind_args, top_k]
     with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT artifact_id, kind,
-                   ts_rank_cd(tsv, plainto_tsquery('english', %s)) AS score,
-                   body
-            FROM {_TABLE}
-            {where}
-            ORDER BY score DESC
-            LIMIT %s
-            """,
-            [args[-2], *args[:-2], args[-1]],
-        )
+        cur.execute(sql, params)
         rows = cur.fetchall()
     terms = [t.strip() for t in query.split() if t.strip()]
     return [

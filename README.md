@@ -8,7 +8,7 @@ a Python package + CLI (`med`) + daemon + REST API + MCP stdio server.
 
 ```bash
 uv sync
-uv run pytest -q                 # 687 passed, 28 skipped
+uv run pytest -q                 # 690 passed, 29 skipped
 uv run ruff check && uv run pyright media_engine
 uv run med ops                   # 31 capability-named ops
 ```
