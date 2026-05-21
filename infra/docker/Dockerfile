@@ -39,11 +39,15 @@ RUN uv sync --no-dev --extra api --extra postgres --extra acquire-url --extra se
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
 
-# ffmpeg + ffprobe are required by every media op; psycopg's runtime
-# needs libpq; ca-certificates is required for any HTTPS fetch.
+# Runtime apt packages:
+#   ffmpeg   — required by every media op (ffmpeg + ffprobe)
+#   libpq5   — psycopg's runtime library
+#   curl     — used by the HEALTHCHECK + handy for ad-hoc debugging
+#   ca-certificates — needed for any HTTPS fetch
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         libpq5 \
+        curl \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 

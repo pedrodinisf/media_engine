@@ -92,6 +92,44 @@ def test_db_migrate_respects_db_url_override(
     assert not env_default.exists() or env_default.stat().st_size == 0
 
 
+def test_alembic_schema_matches_orm(tmp_path: Path) -> None:
+    """Regression: the migration must produce the exact schema the
+    ORM (``Base.metadata.create_all``) produces — same columns, same
+    nullability, same types. Otherwise SQLite users (who go through
+    ``create_all`` on Cache.__init__) and Postgres users (who run
+    ``alembic upgrade head``) end up with subtly different tables.
+    """
+    from alembic import command
+    from sqlalchemy import create_engine, inspect
+
+    from media_engine.cli.db import _alembic_config
+    from media_engine.runtime.cache import Base
+
+    url_orm = f"sqlite+pysqlite:///{tmp_path / 'orm.db'}"
+    url_mig = f"sqlite+pysqlite:///{tmp_path / 'mig.db'}"
+    eng_orm = create_engine(url_orm, future=True)
+    Base.metadata.create_all(eng_orm)
+    cfg = _alembic_config(url_mig)
+    command.upgrade(cfg, "head")
+    eng_mig = create_engine(url_mig, future=True)
+
+    orm_tables = set(inspect(eng_orm).get_table_names())
+    # Alembic adds its own bookkeeping table; drop it from the compare.
+    mig_tables = set(inspect(eng_mig).get_table_names()) - {"alembic_version"}
+    assert orm_tables == mig_tables
+
+    for table in sorted(orm_tables):
+        orm_cols = {
+            c["name"]: (str(c["type"]), c["nullable"])
+            for c in inspect(eng_orm).get_columns(table)
+        }
+        mig_cols = {
+            c["name"]: (str(c["type"]), c["nullable"])
+            for c in inspect(eng_mig).get_columns(table)
+        }
+        assert orm_cols == mig_cols, f"schema mismatch in {table}"
+
+
 def test_alembic_dir_lives_in_package() -> None:
     """The migrations must ship inside ``media_engine`` so the wheel
     install carries them.

@@ -14,7 +14,6 @@ processes.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -79,17 +78,13 @@ def revoke_token(cache: Cache, token_id: str) -> bool:
 def verify_bearer(cache: Cache, raw_token: str) -> ApiTokenInfo | None:
     """Return the token row for a presented bearer secret, or None.
 
-    Uses constant-time compare on the hash to avoid leaking matches
-    through timing.
+    The lookup is keyed by the sha256 of the secret. Timing-side
+    channel concerns: the comparison happens server-side in the DB
+    layer on hex digests of cryptographic hashes; knowing the *hash*
+    of a valid token doesn't let an attacker forge the *secret* (sha256
+    is one-way), so a fast equality compare on the hash is safe.
     """
     if not raw_token:
         return None
     candidate_hash = _hash(raw_token)
-    row = cache.find_api_token_by_hash(candidate_hash)
-    if row is None:
-        return None
-    # Defense in depth — `find_api_token_by_hash` already filters revoked,
-    # but the constant-time compare protects the comparison itself.
-    if not hmac.compare_digest(row.id, row.id):  # pragma: no cover
-        return None
-    return row
+    return cache.find_api_token_by_hash(candidate_hash)

@@ -136,8 +136,19 @@ def apply_resources_config(config: ResourcesConfig) -> None:
     that list them — a remap, not a union. The original tuple is
     snapshotted the first time an op is touched, so a later config
     file that no longer mentions an op restores its default.
+
+    The function is **atomic**: we validate every referenced op name
+    before mutating any classvar. A YAML file that references one
+    unknown op fails the whole apply, leaving the registry untouched.
     """
     remap = config.remap()
+    # Validate first so an unknown op name doesn't leave the registry
+    # half-restored / half-applied.
+    unknown = [op for op in remap if not OpRegistry.has(op)]
+    if unknown:
+        raise ResourcesConfigError(
+            f"resources.yaml references unknown op(s) {unknown!r}"
+        )
     # Restore previously-overridden ops to their compile-time defaults
     # when the new config doesn't mention them.
     for op_name, original in _ORIGINAL_DECLARED_RESOURCES.items():
@@ -145,10 +156,6 @@ def apply_resources_config(config: ResourcesConfig) -> None:
             op_class = OpRegistry.get(op_name)
             op_class.declared_resources = original  # type: ignore[misc]
     for op_name, resources in remap.items():
-        if not OpRegistry.has(op_name):
-            raise ResourcesConfigError(
-                f"resources.yaml references unknown op {op_name!r}"
-            )
         op_class = OpRegistry.get(op_name)
         if op_name not in _ORIGINAL_DECLARED_RESOURCES:
             _ORIGINAL_DECLARED_RESOURCES[op_name] = op_class.declared_resources

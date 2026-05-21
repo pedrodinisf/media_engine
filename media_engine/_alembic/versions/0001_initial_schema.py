@@ -95,10 +95,20 @@ def upgrade() -> None:
         sa.Column("op_name", sa.String(), nullable=False),
         sa.Column("backend_name", sa.String(), nullable=True),
         sa.Column("namespace", sa.String(), nullable=False, server_default="default"),
-        sa.Column("estimated_cents", sa.Float(), server_default="0.0"),
-        sa.Column("actual_cents", sa.Float(), server_default="0.0"),
-        sa.Column("tokens_in", sa.Integer(), server_default="0"),
-        sa.Column("tokens_out", sa.Integer(), server_default="0"),
+        # Match the ORM model — these are required columns with
+        # server-side defaults, not nullable optionals.
+        sa.Column(
+            "estimated_cents", sa.Float(), nullable=False, server_default="0.0"
+        ),
+        sa.Column(
+            "actual_cents", sa.Float(), nullable=False, server_default="0.0"
+        ),
+        sa.Column(
+            "tokens_in", sa.Integer(), nullable=False, server_default="0"
+        ),
+        sa.Column(
+            "tokens_out", sa.Integer(), nullable=False, server_default="0"
+        ),
         sa.Column("duration_seconds", sa.Float(), nullable=True),
     )
     op.create_index("idx_cost_log_ts", "cost_log", ["ts"])

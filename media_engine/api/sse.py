@@ -15,13 +15,18 @@ runs (pipelines fan out); filtering by ``job_id`` is the right scope.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 
 from media_engine.runtime.events import EventBus
 
 
 async def job_event_stream(
-    bus: EventBus, job_id: str, *, keepalive_seconds: float = 15.0
+    bus: EventBus,
+    job_id: str,
+    *,
+    keepalive_seconds: float = 15.0,
+    queue_size: int = 256,
 ) -> AsyncIterator[dict[str, str]]:
     """Yield SSE-shaped dicts for events belonging to ``job_id``.
 
@@ -30,19 +35,31 @@ async def job_event_stream(
     underlying ``subscribe()`` generator unregisters cleanly). Emits a
     periodic ``: keepalive`` comment if no events arrive within
     ``keepalive_seconds`` — relevant behind reverse proxies that idle out.
+
+    The internal queue is bounded (``queue_size``) so a slow client
+    can't make us accumulate every progress frame in memory — when
+    the queue is full we drop the oldest frame to keep the producer
+    non-blocking. This mirrors the back-pressure ``EventBus`` already
+    applies to its subscribers.
     """
-    queue: asyncio.Queue[dict[str, str]] = asyncio.Queue()
+    queue: asyncio.Queue[dict[str, str]] = asyncio.Queue(maxsize=queue_size)
 
     async def _pump() -> None:
         async for event in bus.subscribe():
             if event.job_id != job_id:
                 continue
-            await queue.put(
-                {
-                    "event": event.type,
-                    "data": event.model_dump_json(),
-                }
-            )
+            frame = {
+                "event": event.type,
+                "data": event.model_dump_json(),
+            }
+            if queue.full():
+                # Drop the oldest queued frame so the producer never
+                # blocks. Slow consumers lose history rather than
+                # backing up the event bus.
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()
+            with contextlib.suppress(asyncio.QueueFull):
+                queue.put_nowait(frame)
 
     pumper = asyncio.create_task(_pump())
     try:

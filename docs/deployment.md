@@ -73,9 +73,36 @@ The engine is single-process; the REST surface is async and shares
 
 Resource semaphores in `runtime/dag.py` are per-process; with multiple
 replicas each replica enforces its own `apple_neural_engine: 1` limit.
-For multi-tenant fairness, namespacing (`med --namespace …`) gives you
-quota at the cache level; load balancing across replicas gives you
-parallel CPU.
+
+## Namespacing & multi-tenancy
+
+The cache is namespace-aware (`MEDIA_ENGINE_NAMESPACE` env or
+`med --namespace`), and bearer tokens carry a namespace too. **The
+contract is strict**: a token whose namespace doesn't match the API
+process's namespace is rejected with 403 — running both halves
+mismatched would silently scatter artifacts across namespaces while
+reads filtered by the token returned empty.
+
+The deployment model is **one API process per namespace**:
+
+```sh
+# Tenant A
+MEDIA_ENGINE_NAMESPACE=tenant-a \
+    med api start --port 8001
+# In another shell:
+MEDIA_ENGINE_NAMESPACE=tenant-a med api token create
+
+# Tenant B (separate process, separate port)
+MEDIA_ENGINE_NAMESPACE=tenant-b \
+    med api start --port 8002
+MEDIA_ENGINE_NAMESPACE=tenant-b med api token create
+```
+
+Both processes can share the same Postgres / permanent_store; the
+cache's `namespace` column keeps them isolated. The CLI's
+`med --namespace` flag plus `MEDIA_ENGINE_NAMESPACE` env are
+equivalent — the env is the simpler choice for long-running
+services.
 
 ---
 

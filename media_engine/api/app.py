@@ -77,9 +77,15 @@ def build_app(
             gc_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await gc_task
-            # Cancel any still-running job tasks so the loop can shut down.
-            for task in list(app.state.app_state.job_tasks.values()):
+            # Cancel any still-running job tasks **and await them** so
+            # the event loop can shut down cleanly (otherwise uvicorn
+            # emits ``Task was destroyed but it is pending`` warnings
+            # on SIGTERM).
+            pending = list(app.state.app_state.job_tasks.values())
+            for task in pending:
                 task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
             if own_engine:
                 with contextlib.suppress(Exception):
                     local_engine.close()

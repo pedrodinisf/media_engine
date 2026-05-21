@@ -267,6 +267,45 @@ def test_artifacts_listing_empty_store(
     page = r.json()
     assert page["items"] == []
     assert page["limit"] == 100
+    assert page["next_offset"] is None
+
+
+def test_artifacts_pagination_round_trip(
+    client: TestClient, auth: dict[str, str], api_engine: Engine, tmp_path: Path
+) -> None:
+    """Plant 3 artifacts, page with limit=1; verify next_offset
+    advances correctly and signals end-of-page with None."""
+    from datetime import UTC, datetime
+
+    from media_engine.artifacts import Kind
+    from media_engine.artifacts.text import MarkdownArtifact
+
+    for i in range(3):
+        p = tmp_path / f"p{i}.md"
+        p.write_text("x")
+        api_engine.cache.upsert_artifact(
+            MarkdownArtifact(
+                id=f"{i:064x}",
+                kind=Kind.MarkdownArtifact,
+                path=str(p),  # type: ignore[arg-type]
+                metadata={},
+                derived_from=(),
+                produced_by=None,
+                created_at=datetime.now(UTC),
+            )
+        )
+    seen: list[str] = []
+    offset: int | None = 0
+    while offset is not None:
+        r = client.get(
+            "/artifacts", headers=auth, params={"limit": 1, "offset": offset}
+        )
+        assert r.status_code == 200
+        page = r.json()
+        seen.extend(item["id"] for item in page["items"])
+        offset = page["next_offset"]
+    assert len(seen) == 3
+    assert len(set(seen)) == 3
 
 
 def test_artifact_404(client: TestClient, auth: dict[str, str]) -> None:

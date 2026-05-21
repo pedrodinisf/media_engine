@@ -113,8 +113,16 @@ def _check_storage_writable(path: Path) -> CheckResult:
 
 
 def _check_cache_reachable(db_url: str) -> CheckResult:
+    """Probe the cache with a trivial ``SELECT 1``.
+
+    The probe creates a one-shot SQLAlchemy engine and disposes it
+    immediately — readiness can be polled every few seconds by
+    kubelet, and a per-probe engine without ``dispose`` would slowly
+    leak pool connections.
+    """
     from sqlalchemy import create_engine, text
 
+    engine = None
     try:
         engine = create_engine(db_url, future=True)
         with engine.connect() as conn:
@@ -123,6 +131,9 @@ def _check_cache_reachable(db_url: str) -> CheckResult:
         return CheckResult(
             name="cache_db", status="down", detail=f"{type(e).__name__}: {e}"
         )
+    finally:
+        if engine is not None:
+            engine.dispose()
     return CheckResult(name="cache_db", status="ok", detail=db_url)
 
 

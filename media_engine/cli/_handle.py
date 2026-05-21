@@ -34,7 +34,6 @@ from media_engine.runtime.dag import (
     DAGResult,
     Pipeline,
     execute_pipeline,
-    make_default_semaphores,
 )
 from media_engine.runtime.engine import Engine
 from media_engine.runtime.lineage import LineageNode
@@ -216,17 +215,23 @@ class DaemonEngineHandle:
         # Push sources into the shared cache so the daemon can resolve
         # them. Mirror ``Engine.run_pipeline``'s namespace stamping so
         # the daemon (which filters by its own ``config.namespace``)
-        # finds the upsert.
+        # finds the upsert. The transient local engine also reads
+        # ``resources.yaml`` (via ``Engine.open_quick`` → ``apply_resources_config``)
+        # so the client-side semaphores honor the same capacity
+        # overrides the daemon side would apply — otherwise a config
+        # that lowered ``cloud_concurrent`` to 1 would still allow
+        # 8-way client dispatch through the daemon.
         with Engine.open_quick(self._config) as local:
             for artifact in pipeline.sources.values():
                 stamped = artifact.model_copy(
                     update={"namespace": local.config.namespace}
                 )
                 local.cache.upsert_artifact(stamped)
+            semaphores = local._get_semaphores()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         return await execute_pipeline(
             pipeline,
             run_op=self._client.run_op,
-            semaphores=make_default_semaphores(),
+            semaphores=semaphores,
         )
 
     def estimate_op_cost(

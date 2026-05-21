@@ -62,36 +62,10 @@ def cmd_stats(
     cfg = _load_config()
     cache = Cache(cfg.resolve_cache_db_url())
     try:
-        per_kind: dict[str, dict[str, int]] = {}
-        total = 0
-        for kind in Kind:
-            items = cache.list_artifacts(
-                kind=kind, limit=10_000, namespace=cfg.namespace
-            )
-            kind_bytes = 0
-            for art in items:
-                try:
-                    kind_bytes += Path(art.path).stat().st_size
-                except OSError:
-                    continue
-            per_kind[kind.value] = {"count": len(items), "bytes": kind_bytes}
-            total += kind_bytes
-
-        # Age + per-op rollups walk the full row set once. We bucket by
-        # age relative to "now" so the buckets stay stable across
-        # invocations.
-        now = datetime.now(UTC)
-        buckets: list[tuple[str, timedelta | None]] = [
-            ("<1h", timedelta(hours=1)),
-            ("<24h", timedelta(hours=24)),
-            ("<7d", timedelta(days=7)),
-            ("<30d", timedelta(days=30)),
-            ("older", None),
-        ]
-        per_age: dict[str, dict[str, int]] = {
-            label: {"count": 0, "bytes": 0} for label, _ in buckets
-        }
-        per_op: dict[str, dict[str, int]] = {}
+        # Pull every row in the namespace once, then compute all three
+        # rollups in a single Python pass. Pre-fix, the per-kind walk
+        # used ``cache.list_artifacts(kind=K, limit=10_000)`` which
+        # silently capped large stores at 10k rows per kind.
         with cache.session() as s:
             artifact_rows = list(
                 s.scalars(
@@ -104,11 +78,34 @@ def cmd_stats(
                 r.id: r.op_name
                 for r in s.scalars(select(CachedOperationRun)).all()
             }
+
+        now = datetime.now(UTC)
+        buckets: list[tuple[str, timedelta | None]] = [
+            ("<1h", timedelta(hours=1)),
+            ("<24h", timedelta(hours=24)),
+            ("<7d", timedelta(days=7)),
+            ("<30d", timedelta(days=30)),
+            ("older", None),
+        ]
+        per_kind: dict[str, dict[str, int]] = {
+            k.value: {"count": 0, "bytes": 0} for k in Kind
+        }
+        per_age: dict[str, dict[str, int]] = {
+            label: {"count": 0, "bytes": 0} for label, _ in buckets
+        }
+        per_op: dict[str, dict[str, int]] = {}
+        total = 0
         for row in artifact_rows:
             try:
                 size = Path(row.path).stat().st_size
             except OSError:
                 size = 0
+            total += size
+            kind_slot = per_kind.setdefault(
+                row.kind, {"count": 0, "bytes": 0}
+            )
+            kind_slot["count"] += 1
+            kind_slot["bytes"] += size
             created = row.created_at
             if created.tzinfo is None:
                 created = created.replace(tzinfo=UTC)
@@ -118,11 +115,16 @@ def cmd_stats(
                     per_age[label]["count"] += 1
                     per_age[label]["bytes"] += size
                     break
-            op_name = (
-                run_op_by_id.get(row.produced_by, "(upload)")
-                if row.produced_by is not None
-                else "(upload)"
-            )
+            if row.produced_by is None:
+                # No producer — the artifact came in via acquire.upload
+                # (or an equivalent ingest with no recorded op run).
+                op_name = "(upload)"
+            else:
+                # produced_by is set; if the run row is gone (e.g. the
+                # row was pruned but the artifact is still on disk),
+                # attribute to "(unknown)" instead of falsely claiming
+                # it was a fresh upload.
+                op_name = run_op_by_id.get(row.produced_by, "(unknown)")
             slot = per_op.setdefault(op_name, {"count": 0, "bytes": 0})
             slot["count"] += 1
             slot["bytes"] += size
@@ -210,15 +212,25 @@ def cmd_migrate(
         # root, unlikely but valid) or `<prefix>/<anything>`. Using
         # `<prefix>%` alone would also match `/older` when the operator
         # passed `/old`; the `/` separator prevents that collision.
+        # Escape SQL LIKE metacharacters (`%`, `_`, the escape char
+        # itself) in the prefix so a path containing them isn't
+        # interpreted as a wildcard.
         from_str = str(from_path)
         sep_prefix = from_str.rstrip("/") + "/"
+        escaped_prefix = (
+            sep_prefix.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
         with cache.session() as s:
             rows = list(
                 s.scalars(
                     select(CachedArtifact).where(
                         or_(
                             CachedArtifact.path == from_str,
-                            CachedArtifact.path.like(f"{sep_prefix}%"),
+                            CachedArtifact.path.like(
+                                f"{escaped_prefix}%", escape="\\"
+                            ),
                         )
                     )
                 ).all()
@@ -276,14 +288,22 @@ def cmd_gc(
             )
         else:
             # Mirror the sweep logic but don't delete — just count.
-            import os
+            # Concurrent producers may delete a workdir between
+            # ``iterdir`` and ``stat``; tolerate that with a per-entry
+            # try/except rather than letting the gc command crash.
             import time
 
             cutoff = time.time() - retention.total_seconds()
             count = 0
             if cfg.workdir.exists():
                 for entry in cfg.workdir.iterdir():
-                    if entry.is_dir() and os.path.getmtime(entry) <= cutoff:
+                    if not entry.is_dir():
+                        continue
+                    try:
+                        mtime = entry.stat().st_mtime
+                    except FileNotFoundError:
+                        continue
+                    if mtime <= cutoff:
                         count += 1
             console.print(
                 f"[i]workdir sweep:[/i] would remove {count} directories "

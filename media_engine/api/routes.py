@@ -52,6 +52,7 @@ from media_engine.profiles.pipeline import (
 )
 from media_engine.profiles.schema import PipelineProfile, PromptProfile
 from media_engine.runtime.cache import ApiTokenInfo, Job
+from media_engine.runtime.lineage import OperationRunRef
 
 # ─────────────────────────────────────────────────────────────────
 # Dependencies
@@ -156,7 +157,9 @@ class JobAck(BaseModel):
 
 class JobDetail(BaseModel):
     job: Job
-    op_runs: list[Any] = Field(default_factory=list)
+    op_runs: list[OperationRunRef] = Field(
+        default_factory=lambda: cast(list[OperationRunRef], [])
+    )
 
 
 class ArtifactPage(BaseModel):
@@ -362,10 +365,7 @@ def get_job_endpoint(
         raise HTTPException(status_code=404, detail="job not found")
     return JobDetail(
         job=job,
-        op_runs=[
-            ref.model_dump(mode="json")
-            for ref in operation_runs_for_job(state, job.op_run_ids)
-        ],
+        op_runs=operation_runs_for_job(state, job.op_run_ids),
     )
 
 
@@ -409,7 +409,17 @@ def list_artifacts_endpoint(
     token: Annotated[ApiTokenInfo, Depends(require_token)],
     kind: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ArtifactPage:
+    """Paginated artifact list, newest first.
+
+    Offset-based pagination: pass ``?offset=<n>&limit=<m>`` to walk a
+    large cache page by page. We over-fetch by one row to detect
+    whether there's a next page without a separate COUNT query — if
+    we get back ``limit + 1`` rows, the surplus is dropped from the
+    response and the client knows to call again with
+    ``offset = current_offset + limit``.
+    """
     kind_filter: Kind | None = None
     if kind is not None:
         try:
@@ -419,9 +429,19 @@ def list_artifacts_endpoint(
                 status_code=400, detail=f"unknown kind: {kind!r}"
             ) from e
     items = state.cache.list_artifacts(
-        kind=kind_filter, limit=limit, namespace=token.namespace
+        kind=kind_filter,
+        limit=limit + 1,
+        offset=offset,
+        namespace=token.namespace,
     )
-    return ArtifactPage(items=items, limit=limit)
+    has_more = len(items) > limit
+    if has_more:
+        items = items[:limit]
+    return ArtifactPage(
+        items=items,
+        limit=limit,
+        next_offset=(offset + limit) if has_more else None,
+    )
 
 
 @router.get("/artifacts/{artifact_id}", response_model=AnyArtifact)

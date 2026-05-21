@@ -425,15 +425,29 @@ class Cache:
         kind: Kind | None = None,
         since: datetime | None = None,
         limit: int = 100,
+        offset: int = 0,
         namespace: str = "default",
+        oldest_first: bool = False,
     ) -> list[AnyArtifact]:
+        """List artifacts in the cache.
+
+        ``oldest_first`` flips the sort direction; the default is
+        newest-first (what `med ls` and `GET /artifacts` want).
+        Eviction passes ``oldest_first=True`` so it sees the long
+        tail even when the table is large.
+        """
         with self.session() as s:
             stmt = select(CachedArtifact).where(CachedArtifact.namespace == namespace)
             if kind is not None:
                 stmt = stmt.where(CachedArtifact.kind == kind.value)
             if since is not None:
                 stmt = stmt.where(CachedArtifact.created_at >= since)
-            stmt = stmt.order_by(CachedArtifact.created_at.desc()).limit(limit)
+            order = (
+                CachedArtifact.created_at.asc()
+                if oldest_first
+                else CachedArtifact.created_at.desc()
+            )
+            stmt = stmt.order_by(order).offset(offset).limit(limit)
             return [to_pydantic(r) for r in s.scalars(stmt).all()]
 
     def resolve_id_prefix(

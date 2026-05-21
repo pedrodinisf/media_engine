@@ -163,6 +163,43 @@ def test_eviction_dry_run_does_not_delete(tmp_path: Path) -> None:
     assert cache.get_artifact(aid) is not None
 
 
+def test_eviction_sees_the_long_tail(tmp_path: Path) -> None:
+    """Regression: pre-fix, eviction queried the cache with limit=10000
+    DESC and then sorted by age — so for any store bigger than 10k
+    artifacts the oldest rows were invisible and eviction did nothing.
+    Now the walk paginates oldest-first; verify that with a small
+    PAGE_SIZE we still reach the long tail of a multi-page corpus.
+    """
+    cache = Cache(f"sqlite+pysqlite:///{tmp_path / 'c.db'}")
+    # Plant 50 artifacts; the oldest ones must be the ones evicted.
+    ids_by_age: list[str] = []
+    for hours in range(50, 0, -1):
+        ids_by_age.append(
+            _plant_artifact(cache, tmp_path, Kind.MarkdownArtifact, hours, 1024)
+        )
+    # Cap is small enough that only the 3 newest fit.
+    policy = EvictionPolicy(
+        enabled=True,
+        max_gb=(3 * 1024) / (1024**3),
+        protected_kinds=(),
+    )
+    # Force a small page size so the chunked walk is exercised even on
+    # a 50-row corpus.
+    import media_engine.runtime.eviction as _ev
+
+    saved = _ev.PAGE_SIZE
+    _ev.PAGE_SIZE = 7
+    try:
+        res = evict_lru(cache, policy)
+    finally:
+        _ev.PAGE_SIZE = saved
+    # The 3 newest survive (ids_by_age[-3:]); everything older is gone.
+    survivors = {a.id for a in cache.list_artifacts(limit=100)}
+    expected_survivors = set(ids_by_age[-3:])
+    assert survivors == expected_survivors
+    assert set(res.evicted_ids) == set(ids_by_age[:-3])
+
+
 # ─────────────────────────────────────────────────────────────────
 # CLI surface
 # ─────────────────────────────────────────────────────────────────

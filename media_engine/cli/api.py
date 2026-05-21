@@ -29,8 +29,14 @@ token_app = typer.Typer(name="token", help="Manage bearer tokens.")
 app.add_typer(token_app, name="token")
 
 
-def _open_cache(config_path: str | None) -> Cache:
-    cfg = EngineConfig.load(None) if config_path is None else EngineConfig.load()
+def _open_cache() -> Cache:
+    """Open the cache the engine config points at.
+
+    Used by the token sub-commands so they can mint / list / revoke
+    tokens before any server is running — they talk to the cache
+    directly, never through the API.
+    """
+    cfg = EngineConfig.load()
     cfg.validate_storage()
     return Cache(cfg.resolve_cache_db_url())
 
@@ -99,7 +105,7 @@ def cmd_token_create(
     """Mint a new bearer token. The secret is printed once — save it now."""
     from media_engine.api.auth import create_token
 
-    cache = _open_cache(None)
+    cache = _open_cache()
     try:
         token = create_token(cache, label=label, namespace=namespace)
     finally:
@@ -145,7 +151,7 @@ def cmd_token_list(
     """List API tokens (hash only — secrets cannot be recovered)."""
     from media_engine.api.auth import list_tokens
 
-    cache = _open_cache(None)
+    cache = _open_cache()
     try:
         rows = list_tokens(cache, include_revoked=include_revoked)
     finally:
@@ -184,7 +190,7 @@ def cmd_token_revoke(
     """Mark a bearer token revoked. Subsequent requests with it 401."""
     from media_engine.api.auth import revoke_token
 
-    cache = _open_cache(None)
+    cache = _open_cache()
     try:
         revoked = revoke_token(cache, token_id)
     finally:

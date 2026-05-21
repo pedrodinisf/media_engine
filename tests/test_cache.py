@@ -131,6 +131,26 @@ def test_list_artifacts_namespace_isolation(cache: Cache, tmp_path: Path) -> Non
     assert {a.id for a in cache.list_artifacts(namespace="alt")} == {"other"}
 
 
+def test_upsert_artifact_raises_on_namespace_conflict(
+    cache: Cache, tmp_path: Path
+) -> None:
+    """Same id, two namespaces — the cache rejects with a clear
+    ``ValueError`` instead of leaving a deferred ``IntegrityError``.
+
+    The schema has ``id`` as the primary key, so cross-tenant
+    re-registration of the same bytes is not supported in v1.
+    """
+    cache.upsert_artifact(_video("shared", tmp_path))
+    foreign = Video(
+        id="shared",
+        path=tmp_path / "shared.mp4",
+        namespace="tenant-foo",
+        created_at=_now(),
+    )
+    with pytest.raises(ValueError, match="already exists in namespace"):
+        cache.upsert_artifact(foreign)
+
+
 # ─────────────────────────────────────────────────────────────────
 # Operation runs (cache miss → record → cache hit)
 # ─────────────────────────────────────────────────────────────────

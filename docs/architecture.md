@@ -481,7 +481,7 @@ Postgres / pgvector / postgres-tsvector backends + alembic migrations
 package (Dockerfile, docker-compose, Helm chart, Terraform module),
 `/health` + `/ready` probes + `med health|ready`, and
 `docs/deployment.md` (commit 33); and the `resources.yaml` loader
-(commit 34). **31 ops.** Suite: 695 passed / 29 skipped
+(commit 34). **31 ops.** Suite: 699 passed / 29 skipped
 (dependency/API-key/network gated); `ruff` and strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
