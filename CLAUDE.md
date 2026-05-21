@@ -86,6 +86,11 @@ YAML frontmatter) or pipeline (YAML DAG).
   configured cache (sqlite or postgres)
 - `uv run med db dump-sqlite-to-postgres --to <url>` — one-shot SQLite →
   Postgres copy with pre/post sha256 verification
+- `uv run med storage stats` — bytes-by-kind + free space
+- `uv run med storage gc [--apply]` — workdir sweep + LRU eviction
+  (eviction honored only when `eviction_enabled = true` in config)
+- `uv run med storage migrate --from <a> --to <b>` — rewrite
+  permanent_store path prefix in the cache (after moving files)
 - `uv run med health` / `med ready` — operational checks (Phase 4+)
 
 ## Storage

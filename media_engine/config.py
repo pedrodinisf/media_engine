@@ -50,6 +50,18 @@ class EngineConfig(BaseSettings):
     min_free_gb: int = 20
     daemon_socket: Path | None = None
     namespace: str = "default"
+    # LRU eviction (Phase 4 commit 32) — opt-in cap on artifact store
+    # size. Honored by ``med storage gc --apply`` and the daemon's
+    # periodic GC. The default-off policy means existing installs keep
+    # current behavior; flip ``eviction_enabled = true`` in config.toml
+    # to activate.
+    eviction_enabled: bool = False
+    eviction_max_gb: float = 500.0
+    # Comma- or list-form; Pydantic accepts either.
+    eviction_protected_kinds: tuple[str, ...] = ("video", "audio")
+    # Garbage-collect orphan workdirs older than this many hours
+    # (also used by ``med storage gc --workdirs``).
+    gc_workdir_retention_hours: int = 24
 
     @classmethod
     def load(cls, config_file: Path | None = None) -> EngineConfig:

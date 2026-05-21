@@ -45,6 +45,7 @@ from media_engine.cli import db as _db_cli  # noqa: E402
 from media_engine.cli import events as _events_cli  # noqa: E402
 from media_engine.cli import mcp as _mcp_cli  # noqa: E402
 from media_engine.cli import profile as _profile_cli  # noqa: E402
+from media_engine.cli import storage as _storage_cli  # noqa: E402
 from media_engine.cli.acquire_live import (  # noqa: E402
     cmd_acquire_live as _cmd_acquire_live,
 )
@@ -58,6 +59,7 @@ app.add_typer(_cost_cli.app, name="cost")
 app.add_typer(_events_cli.app, name="events")
 app.add_typer(_api_cli.app, name="api")
 app.add_typer(_db_cli.app, name="db")
+app.add_typer(_storage_cli.app, name="storage")
 app.command("batch")(_cmd_batch)
 app.command("acquire-live")(_cmd_acquire_live)
 app.command("search")(_cmd_search)
