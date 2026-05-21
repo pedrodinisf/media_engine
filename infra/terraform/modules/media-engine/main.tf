@@ -37,6 +37,14 @@ resource "helm_release" "media_engine" {
           size    = var.storage_size
         }
       }
+      # Annotate the release with the cluster identifier so dashboards
+      # / drift detection can attribute it without inspecting the
+      # provider's kube context.
+      config = {
+        extraEnv = var.cluster == "" ? {} : {
+          MEDIA_ENGINE_CLUSTER_LABEL = var.cluster
+        }
+      }
     }),
   ]
 }

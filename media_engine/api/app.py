@@ -16,8 +16,10 @@ one. After that, every endpoint requires a bearer.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from collections.abc import AsyncGenerator
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -28,6 +30,7 @@ from media_engine.api.routes import router
 from media_engine.bootstrap import register_all
 from media_engine.config import EngineConfig
 from media_engine.runtime.engine import Engine
+from media_engine.runtime.gc import gc_interval_from_env, periodic_workdir_gc
 
 if TYPE_CHECKING:
     pass
@@ -55,9 +58,25 @@ def build_app(
         app.state.app_state = AppState(
             engine=local_engine, cache=local_engine.cache
         )
+        # Workdir garbage collection. ``Engine.run`` already cleans up
+        # the per-job tmp dir on success/failure paths, but a process
+        # crash mid-run leaves residue. The periodic sweep catches
+        # those orphans on the same cadence the daemon uses.
+        gc_task = asyncio.create_task(
+            periodic_workdir_gc(
+                local_engine.config.workdir,
+                interval=timedelta(seconds=gc_interval_from_env()),
+                retention=timedelta(
+                    hours=local_engine.config.gc_workdir_retention_hours
+                ),
+            )
+        )
         try:
             yield
         finally:
+            gc_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await gc_task
             # Cancel any still-running job tasks so the loop can shut down.
             for task in list(app.state.app_state.job_tasks.values()):
                 task.cancel()

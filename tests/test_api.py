@@ -89,6 +89,24 @@ def test_revoked_token_returns_401(
     assert r.status_code == 401
 
 
+def test_token_with_mismatched_namespace_returns_403(
+    client: TestClient, api_engine: Engine
+) -> None:
+    """The engine is single-namespace per process; a token bound to a
+    different namespace would silently write to the engine's namespace
+    while reads (filtered by the token) return empty. We reject the
+    mismatch with 403 so the contract is honest."""
+    foreign = create_token(
+        api_engine.cache, label="tenant-b", namespace="tenant-b"
+    )
+    r = client.get(
+        "/operations",
+        headers={"Authorization": f"Bearer {foreign.secret}"},
+    )
+    assert r.status_code == 403
+    assert "namespace" in r.json()["detail"]
+
+
 # ─────────────────────────────────────────────────────────────────
 # Discovery surface
 # ─────────────────────────────────────────────────────────────────
@@ -321,6 +339,25 @@ def test_profile_upload_persists_to_disk(
     on_disk = Path(summary["path"])
     assert on_disk.exists()
     assert on_disk.is_relative_to(api_engine.config.config_dir)
+
+
+def test_profile_upload_rejects_path_traversal(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """Profile names with path separators must be rejected — without
+    the validator, ``../../../etc/passwd`` would write a YAML file
+    outside the profiles directory.
+    """
+    payload = {
+        "name": "../../../etc/passwd",
+        "kind": "pipeline",
+        "graph": [
+            {"id": "extract", "op": "video.extract_audio", "inputs": []}
+        ],
+    }
+    r = client.post("/profiles", headers=auth, json=payload)
+    assert r.status_code == 400
+    assert "invalid profile name" in r.json()["detail"].lower()
 
 
 # ─────────────────────────────────────────────────────────────────

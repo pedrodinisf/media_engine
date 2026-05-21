@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from alembic import context
 from media_engine.config import EngineConfig
 from media_engine.runtime.cache import Base
 
@@ -23,12 +23,17 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Read the URL the engine would use, so `alembic upgrade head` targets
-# whichever store the user has configured.
-try:
-    _cfg = EngineConfig.load()
-    config.set_main_option("sqlalchemy.url", _cfg.resolve_cache_db_url())
-except Exception:  # pragma: no cover -- alembic must boot even on bad config
-    pass
+# whichever store the user has configured. When ``med db migrate``
+# already pinned the URL via ``cli/db.py`` (and stamped
+# ``url_source='cli'`` on the config attributes), respect that —
+# otherwise ``med db migrate --db-url X`` would be silently shadowed
+# by ``MEDIA_ENGINE_DB_URL``.
+if config.attributes.get("url_source") != "cli":
+    try:
+        _cfg = EngineConfig.load()
+        config.set_main_option("sqlalchemy.url", _cfg.resolve_cache_db_url())
+    except Exception:  # pragma: no cover -- alembic must boot even on bad config
+        pass
 
 target_metadata = Base.metadata
 

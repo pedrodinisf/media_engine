@@ -460,9 +460,10 @@ media_engine/
 │                          api · db · storage · health
 ├── daemon/                protocol · server · client · entry
 ├── api/                   app · routes · auth · jobs · sse · health · _state
-└── mcp/                   exporter · server
+├── mcp/                   exporter · server
+└── _alembic/              env.py + versions/0001_initial_schema (ships in the wheel)
 
-alembic/                   env.py + versions/0001_initial_schema (migrations)
+alembic.ini                repo-root convenience for ``alembic upgrade head``
 infra/                     docker (Dockerfile + compose) · helm · terraform
 ```
 
@@ -480,7 +481,7 @@ Postgres / pgvector / postgres-tsvector backends + alembic migrations
 package (Dockerfile, docker-compose, Helm chart, Terraform module),
 `/health` + `/ready` probes + `med health|ready`, and
 `docs/deployment.md` (commit 33); and the `resources.yaml` loader
-(commit 34). **31 ops.** Suite: 690 passed / 29 skipped
+(commit 34). **31 ops.** Suite: 695 passed / 29 skipped
 (dependency/API-key/network gated); `ruff` and strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
@@ -589,6 +590,57 @@ roadmap; this section is the reconciliation):
     the plan's gate (`TOKEN=$(med api token create)`) works
     straight. Context (id, namespace, label, "save it now" notice)
     goes to stderr; `--json` retains the structured form.
+  - **Alembic migrations ship inside the package** as
+    `media_engine/_alembic/`. The wheel only packages
+    `media_engine/`, so leaving the migrations at the repo root
+    would have broken `med db migrate` on installed wheels.
+    `cli/db.py:_alembic_config` builds the alembic ``Config``
+    in-process and pins ``script_location`` at the packaged
+    directory; `alembic.ini` at the repo root remains for direct
+    `alembic upgrade head` invocations and points at the same path.
+  - **`med db migrate --db-url X` honors X.** `_alembic_config`
+    stamps `config.attributes['url_source'] = 'cli'`; the in-package
+    `env.py` skips the env-driven override when it sees that flag.
+  - **`Engine.run` stamps the engine's namespace on outputs.** Ops
+    construct artifacts with the Pydantic field default
+    (`namespace="default"`); the engine is the single place that
+    owns the namespace decision per call. The `produced_by`
+    finalize loop now passes `namespace=self.config.namespace`
+    alongside `produced_by`, and `Engine.run_pipeline` (plus the
+    daemon-routed handle) stamps `pipeline.sources` the same way so
+    the inner `Engine.run` dispatches can resolve them.
+  - **Token namespace must match the engine's.** `require_token`
+    returns 403 when a token's namespace doesn't equal
+    `state.engine.config.namespace` — the engine is single-namespace
+    per process, and silently writing to one namespace while reads
+    filter by another would only confuse callers. Multi-tenant
+    deployments run one API process per namespace.
+  - **`cache.upsert_artifact` raises `ValueError` on namespace
+    conflict.** Same `id` under a different namespace would
+    otherwise surface as a deferred SQL `IntegrityError`; we now
+    catch it at the SQLAlchemy boundary with a clear message. The
+    underlying schema has `id` as the primary key, so cross-tenant
+    content sharing is not supported in v1.
+  - **MCP server is import-clean without the SDK installed.**
+    `media_engine/mcp/server.py` lazy-imports `mcp.types` and
+    `mcp.server.Server` inside `build_mcp_server` so the rest of
+    the CLI keeps working on a base install (no `mcp` extra).
+  - **API lifespan owns workdir GC** alongside the daemon's. An
+    API-only deployment (no daemon container) still sweeps orphan
+    workdirs on the same configurable interval as the daemon does.
+  - **`POST /profiles` validates the profile name** against a strict
+    kebab-case pattern + a path-relative-to check so a malicious
+    `name` like `../../etc/passwd` returns 400 rather than writing
+    outside the profiles directory.
+  - **Helm chart ConfigMap shipped** alongside the Deployment /
+    Service / Ingress / Secret / PVC templates. Non-secret env vars
+    (`MEDIA_ENGINE_PERMANENT_STORE`, `LOG_FORMAT`, `MIN_FREE_GB`,
+    plus `config.extraEnv`) flow through the ConfigMap via
+    `envFrom` on the Deployment.
+  - **Terraform module exposes a `cluster` variable** for downstream
+    callers to tag the release with a cluster identifier; passes
+    through to the chart as `MEDIA_ENGINE_CLUSTER_LABEL` (pure
+    metadata, no behavior change).
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit

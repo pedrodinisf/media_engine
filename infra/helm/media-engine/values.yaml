@@ -14,10 +14,17 @@ db:
 
 storage:
   permanentStore: "/var/lib/media_engine"
+  minFreeGb: 5
   pvc:
     enabled: true
     storageClassName: ""
     size: 100Gi
+
+# Extra non-secret env vars merged into the ConfigMap. Use this for
+# tuning flags like MEDIA_ENGINE_GC_INTERVAL or MEDIA_ENGINE_NAMESPACE.
+# For secrets, add to the Secret template instead.
+config:
+  extraEnv: {}
 
 service:
   type: ClusterIP
@@ -41,9 +48,3 @@ resources:
   requests:
     cpu: 250m
     memory: 512Mi
-
-# Set true to mount a Secret named ``media-engine-config`` at
-# /home/engine/.config/media_engine/.
-externalConfig:
-  enabled: false
-  secretName: ""

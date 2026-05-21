@@ -1,3 +1,16 @@
+variable "cluster" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    Human-readable cluster identifier (e.g. "prod-us-east-1"). The
+    actual kubernetes/helm provider configuration is plumbed in
+    upstream — this module just declares the variable so callers can
+    pass it through as a tag, an annotation, or a Helm value without
+    needing to fork the module. Recorded as the
+    ``media-engine/cluster`` label on the release.
+  EOT
+}
+
 variable "release_name" {
   type        = string
   default     = "media-engine"

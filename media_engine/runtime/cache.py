@@ -390,10 +390,25 @@ class Cache:
     # ── artifact storage ──
 
     def upsert_artifact(self, artifact: AnyArtifact) -> None:
+        """Insert the artifact row (idempotent in the same namespace).
+
+        ``cached_artifacts.id`` is the primary key, so the same id can
+        only belong to one namespace at a time — the table is
+        content-addressed across the whole store, not per-tenant. We
+        surface that as a clear ``ValueError`` instead of falling
+        through to a SQL ``IntegrityError`` later, which is what would
+        happen if two tenants tried to register the same bytes.
+        """
         with self.session() as s:
             existing = s.get(CachedArtifact, artifact.id)
-            if existing is not None and existing.namespace == artifact.namespace:
-                return
+            if existing is not None:
+                if existing.namespace == artifact.namespace:
+                    return
+                raise ValueError(
+                    f"artifact id {artifact.id[:12]}… already exists in "
+                    f"namespace {existing.namespace!r}; cannot also register "
+                    f"under {artifact.namespace!r} (one namespace per id)"
+                )
             s.add(to_orm(artifact))
 
     def get_artifact(

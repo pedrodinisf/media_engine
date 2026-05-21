@@ -22,18 +22,23 @@ default deny by setting ``allowed_ops=None`` and an empty ``deny_ops``.
 
 from __future__ import annotations
 
+import importlib
 import json
 from dataclasses import dataclass, field
 from typing import Any
 
-import mcp.types as mtypes
-from mcp.server import Server
 from pydantic import AnyUrl
 
 from media_engine.backends import BackendRegistry
 from media_engine.mcp.exporter import export_op_as_mcp_tool
 from media_engine.ops import OpRegistry
 from media_engine.runtime.engine import Engine
+
+# The ``mcp`` SDK is an optional install (``[mcp]`` extra). We never
+# import it at module load — every entry point lazy-imports inside the
+# call path so ``from media_engine.mcp import …`` succeeds even when
+# the SDK isn't on the system (only ``build_mcp_server`` /
+# ``serve_stdio`` actually need it).
 
 # The default-safe set: lookups + lineage + search. Everything else
 # (acquire.*, audio.*, video.*, intelligence.*, frames.*, image.*) is
@@ -107,14 +112,22 @@ def build_mcp_server(
     *,
     security: MCPSecurityConfig | None = None,
     name: str = "media-engine",
-) -> Server[Any, Any]:
-    """Build an MCP ``Server`` that dispatches to the given engine."""
+) -> Any:
+    """Build an MCP ``Server`` that dispatches to the given engine.
+
+    The ``mcp`` SDK is imported lazily here so the rest of the package
+    stays import-clean for installs that don't enable the ``mcp`` extra
+    — anything in ``media_engine.cli`` that touches the MCP subcommand
+    would otherwise crash at startup.
+    """
+    mtypes = importlib.import_module("mcp.types")
+    mcp_server_mod = importlib.import_module("mcp.server")
     security = security or MCPSecurityConfig()
-    server: Server[Any, Any] = Server(name)
+    server = mcp_server_mod.Server(name)
 
     @server.list_tools()
-    async def _list_tools() -> list[mtypes.Tool]:  # pyright: ignore[reportUnusedFunction]
-        tools: list[mtypes.Tool] = []
+    async def _list_tools() -> list[Any]:  # pyright: ignore[reportUnusedFunction]
+        tools: list[Any] = []
         for op_name in _filtered_op_names(security):
             op_class = OpRegistry.get(op_name)
             spec = export_op_as_mcp_tool(op_class)
@@ -130,7 +143,7 @@ def build_mcp_server(
     @server.call_tool()
     async def _call_tool(  # pyright: ignore[reportUnusedFunction]
         name: str, arguments: dict[str, Any]
-    ) -> list[mtypes.ContentBlock]:
+    ) -> list[Any]:
         op_name = _tool_name_to_op_name(name)
         if not security.is_allowed(op_name):
             raise PermissionError(
@@ -160,7 +173,7 @@ def build_mcp_server(
         ]
 
     @server.list_resources()
-    async def _list_resources() -> list[mtypes.Resource]:  # pyright: ignore[reportUnusedFunction]
+    async def _list_resources() -> list[Any]:  # pyright: ignore[reportUnusedFunction]
         # Cap at the cache's natural list-artifacts limit; clients that
         # need the full corpus should use ``GET /artifacts`` over REST.
         items = engine.list_artifacts(limit=1000)

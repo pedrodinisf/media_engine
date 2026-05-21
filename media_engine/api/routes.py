@@ -8,6 +8,7 @@ heavier — selection, schema validation, op execution — happens behind
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
@@ -80,6 +81,14 @@ def require_token(
 
     Returns the token row (id + namespace) so route handlers can scope
     their reads/writes to that namespace.
+
+    **Namespace contract** (Phase 4): the engine is single-namespace
+    per process — every op runs against ``state.engine.config.namespace``.
+    A token bound to a different namespace would silently write to the
+    engine's namespace while the caller's reads (filtered by
+    ``token.namespace``) returned empty, so we reject the mismatch
+    eagerly with 403. Multi-tenant deployments run one API process per
+    namespace.
     """
     header = request.headers.get("authorization", "")
     scheme, _, raw_token = header.partition(" ")
@@ -95,6 +104,16 @@ def require_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid or revoked token",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    if info.namespace != state.engine.config.namespace:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"token namespace {info.namespace!r} does not match this API "
+                f"process namespace {state.engine.config.namespace!r}; run a "
+                f"separate API instance per namespace, or mint a token for "
+                f"the running namespace"
+            ),
         )
     return info
 
@@ -492,6 +511,9 @@ def get_profile_endpoint(
     return payload
 
 
+_PROFILE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
 @router.post(
     "/profiles", response_model=ProfileSummary, status_code=status.HTTP_201_CREATED
 )
@@ -503,13 +525,31 @@ def upload_profile_endpoint(
     """Persist a user-supplied profile under ``{config_dir}/profiles/``.
 
     The accepted body is a validated profile model — invalid YAML never
-    reaches the disk. Filenames are derived from the profile name.
+    reaches the disk. The profile name is restricted to kebab-case
+    (lowercase, digits, ``-``, ``_``; 1–64 chars) so it can't escape
+    the profiles directory through path-traversal segments like
+    ``../../etc/passwd``.
     """
     del token  # uses default config_dir per process namespace
+    if not _PROFILE_NAME_RE.match(body.name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"invalid profile name {body.name!r}: must match "
+                f"{_PROFILE_NAME_RE.pattern}"
+            ),
+        )
     profiles_dir = state.engine.config.config_dir / "profiles"
     profiles_dir.mkdir(parents=True, exist_ok=True)
-    suffix = ".yaml"
-    target = profiles_dir / f"{body.name}{suffix}"
+    target = (profiles_dir / f"{body.name}.yaml").resolve()
+    # Defense in depth — the regex above already forbids slashes, but
+    # we still confirm the resolved path stays inside profiles_dir
+    # before writing.
+    if not target.is_relative_to(profiles_dir.resolve()):
+        raise HTTPException(
+            status_code=400,
+            detail="profile name resolves outside the profiles directory",
+        )
     import yaml as _yaml
 
     target.write_text(

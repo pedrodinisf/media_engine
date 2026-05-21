@@ -58,6 +58,37 @@ async def test_run_param_change_yields_new_id(
     assert a16.id != a44.id
 
 
+async def test_run_stamps_engine_namespace_on_outputs(
+    tmp_path: Path, sample_mp4: Path
+) -> None:
+    """Regression: when the engine runs in a non-default namespace,
+    outputs must land in that namespace.
+
+    Ops construct artifacts with the Pydantic default
+    ``namespace="default"``; the engine is the single place that owns
+    the namespace decision per ``Engine.run`` call. Without the stamp
+    a multi-tenant deployment writes orphan artifacts that the caller
+    can't read back through the same handle.
+    """
+    from media_engine.config import EngineConfig
+
+    cfg = EngineConfig(
+        permanent_store=tmp_path / "store",
+        workdir=tmp_path / "work",
+        config_dir=tmp_path / "config",
+        cache_db_url=f"sqlite+pysqlite:///{tmp_path / 'cache.db'}",
+        min_free_gb=0,
+        namespace="tenant-foo",
+    )
+    with Engine.open_quick(cfg) as engine:
+        [art] = await engine.run("acquire.upload", source_path=sample_mp4)
+    assert art.namespace == "tenant-foo"
+    # Re-open and look up under both namespaces to confirm isolation.
+    with Engine.open_quick(cfg) as e2:
+        assert e2.cache.get_artifact(art.id, namespace="tenant-foo") is not None
+        assert e2.cache.get_artifact(art.id, namespace="default") is None
+
+
 async def test_run_unknown_op_raises(engine: Engine) -> None:
     with pytest.raises(LookupError, match="No operation"):
         await engine.run("never.heard")

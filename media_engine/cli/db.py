@@ -52,13 +52,30 @@ _TABLES: list[type[Any]] = [
 
 
 def _alembic_config(db_url: str) -> Any:
+    """Build an in-process Alembic Config.
+
+    We deliberately do not read ``alembic.ini`` here — that file lives
+    at the repo root for developer convenience (running ``alembic
+    upgrade head`` directly) but isn't packaged into the wheel. The
+    migration files DO ship with the wheel under
+    ``media_engine/_alembic/`` so we point ``script_location`` at
+    whichever copy is alongside this module. This makes ``med db
+    migrate`` work identically in dev (running from source) and in
+    production (running from an installed wheel / a container).
+    """
     from alembic.config import Config
 
-    repo_root = Path(__file__).resolve().parents[2]
-    ini_path = repo_root / "alembic.ini"
-    cfg = Config(str(ini_path))
+    package_root = Path(__file__).resolve().parent.parent
+    alembic_dir = package_root / "_alembic"
+    cfg = Config()
+    cfg.set_main_option("script_location", str(alembic_dir))
     cfg.set_main_option("sqlalchemy.url", db_url)
-    cfg.set_main_option("script_location", str(repo_root / "alembic"))
+    cfg.set_main_option("path_separator", "os")
+    # Tell env.py that the URL is operator-provided (via the CLI's
+    # --db-url flag or the resolved engine config). Without this flag
+    # env.py would re-resolve from ``EngineConfig.load()`` and
+    # silently override an explicit ``--db-url`` argument.
+    cfg.attributes["url_source"] = "cli"
     return cfg
 
 

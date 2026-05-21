@@ -213,11 +213,16 @@ class DaemonEngineHandle:
         return await self._client.resolve_id(prefix)
 
     async def run_pipeline(self, pipeline: Pipeline) -> DAGResult:
-        # Push sources into the shared cache so the daemon can resolve them,
-        # then run the DAG client-side dispatching each op to the daemon.
+        # Push sources into the shared cache so the daemon can resolve
+        # them. Mirror ``Engine.run_pipeline``'s namespace stamping so
+        # the daemon (which filters by its own ``config.namespace``)
+        # finds the upsert.
         with Engine.open_quick(self._config) as local:
             for artifact in pipeline.sources.values():
-                local.cache.upsert_artifact(artifact)
+                stamped = artifact.model_copy(
+                    update={"namespace": local.config.namespace}
+                )
+                local.cache.upsert_artifact(stamped)
         return await execute_pipeline(
             pipeline,
             run_op=self._client.run_op,

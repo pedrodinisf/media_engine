@@ -18,16 +18,15 @@ spec:
         - name: engine
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "media-engine.fullname" . }}-config
           env:
             - name: MEDIA_ENGINE_DB_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ include "media-engine.fullname" . }}-db
                   key: url
-            - name: MEDIA_ENGINE_PERMANENT_STORE
-              value: {{ .Values.storage.permanentStore | quote }}
-            - name: MEDIA_ENGINE_LOG_FORMAT
-              value: "json"
           ports:
             - name: http
               containerPort: 8000

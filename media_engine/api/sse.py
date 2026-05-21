@@ -2,8 +2,11 @@
 
 Each ``GET /jobs/{id}/events`` opens an SSE stream; we subscribe to the
 in-process ``EventBus`` and forward frames whose ``job_id`` matches.
-The stream closes on disconnect or when an ``OpCompleted`` / ``OpFailed``
-arrives for the job and no other ops are in flight.
+The stream stays open until the client disconnects — pipelines can
+emit many ``OpStarted`` / ``Progress`` / ``OpCompleted`` events as
+nodes flow through the DAG, and only the consumer knows when it has
+seen enough. Pair it with ``GET /jobs/{id}`` to poll terminal status
+when needed.
 
 We don't filter by ``op_run_id`` because a job can contain multiple op
 runs (pipelines fan out); filtering by ``job_id`` is the right scope.

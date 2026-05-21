@@ -352,9 +352,23 @@ class Engine:
             )
         )
 
+        # Stamp the engine's namespace alongside ``produced_by`` so
+        # outputs land in the right tenant bucket. Ops construct
+        # artifacts without knowing the namespace (the field defaults
+        # to ``"default"`` on every kind); the engine is the single
+        # place that owns the namespace decision per ``Engine.run``
+        # call. Without this, an engine configured with namespace
+        # ``"tenant-foo"`` would write outputs as ``"default"`` and
+        # the caller wouldn't be able to read them back through the
+        # same handle.
         final_outputs: list[AnyArtifact] = []
         for o in raw_outputs:
-            stamped = o.model_copy(update={"produced_by": run_id})
+            stamped = o.model_copy(
+                update={
+                    "produced_by": run_id,
+                    "namespace": self.config.namespace,
+                }
+            )
             self.cache.upsert_artifact(stamped)
             final_outputs.append(stamped)
         return final_outputs
@@ -476,10 +490,18 @@ class Engine:
         Returns a ``DAGResult`` with successes + failures (partial completion).
         Raises only if the graph itself is invalid (cycle / unresolved ref).
         """
-        # Persist sources so the inner Engine.run dispatches can resolve them
-        # by id. ``upsert_artifact`` is idempotent on (id, namespace).
+        # Persist sources so the inner Engine.run dispatches can resolve
+        # them by id. We stamp the engine's namespace on the source
+        # artifact (mirroring the output-finalize path) — without it,
+        # a caller that constructed a source artifact with the default
+        # namespace would write the cache row under "default" and the
+        # inner ``Engine.run`` (filtering by ``self.config.namespace``)
+        # wouldn't find it.
         for artifact in pipeline.sources.values():
-            self.cache.upsert_artifact(artifact)
+            stamped = artifact.model_copy(
+                update={"namespace": self.config.namespace}
+            )
+            self.cache.upsert_artifact(stamped)
         return await execute_pipeline(
             pipeline,
             run_op=self.run,

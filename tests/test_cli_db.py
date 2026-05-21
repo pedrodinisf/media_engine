@@ -65,6 +65,56 @@ def test_db_migrate_is_idempotent(runner: CliRunner, cli_env: Path) -> None:
     assert r2.exit_code == 0
 
 
+def test_db_migrate_respects_db_url_override(
+    runner: CliRunner, cli_env: Path, tmp_path: Path
+) -> None:
+    """``med db migrate --db-url X`` must use X even when the env says Y.
+
+    Regression: env.py used to unconditionally re-resolve the URL from
+    ``EngineConfig.load()``, silently shadowing the CLI argument.
+    cli/db.py now stamps ``url_source='cli'`` on the alembic config
+    and env.py honors it.
+    """
+    explicit = tmp_path / "explicit.db"
+    result = runner.invoke(
+        app,
+        [
+            "db",
+            "migrate",
+            "--db-url",
+            f"sqlite+pysqlite:///{explicit}",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    # The cache.db in the env (cli_env) should NOT have been written.
+    assert explicit.exists()
+    env_default = cli_env / "cache.db"
+    assert not env_default.exists() or env_default.stat().st_size == 0
+
+
+def test_alembic_dir_lives_in_package() -> None:
+    """The migrations must ship inside ``media_engine`` so the wheel
+    install carries them.
+
+    Pre-Phase-4 we kept ``alembic/`` at the repo root, but the wheel
+    config only packages ``media_engine/`` — so an installed user
+    couldn't run ``med db migrate``. Phase 4 moves the files into
+    ``media_engine/_alembic/``. This regression test makes sure the
+    move isn't reverted by accident.
+    """
+    import media_engine
+    from media_engine.cli.db import _alembic_config
+
+    package_root = Path(media_engine.__file__).resolve().parent
+    alembic_dir = package_root / "_alembic"
+    assert alembic_dir.is_dir()
+    assert (alembic_dir / "env.py").is_file()
+    assert (alembic_dir / "versions").is_dir()
+
+    cfg = _alembic_config("sqlite+pysqlite:///./nope.db")
+    assert cfg.get_main_option("script_location") == str(alembic_dir)
+
+
 def test_digest_is_deterministic_under_reorder(tmp_path: Path) -> None:
     """Insert rows in two different orders into two SQLite files; the
     digest must agree because we sort by primary key before hashing."""
