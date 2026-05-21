@@ -98,6 +98,8 @@ YAML frontmatter) or pipeline (YAML DAG).
   `/Volumes/UNIVERSE_V/MEDIA/media_engine/`)
 - Workdir: `/tmp/media_engine` (per-job; GC'd after 24 h on failure)
 - Config: `~/.config/media_engine/config.toml` (or `MEDIA_ENGINE_*` env vars)
+- Resources: `~/.config/media_engine/resources.yaml` (optional — overrides
+  semaphore capacities / remaps which ops claim which resources)
 - Cache: `cache.db` (SQLite Phases 0–3; Postgres opt-in Phase 4+)
 
 ## Source projects (oracles, never replaced)

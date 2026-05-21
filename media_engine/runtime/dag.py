@@ -166,12 +166,24 @@ DEFAULT_RESOURCE_CAPACITIES: dict[str, int] = {
 
 
 def make_default_semaphores() -> dict[str, asyncio.Semaphore]:
-    """Build the engine's default semaphore pool. Phase 5's resources.yaml
-    overrides these capacities; Phase 1/2 use the defaults."""
-    return {
-        name: asyncio.Semaphore(cap)
-        for name, cap in DEFAULT_RESOURCE_CAPACITIES.items()
-    }
+    """Build the engine's default semaphore pool with built-in capacities.
+
+    Phase 4 commit 34 added ``resources.yaml`` (loaded by Engine.open_session)
+    which calls ``make_semaphores`` with merged capacities instead."""
+    return make_semaphores({})
+
+
+def make_semaphores(
+    override_capacities: dict[str, int],
+) -> dict[str, asyncio.Semaphore]:
+    """Build a semaphore pool, taking ``override_capacities`` over the defaults.
+
+    Resources not in the defaults still get a semaphore — that's how
+    ``resources.yaml`` introduces a brand-new resource name an op
+    started claiming."""
+    merged: dict[str, int] = dict(DEFAULT_RESOURCE_CAPACITIES)
+    merged.update(override_capacities)
+    return {name: asyncio.Semaphore(cap) for name, cap in merged.items()}
 
 
 @contextlib.asynccontextmanager

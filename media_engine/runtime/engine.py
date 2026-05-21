@@ -36,7 +36,7 @@ from media_engine.runtime.dag import (
     DAGResult,
     Pipeline,
     execute_pipeline,
-    make_default_semaphores,
+    make_semaphores,
 )
 from media_engine.runtime.disk_guard import assert_free_space
 from media_engine.runtime.events import (
@@ -47,6 +47,11 @@ from media_engine.runtime.events import (
 )
 from media_engine.runtime.lineage import LineageNode
 from media_engine.runtime.model_pool import ModelPool
+from media_engine.runtime.resources import (
+    apply_resources_config,
+    default_resources_path,
+    load_resources_config,
+)
 from media_engine.runtime.retry import RetryPolicy, policy_for, with_retry
 from media_engine.runtime.server_manager import ServerManager
 from media_engine.runtime.storage import LocalFSStorage, StorageBackend
@@ -101,6 +106,9 @@ class Engine:
         # Lazy: created on first run_pipeline call from inside the running event
         # loop (asyncio.Semaphore needs a loop to bind to).
         self._semaphores: dict[str, asyncio.Semaphore] | None = None
+        # Capacity overrides from resources.yaml (set by ``open_quick``); empty
+        # dict means use the dag.DEFAULT_RESOURCE_CAPACITIES exactly.
+        self._resource_capacities: dict[str, int] = {}
         # Durable event tail + weekly rotation (best-effort; a broken
         # sink must never wedge a producer — EventBus swallows sink errors).
         self.event_bus.add_sink(self._persist_event)
@@ -122,17 +130,27 @@ class Engine:
 
     def _get_semaphores(self) -> dict[str, asyncio.Semaphore]:
         if self._semaphores is None:
-            self._semaphores = make_default_semaphores()
+            self._semaphores = make_semaphores(self._resource_capacities)
         return self._semaphores
 
     @classmethod
     def open_quick(cls, config: EngineConfig | None = None) -> Self:
-        """Stateless one-shot. SQLite open + storage validation. No model loads."""
+        """Stateless one-shot. SQLite open + storage validation. No model loads.
+
+        Honors ``resources.yaml`` if present (same semaphore mapping as
+        ``open_session``) — ad-hoc CLI invocations should see the same
+        resource contention rules as the warm daemon."""
         cfg = config or EngineConfig.load()
         cfg.validate_storage()
         cache = Cache(cfg.resolve_cache_db_url())
         storage = LocalFSStorage(cfg.permanent_store, cfg.workdir)
-        return cls(cfg, cache, storage)
+        resources_cfg = load_resources_config(
+            default_resources_path(cfg.config_dir)
+        )
+        apply_resources_config(resources_cfg)
+        engine = cls(cfg, cache, storage)
+        engine._resource_capacities = resources_cfg.capacities()
+        return engine
 
     @classmethod
     def open_session(cls, config: EngineConfig | None = None) -> Self:
