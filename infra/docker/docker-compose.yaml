@@ -40,6 +40,9 @@ services:
       MEDIA_ENGINE_PERMANENT_STORE: /var/lib/media_engine
       MEDIA_ENGINE_DB_URL: postgresql+psycopg://media_engine:media_engine_dev@postgres:5432/media_engine
       MEDIA_ENGINE_MIN_FREE_GB: "1"
+      # Web UI upload cap (POST /acquire/upload). Default 2048 MB;
+      # uncomment + bump for workflows that need larger source uploads.
+      # MEDIA_ENGINE_MAX_UPLOAD_MB: "4096"
     ports:
       - "8000:8000"
     volumes:

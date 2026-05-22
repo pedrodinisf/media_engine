@@ -23,6 +23,16 @@ storage:
 # Extra non-secret env vars merged into the ConfigMap. Use this for
 # tuning flags like MEDIA_ENGINE_GC_INTERVAL or MEDIA_ENGINE_NAMESPACE.
 # For secrets, add to the Secret template instead.
+#
+# Web UI upload cap. `POST /acquire/upload` bounds incoming bodies at
+# this many MB; bigger payloads abort with 413 mid-stream. Default
+# 2048; bump for workflows that upload large source media.
+#   MEDIA_ENGINE_MAX_UPLOAD_MB: "4096"
+#
+# Optional CORS allow-list for browser dev servers. Empty default =
+# same-origin only (which is what bundled `/ui` users get). Pass a
+# comma-separated list to open specific origins.
+#   MEDIA_ENGINE_CORS_ORIGINS: "https://dev.example.com"
 config:
   extraEnv: {}
 

@@ -125,9 +125,8 @@ REST API. Two deployment shapes:
 **Wheel install ships the UI for free.** `pyproject.toml`'s
 `hatch.build.targets.wheel.force-include` bundles
 `media_engine/web/dist/` into the wheel. Both the PyPI install and the
-Dockerfile (post-commit-50 `+ui` stage) ship the prebuilt assets.
-Developers from source run a one-time
-`pnpm -C web install && pnpm -C web build` after `uv sync`.
+Dockerfile ship the prebuilt assets. Developers from source run a
+one-time `pnpm -C web install && pnpm -C web build` after `uv sync`.
 
 **Security headers.** `media_engine/api/middleware.py` adds CSP
 (`default-src 'self'; …'wasm-unsafe-eval'; …'unsafe-inline'`, the
@@ -151,6 +150,49 @@ file under the workdir; `MEDIA_ENGINE_MAX_UPLOAD_MB` (default 2048)
 bounds it. Bigger uploads abort with 413 mid-stream.
 
 See [`web_ui.md`](web_ui.md) for the panel-by-panel user guide.
+
+---
+
+## Build via Dockerfile
+
+`infra/docker/Dockerfile` is a four-stage multi-stage build. The
+default `docker build .` produces a Node-free runtime image with the
+SvelteKit SPA already inside:
+
+```bash
+docker build -t media-engine:0.6.0 -f infra/docker/Dockerfile .
+```
+
+The stages, in order:
+
+| Stage | Image | Purpose |
+|---|---|---|
+| `ui-build` | `node:22-bookworm-slim` | `corepack enable` + `pnpm -C web install --frozen-lockfile` + `pnpm -C web build`. The only stage with Node. |
+| `builder` | `python:3.11-slim` | `uv sync` with the runtime extras (`api`, `postgres`, `acquire-url`, `search`). |
+| `api-only` | `python:3.11-slim` | Headless Python runtime: ffmpeg + libpq5 + curl + ca-certs, copy from `builder`, drop privileges to `engine`, expose 8000, healthcheck on `/ready`. |
+| `runtime` (default) | `api-only` + UI | `COPY --from=ui-build` the populated `media_engine/web/dist/` tree into place so FastAPI's StaticFiles mount activates. |
+
+Opt-outs:
+
+```bash
+# Headless deployment (no /ui mount).  Skips the ui-build stage entirely
+# when buildx prunes unused stages.
+docker build --target api-only -t media-engine:0.6.0-api .
+
+# Just the dist tree (e.g. to vendor it elsewhere).
+docker build --target ui-build --output type=local,dest=./_dist .
+```
+
+No host-side `pnpm` is required for any of these — Node is confined
+to the `ui-build` stage and never lands in the final image.
+`tests/test_dockerfile.py` asserts this structural invariant
+(`ui-build` stage exists, runtime stage doesn't `apt-get install
+nodejs`, the default target is `runtime`).
+
+The Helm chart at `infra/helm/media-engine/` references the same
+image; pass `image.repository` + `image.tag` to point at a built
+artifact. The compose stack at `infra/docker/docker-compose.yaml`
+rebuilds from source on `docker compose up --build`.
 
 ---
 
