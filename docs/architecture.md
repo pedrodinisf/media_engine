@@ -512,7 +512,17 @@ a probe file rather than trusting `os.access`; readiness now gates on
 swallowing them; `resources.yaml` rejects unknown keys (typo
 detection); `med storage migrate` validates `--to` exists before
 rewriting; the SSE pumper is awaited on disconnect so the
-`bus.subscribe()` generator's cleanup runs deterministically.
+`bus.subscribe()` generator's cleanup runs deterministically. A
+final integration validation pass marked the auto-derived `*_sha`
+fields (``IdentifyParams.speaker_db_sha``,
+``SessionReportParams.template_sha``,
+``ZeitgeistReportParams.template_sha``) as ``readOnly`` in their
+JSON schemas with a description so MCP-driven LLMs and the
+forthcoming Phase 6 Web UI form generator hide or disable them
+instead of treating them as settable strings — the validator
+already overwrote any client value, so this is purely a UX
+clarification; the regenerated ``docs/openapi.json`` +
+``docs/mcp_tools.json`` reflect both markers.
 **34 ops.** Suite: 773 passed / 29 skipped (dependency/API-key/network
 gated); `ruff` and strict `pyright` clean.
 
