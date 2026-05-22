@@ -8,6 +8,7 @@ heavier — selection, schema validation, op execution — happens behind
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
@@ -53,6 +54,7 @@ from media_engine.profiles.pipeline import (
 from media_engine.profiles.schema import PipelineProfile, PromptProfile
 from media_engine.runtime.cache import ApiTokenInfo, Job
 from media_engine.runtime.lineage import OperationRunRef
+from media_engine.runtime.search_query import embed_query_string
 
 # ─────────────────────────────────────────────────────────────────
 # Dependencies
@@ -160,6 +162,36 @@ class RunPreviewResponse(BaseModel):
     estimate_cost_cents: float
     estimate_tokens_in: int
     estimate_tokens_out: int
+
+
+class SearchRequest(BaseModel):
+    """``POST /search`` body — sync catalog query.
+
+    ``top_k`` is bounded at 200 to keep the synchronous handler from
+    starving the event loop (plan §13 risk #6); ``query`` is required
+    for every mode (semantic queries the string after embedding it,
+    fulltext consumes the string directly, hybrid uses both).
+    """
+
+    mode: Literal["fulltext", "semantic", "hybrid"]
+    query: str = Field(min_length=1)
+    top_k: int = Field(default=10, ge=1, le=200)
+    kind: str | None = None
+    refresh: bool = False
+
+
+class SearchResultItem(BaseModel):
+    artifact_id: str
+    kind: str | None = None
+    score: float
+    snippet: str | None = None
+
+
+class SearchResponse(BaseModel):
+    mode: str
+    query: str
+    top_k: int
+    results: list[SearchResultItem]
 
 
 class PipelineSourceSpec(BaseModel):
@@ -330,6 +362,126 @@ def post_run_preview(
         estimate_cost_cents=estimate.cloud_cents,
         estimate_tokens_in=estimate.tokens_in,
         estimate_tokens_out=estimate.tokens_out,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+# /search — sync catalog query (Phase 6 commit 46)
+# ─────────────────────────────────────────────────────────────────
+
+
+_SEARCH_TIMEOUT_SECONDS = 30.0
+
+
+@router.post("/search", response_model=SearchResponse)
+async def post_search(
+    body: SearchRequest,
+    state: Annotated[AppState, Depends(get_state)],
+    token: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> SearchResponse:
+    """Run ``search.{fulltext,semantic,hybrid}`` synchronously.
+
+    Unlike ``POST /run`` (which wraps the call in a job + SSE), this
+    endpoint awaits the engine inline so the UI's type-as-you-go
+    search box gets sub-second feedback. Semantic + hybrid embed the
+    query string upstream via ``embed_query_string`` (sentence-
+    transformers) before dispatching, mirroring the ``med search``
+    CLI flow. A 30 s timeout guards against runaway corpora; long
+    queries should use ``POST /run`` for the async/SSE path instead.
+    """
+    del token  # access gated; search reads honour engine namespace via Engine
+    kind_filter: tuple[Kind, ...] | None = None
+    if body.kind is not None:
+        try:
+            kind_filter = (Kind(body.kind.lower()),)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400, detail=f"unknown kind: {body.kind!r}"
+            ) from e
+
+    refresh_nonce: str | None = None
+    if body.refresh:
+        from uuid import uuid4
+
+        refresh_nonce = uuid4().hex
+
+    async def _do_search() -> list[AnyArtifact]:
+        if body.mode == "fulltext":
+            return await state.engine.run(
+                "search.fulltext",
+                query=body.query,
+                top_k=body.top_k,
+                kind_filter=kind_filter,
+                refresh_nonce=refresh_nonce,
+            )
+        try:
+            emb_id = await asyncio.to_thread(
+                embed_query_string, state.engine.config, body.query
+            )
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        if body.mode == "semantic":
+            return await state.engine.run(
+                "search.semantic",
+                inputs=[emb_id],
+                top_k=body.top_k,
+                kind_filter=kind_filter,
+                refresh_nonce=refresh_nonce,
+            )
+        return await state.engine.run(
+            "search.hybrid",
+            inputs=[emb_id],
+            query=body.query,
+            top_k=body.top_k,
+            kind_filter=kind_filter,
+            refresh_nonce=refresh_nonce,
+        )
+
+    try:
+        outputs = await asyncio.wait_for(_do_search(), timeout=_SEARCH_TIMEOUT_SECONDS)
+    except TimeoutError as e:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"search timed out after {_SEARCH_TIMEOUT_SECONDS:.0f}s; "
+                f"use POST /run for batch workloads"
+            ),
+        ) from e
+
+    # search.* ops emit an Analysis whose metadata['results'] is the
+    # ranked hit list (architecture.md §11 deviation note).
+    raw_results: list[Any] = []
+    if outputs:
+        raw = outputs[0].metadata.get("results")
+        if isinstance(raw, list):
+            raw_results = cast("list[Any]", raw)
+
+    items: list[SearchResultItem] = []
+    for r in raw_results:
+        if not isinstance(r, dict):
+            continue
+        row = cast("dict[str, Any]", r)
+        art_id = row.get("artifact_id")
+        if not isinstance(art_id, str):
+            continue
+        score_raw = row.get("score")
+        try:
+            score = float(score_raw) if score_raw is not None else 0.0
+        except (TypeError, ValueError):
+            score = 0.0
+        kind_raw = row.get("kind")
+        snippet_raw = row.get("snippet")
+        items.append(
+            SearchResultItem(
+                artifact_id=art_id,
+                kind=str(kind_raw) if kind_raw is not None else None,
+                score=score,
+                snippet=str(snippet_raw) if snippet_raw is not None else None,
+            )
+        )
+
+    return SearchResponse(
+        mode=body.mode, query=body.query, top_k=body.top_k, results=items
     )
 
 

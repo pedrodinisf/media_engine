@@ -27,6 +27,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from media_engine.api._state import AppState
+from media_engine.api.cost_routes import router as cost_router
 from media_engine.api.health import router as health_router
 from media_engine.api.middleware import UISecurityHeadersMiddleware
 from media_engine.api.routes import router
@@ -127,6 +128,7 @@ def build_app(
     app.include_router(health_router)
     app.include_router(router)
     app.include_router(uploads_router)
+    app.include_router(cost_router)
 
     # Phase 6 commit 40: optionally mount the SvelteKit SPA at /ui. We
     # check at app-build time rather than at request time so a missing

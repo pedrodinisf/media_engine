@@ -22,6 +22,8 @@
     "@tailwindcss/vite": "^4.0.0-beta.3",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/svelte": "^5.2.4",
+    "@types/d3-array": "^3.2.2",
+    "@types/d3-scale": "^4.0.9",
     "@types/node": "^22.7.0",
     "jsdom": "^25.0.1",
     "svelte": "^5.1.0",
@@ -35,6 +37,9 @@
   "packageManager": "pnpm@11.2.2",
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
-    "@xyflow/svelte": "^1.5.2"
+    "@xyflow/svelte": "^1.5.2",
+    "d3-array": "^3.2.4",
+    "d3-scale": "^4.0.2",
+    "layerchart": "^1.0.13"
   }
 }

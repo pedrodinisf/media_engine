@@ -9,20 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
-from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import uuid4
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from media_engine.artifacts import (
-    Embedding,
-    Kind,
-    compute_derived_artifact_id,
-)
+from media_engine.artifacts import Kind
 from media_engine.config import EngineConfig
+from media_engine.runtime.search_query import embed_query_string
 
 console = Console()
 err_console = Console(stderr=True)
@@ -40,82 +36,6 @@ def _kind_filter_csv(kinds: list[str] | None) -> tuple[Kind, ...] | None:
                 f"unknown kind {raw!r}; valid: {', '.join(k.value for k in Kind)}"
             ) from e
     return tuple(out)
-
-
-def _to_float_list(arr: Any) -> list[float]:
-    """Coerce a numpy-ish 1D array (or any iterable of numbers) to ``list[float]``.
-
-    Lives outside ``_embed_query`` so we can keep the type-erased
-    arithmetic on a single typed seam — pyright sees ``list[float]``
-    everywhere downstream.
-    """
-    out: list[float] = []
-    n: int = int(arr.shape[0]) if hasattr(arr, "shape") else len(arr)
-    for i in range(n):
-        out.append(float(arr[i]))
-    return out
-
-
-def _embed_query(cfg: EngineConfig, query: str) -> str:
-    """Encode ``query`` with sentence-transformers and persist as Embedding.
-
-    Returns the new Embedding artifact's id. Raises ``RuntimeError``
-    (caught by the caller) when the optional dep isn't installed.
-    """
-    try:
-        from sentence_transformers import SentenceTransformer  # type: ignore  # noqa: I001,PGH003
-    except ImportError as e:
-        raise RuntimeError(
-            "sentence-transformers is not installed — semantic / hybrid "
-            "search needs it for query embedding. Install: "
-            "uv sync --extra embed"
-        ) from e
-
-    from media_engine.runtime.cache import Cache
-    from media_engine.runtime.storage import LocalFSStorage
-
-    # sentence-transformers / numpy types are not strictly stubbed —
-    # treat this whole block as the optional-dep escape hatch.
-    model_name = "sentence-transformers/all-MiniLM-L6-v2"
-    model = SentenceTransformer(model_name)  # type: ignore  # noqa: PGH003
-    raw = model.encode([query])[0]  # type: ignore  # noqa: PGH003
-    vector = _to_float_list(raw)
-
-    derived_id = compute_derived_artifact_id(
-        kind=Kind.Embedding,
-        op_name="_cli.search.query",
-        op_version="1.0.0",
-        backend_name="sentence-transformers",
-        backend_version=str(model_name),
-        params={"query": query},
-        input_ids=[],
-    )
-    storage = LocalFSStorage(
-        permanent_store=cfg.permanent_store, workdir=cfg.workdir
-    )
-    workdir = storage.ensure_workdir(f"cli-search-{uuid4().hex[:8]}")
-    payload = {"vector": vector, "model": model_name, "query": query}
-    tmp = workdir / f"q-{derived_id[:12]}.json"
-    tmp.write_text(_json.dumps(payload))
-    dest = storage.store_file(tmp, derived_id, ".json")
-    tmp.unlink(missing_ok=True)
-
-    art = Embedding(
-        id=derived_id,
-        path=dest,
-        metadata=payload,
-        created_at=datetime.now(UTC),
-        namespace=cfg.namespace,
-    )
-    db_url = cfg.cache_db_url or (
-        f"sqlite+pysqlite:///{cfg.permanent_store / 'cache.db'}"
-    )
-    cache = Cache(db_url)
-    try:
-        cache.upsert_artifact(art)
-    finally:
-        cache.close()
-    return derived_id
 
 
 def cmd_search(
@@ -162,7 +82,7 @@ def cmd_search(
                 )
             else:
                 try:
-                    emb_id = _embed_query(cfg, query)
+                    emb_id = embed_query_string(cfg, query)
                 except RuntimeError as e:
                     err_console.print(f"[red]{e}[/red]")
                     return 1
