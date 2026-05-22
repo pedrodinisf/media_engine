@@ -11,6 +11,8 @@
 #   invocation. Turning it off lets the contributor flow stay
 #   `pnpm install && pnpm <script>` with no manual approval step.
 
+allowBuilds:
+  esbuild: set this to true or false
 onlyBuiltDependencies:
   - esbuild
 verifyDepsBeforeRun: false

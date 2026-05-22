@@ -3,15 +3,8 @@
   import { api, ApiError } from '$lib/api/client';
   import { artifactFileUrl, type Artifact } from '$lib/api/artifacts';
   import ArtifactPreview from '$lib/components/previews/ArtifactPreview.svelte';
-
-  type LineageNode = {
-    artifact_id: string;
-    kind: string;
-    op?: string | null;
-    backend?: string | null;
-    truncated_reason?: string | null;
-    inputs?: LineageNode[];
-  };
+  import LineageGraph from '$lib/components/dag/LineageGraph.svelte';
+  import type { LineageNode } from '$lib/api/lineage';
 
   let artifact: Artifact | null = $state(null);
   let lineage: LineageNode | null = $state(null);
@@ -110,39 +103,15 @@
       style="background: var(--bg-card); border: 1px solid var(--border-soft); color: var(--text-primary);"
     >{JSON.stringify(artifact, null, 2)}</pre>
   {:else if activeTab === 'lineage'}
-    <section
-      class="p-4 rounded text-xs"
-      style="background: var(--bg-card); border: 1px solid var(--border-soft);"
-    >
-      <p style="color: var(--text-muted);">
-        Visual graph viewer lands in commit 45. Plain tree below.
-      </p>
-      {#if lineage}
-        {#snippet renderNode(node: LineageNode, depth: number)}
-          <div class="font-mono" style="padding-left: {depth * 1.5}rem;">
-            <span style="color: var(--text-muted);">{node.kind}</span>
-            <a href="/catalog/{node.artifact_id}" style="color: var(--text-primary);">
-              {node.artifact_id.slice(0, 12)}…
-            </a>
-            {#if node.op}
-              <span style="color: var(--text-muted);">
-                · {node.op}{node.backend ? ` · ${node.backend}` : ''}
-              </span>
-            {/if}
-            {#if node.truncated_reason}
-              <span style="color: var(--accent-amber);">
-                … ({node.truncated_reason})
-              </span>
-            {/if}
-          </div>
-          {#each node.inputs ?? [] as child, i (child.artifact_id + i)}
-            {@render renderNode(child, depth + 1)}
-          {/each}
-        {/snippet}
-        {@render renderNode(lineage, 0)}
-      {:else}
-        <p style="color: var(--text-muted);">No lineage information.</p>
-      {/if}
-    </section>
+    {#if lineage}
+      <LineageGraph {lineage} />
+    {:else}
+      <section
+        class="p-4 rounded text-xs"
+        style="background: var(--bg-card); border: 1px solid var(--border-soft); color: var(--text-muted);"
+      >
+        No lineage information.
+      </section>
+    {/if}
   {/if}
 {/if}
