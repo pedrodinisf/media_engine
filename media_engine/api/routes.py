@@ -135,6 +135,24 @@ class RunRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class RunPreviewResponse(BaseModel):
+    """Cost preview shape returned by ``POST /run/preview``.
+
+    Mirrors ``CostEstimate`` plus a ``backend`` field so the Web UI run
+    panel can display the resolved backend alongside the estimate. The
+    ``estimate_seconds_local`` field is the wall-clock proxy for local
+    ops; ``estimate_cost_cents`` is non-null only for cloud-billable
+    backends.
+    """
+
+    op: str
+    backend: str | None
+    estimate_seconds_local: float
+    estimate_cost_cents: float
+    estimate_tokens_in: int
+    estimate_tokens_out: int
+
+
 class PipelineSourceSpec(BaseModel):
     name: str
     artifact_id: str
@@ -251,6 +269,59 @@ async def post_run(
         namespace=token.namespace,
     )
     return JobAck(job_id=job_id)
+
+
+# ─────────────────────────────────────────────────────────────────
+# /run/preview — cost-only, no submission (Phase 6 commit 42)
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/run/preview", response_model=RunPreviewResponse)
+def post_run_preview(
+    body: RunRequest,
+    state: Annotated[AppState, Depends(get_state)],
+    token: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> RunPreviewResponse:
+    """Predict the cost of a ``POST /run`` without submitting it.
+
+    The UI's run panel debounces this to ~250 ms so the cost preview
+    updates as the user tweaks params. Uses ``Engine.estimate_op_cost``
+    which validates the param model + resolves the backend by the same
+    precedence the real submission would (explicit > select_backend >
+    default), so a mismatched form errors here rather than at run time.
+    """
+    del token  # only used to gate access; cost is namespace-agnostic
+    if not OpRegistry.has(body.op):
+        raise HTTPException(status_code=400, detail=f"unknown op {body.op!r}")
+
+    op_cls = OpRegistry.get(body.op)
+    try:
+        params_model = op_cls.params_model(**body.params)
+    except Exception as e:  # noqa: BLE001 — surface validation errors as 422
+        raise HTTPException(status_code=422, detail=str(e)) from None
+
+    # Resolve backend the same way Engine.run does.
+    backend_name = body.backend or op_cls().select_backend(params_model) or op_cls.default_backend
+
+    try:
+        estimate = state.engine.estimate_op_cost(
+            body.op,
+            inputs=list(body.inputs),
+            **body.params,
+        )
+    except LookupError as e:
+        # An input id didn't resolve — most likely the caller hasn't run
+        # the upstream op yet. Surface as 404 so the UI can hint.
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+    return RunPreviewResponse(
+        op=body.op,
+        backend=backend_name,
+        estimate_seconds_local=estimate.local_seconds,
+        estimate_cost_cents=estimate.cloud_cents,
+        estimate_tokens_in=estimate.tokens_in,
+        estimate_tokens_out=estimate.tokens_out,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
