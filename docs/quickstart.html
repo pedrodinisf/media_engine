@@ -1528,7 +1528,7 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
   </div>
 
   <div class="telemetry" role="status" aria-label="Live build telemetry">
-    <span class="telemetry-item"><span class="status-dot green live"></span><span class="label">Suite</span> <b>773 passed</b> &middot; 29 skipped</span>
+    <span class="telemetry-item"><span class="status-dot green live"></span><span class="label">Suite</span> <b>886 passed</b> &middot; 29 skipped</span>
     <span class="telemetry-sep"></span>
     <span class="telemetry-item"><span class="label">Lint</span> <b>ruff clean</b></span>
     <span class="telemetry-sep"></span>
@@ -2123,7 +2123,7 @@ flowchart TD
     <div class="tab-panel" id="t-web" role="tabpanel">
       <h4>Web UI &mdash; local-first browser surface</h4>
       <p>A SvelteKit single-page app is bundled inside the engine container at <code class="inline">/ui</code> and served by the same FastAPI process that powers the REST API. <strong>Full GUI parity with the CLI:</strong> anything you can do with <code class="inline">med &lt;verb&gt;</code> you can do from the browser. The path of least resistance for users who don't want a shell &mdash; while the CLI stays first-class for power users + CI.</p>
-      <p><strong>Panels live today (commits 39&ndash;49 + 3 audits):</strong> Ingest (upload / URL probe / livestream / batch), Run (op picker + schema-driven form + live cost preview), Jobs (live SSE-driven table + per-job detail with events / op runs / outputs / failure envelope + cancel), Catalog (paginated list + kind chip filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go feedback), Cost (per-{op,backend,namespace} rollup bars + monthly burn projection + paginated drill-down ledger), <strong>Profile workspace</strong> (split visual DAG composer + CodeMirror YAML editor + 650 ms live compile + fork-this examples library), <strong>Settings</strong> (six-tab panel: Tokens · Backends · Plugins Extras · Plugins Catalog · Storage · Config). <strong>Pending</strong> (commit 50): <code class="inline">+ui</code> Docker stage + screenshots + v0.6.0 release cut.</p>
+      <p><strong>Panels shipped (commits 39&ndash;50 + 3 audits + 2 docs syncs):</strong> Ingest (upload / URL probe / livestream / batch), Run (op picker + schema-driven form + live cost preview), Jobs (live SSE-driven table + per-job detail with events / op runs / outputs / failure envelope + cancel), Catalog (paginated list + kind chip filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go feedback), Cost (per-{op,backend,namespace} rollup bars + monthly burn projection + paginated drill-down ledger), <strong>Profile workspace</strong> (split visual DAG composer + CodeMirror YAML editor + 650 ms live compile + fork-this examples library), <strong>Settings</strong> (six-tab panel: Tokens · Backends · Plugins Extras · Plugins Catalog · Storage · Config). Bundled with the <code class="inline">+ui</code> multi-stage Dockerfile (Node-free runtime image) and six regenerable screenshots in <code class="inline">docs/web_ui/</code>.</p>
       <p><strong>Bootstrap:</strong> mint a bearer token via the CLI, then paste it into the browser at <code class="inline">/ui/setup</code>. Zero new endpoints, zero chicken-and-egg. Persists to <code class="inline">localStorage</code> (or <code class="inline">sessionStorage</code> via the session-only toggle).</p>
       <p><strong>Security:</strong> CSP scoped to <code class="inline">/ui/*</code> (<code class="inline">default-src 'self'</code> with <code class="inline">'wasm-unsafe-eval'</code> for pdf.js + <code class="inline">'unsafe-inline'</code> styles for Svelte's scoped CSS); same-origin only by default (<code class="inline">MEDIA_ENGINE_CORS_ORIGINS</code> opens dev origins); SSE routes accept <code class="inline">?token=&hellip;</code> since <code class="inline">EventSource</code> can't set headers (loopback-target, v1.x nonce hardening path queued).</p>
       <div class="code-block">
@@ -2254,9 +2254,9 @@ asyncio.run(<span class="fn">go</span>())</pre>
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="chronology">
   <div class="eyebrow">CHRONOLOGY <span class="id">010 · 9 DAYS · 57+ COMMITS</span></div>
-  <h2 class="section-title">v0.5.0 shipped; Phase 6 in flight on the Web UI.</h2>
+  <h2 class="section-title">v0.6.0 shipped; Phase 6 closed on the Web UI.</h2>
   <p class="section-lede">
-    Phases 0&ndash;5 shipped between <strong>2026-05-14</strong> and <strong>2026-05-22</strong>. v0.5.0 is the current release: forty-nine commits, six audit-fix waves, thirty-four operations, thirty-plus backends, five transports. Phase 6 (local-first Web UI, plan &sect;12.5) is near close: commits 39&ndash;49 + three audit-fix passes have landed; only commit 50 (<code class="inline">+ui</code> Dockerfile + screenshots + v0.6.0 release cut) remains. Phase 7 (acoustic speaker identity, plan &sect;12.6) queues after.
+    Phases 0&ndash;6 shipped between <strong>2026-05-14</strong> and <strong>2026-05-22</strong>. v0.6.0 is the current release: fifty numbered commits + three Phase-6 audit-fix passes + two docs syncs (sixty-five+ total commits across the release window), thirty-four operations, thirty-plus backends, six transports (CLI, daemon, REST + SSE, MCP stdio, Python API, and the new SvelteKit Web UI at <code class="inline">/ui</code>). Phase 7 (acoustic speaker identity, plan &sect;12.6) queues next.
   </p>
 
   <div class="diagram">
@@ -2332,21 +2332,20 @@ asyncio.run(<span class="fn">go</span>())</pre>
           </div>
         </div>
 
-        <!-- Phase 6 — in flight, commits 39–49 + 3 audits landed; only 50 left -->
-        <div class="itl-row inflight">
-          <div class="itl-row-label"><span class="itl-id">P6</span><span class="itl-name">Web UI · near close</span></div>
+        <!-- Phase 6 — closed, commits 39–50 + 3 audits + 2 docs syncs all landed -->
+        <div class="itl-row">
+          <div class="itl-row-label"><span class="itl-id">P6</span><span class="itl-name">Web UI · shipped</span></div>
           <div class="itl-track">
-            <div class="itl-bar inflight" style="left: 91.5%; width: 6%"><span class="itl-bar-text">commits 39–49 + 3 audits · 50 queued</span></div>
+            <div class="itl-bar" style="left: 91.5%; width: 7%"><span class="itl-bar-text">12 commits · 3 audits · 2 docs syncs · v0.6.0 cut</span></div>
           </div>
         </div>
 
       </div>
 
       <div class="itl-legend">
-        <span><span class="swatch done"></span>shipped (49 commits · phases 0–5 · v0.5.0)</span>
-        <span><span class="swatch future"></span>in flight (phase 6 · 12 commits · 11 landed)</span>
+        <span><span class="swatch done"></span>shipped (50 commits · phases 0–6 · v0.6.0)</span>
         <span><span class="status-dot amber live"></span>TODAY · May 22</span>
-        <span style="opacity: 0.7">Phase 7 (acoustic speaker identity · 4 commits) queues after Phase 6 closes — see cards below.</span>
+        <span style="opacity: 0.7">Phase 7 (acoustic speaker identity · 4 commits) queues next — see card below.</span>
       </div>
     </div>
   </div>
@@ -2523,7 +2522,7 @@ asyncio.run(<span class="fn">go</span>())</pre>
       <div class="phase-id">PHASE <b>6</b></div>
       <div class="phase-body">
         <h4>Local-first Web UI · full GUI parity with the CLI</h4>
-        <p>The graphical surface. A SvelteKit single-page app bundled into the engine container at <code class="inline">/ui</code>, served by the same FastAPI process as REST; one-command boot via <code class="inline">med web start</code>. <strong>Live today (commits 39&ndash;49 + 3 audits):</strong> Ingest panel (upload / URL probe / livestream / batch), Run panel (op picker + schema-driven form + backend health + live cost preview), Jobs dashboard (live SSE table + per-job detail + cancel), Catalog browser (paginated list + kind filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go), Cost ledger (per-{op,backend,namespace} rollup bars + monthly burn projection + drill-down), <strong>Profile workspace</strong> (split visual DAG composer + CodeMirror YAML editor + 650 ms live compile) with <strong>examples library</strong> + one-click fork-this, <strong>Settings</strong> (six-tab: Tokens / Backends / Plugins Extras / Plugins Catalog / Storage / Config). <strong>Queued (commit 50):</strong> <code class="inline">+ui</code> Docker stage + screenshots + v0.6.0 release cut.</p>
+        <p>The graphical surface. A SvelteKit single-page app bundled into the engine container at <code class="inline">/ui</code>, served by the same FastAPI process as REST; one-command boot via <code class="inline">med web start</code>. <strong>Shipped (commits 39&ndash;50 + 3 audits + 2 docs syncs):</strong> Ingest panel (upload / URL probe / livestream / batch), Run panel (op picker + schema-driven form + backend health + live cost preview), Jobs dashboard (live SSE table + per-job detail + cancel), Catalog browser (paginated list + kind filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go), Cost ledger (per-{op,backend,namespace} rollup bars + monthly burn projection + drill-down), <strong>Profile workspace</strong> (split visual DAG composer + CodeMirror YAML editor + 650 ms live compile) with <strong>examples library</strong> + one-click fork-this, <strong>Settings</strong> (six-tab: Tokens / Backends / Plugins Extras / Plugins Catalog / Storage / Config), <code class="inline">+ui</code> multi-stage Dockerfile (Node-free runtime image), six bundled screenshots (regenerable via <code class="inline">scripts/gen_ui_screenshots.sh</code>), and the v0.6.0 release cut.</p>
         <div class="phase-deliverables">
           <span class="deliverable">SPA + /ui mount</span>
           <span class="deliverable">med web start</span>
@@ -2540,9 +2539,9 @@ asyncio.run(<span class="fn">go</span>())</pre>
         </div>
       </div>
       <div class="phase-meta">
-        <span class="phase-status next"><span class="status-dot amber live"></span>in flight</span>
-        <span class="phase-window">post-Phase-5</span>
-        <span class="phase-commits">11<span class="unit">/ 12 commits</span></span>
+        <span class="phase-status done"><span class="status-dot green"></span>shipped</span>
+        <span class="phase-window">v0.6.0 · 2026-05-22</span>
+        <span class="phase-commits">12<span class="unit">/ 12 commits</span></span>
       </div>
     </article>
 
@@ -2577,9 +2576,9 @@ asyncio.run(<span class="fn">go</span>())</pre>
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="status">
   <div class="eyebrow">MISSION STATUS <span class="id">011 · WHERE WE ARE</span></div>
-  <h2 class="section-title">Phase 6 mid-flight &mdash; v0.5.0 shipped, v0.6.0 in progress.</h2>
+  <h2 class="section-title">Phase 6 complete &mdash; v0.6.0 shipped (2026-05-22).</h2>
   <p class="section-lede">
-    Phases 0&ndash;5 are closed (v0.5.0). Phase 6 (local-first Web UI, plan &sect;12.5) is mid-flight: commits 39&ndash;46 + a post-46 audit pass have landed &mdash; Ingest, Run, Jobs, Catalog, Search, Cost, Lineage panels are live. Profile workspace (47), examples library (48), plugin catalog + settings (49), and the docs + v0.6.0 cut (50) are the remaining work. v1.0 lands when the REST surface freezes after Phase 6 closes.
+    Phases 0&ndash;6 are closed (v0.6.0). Phase 6 (local-first Web UI, plan &sect;12.5) delivered the full SvelteKit SPA bundled at <code class="inline">/ui</code> over twelve numbered commits (39&ndash;50) plus three audit-fix passes and two docs syncs: Ingest, Run, Jobs, Catalog, Search, Cost, Lineage, Profile workspace + examples library with fork-this, and the six-tab Settings panel are all live with full CLI parity. The <code class="inline">+ui</code> multi-stage Dockerfile (Node-free runtime image), six bundled screenshots, and the <code class="inline">docs/quickstart.html</code> Web UI + Profiles expansion ship in this release. v1.0 lands when the REST surface freezes &mdash; the only Phase-6-adjacent v1.x backlog is the small follow-ups in <a href="web_ui_deferred.md">web_ui_deferred.md</a>.
   </p>
 
   <div class="metrics">
@@ -2591,21 +2590,21 @@ asyncio.run(<span class="fn">go</span>())</pre>
     <div class="metric"><div class="metric-value">65+<span class="unit">commits</span></div><div class="metric-label">Phases 0&ndash;6 so far</div></div>
   </div>
 
-  <div class="callout amber">
-    <strong>What's shipping now.</strong> The Web UI's first eight panels are live (Ingest / Run / Jobs / Catalog / Search / Cost / Catalog detail / Lineage graph) with schema-driven param forms, live SSE updates, debounced cost preview, per-kind artifact previews, and a typed REST client wrapping the new <code class="inline">POST /search</code> + <code class="inline">GET /cost/summary</code> + <code class="inline">GET /cost/log</code> + <code class="inline">POST /run/preview</code> + <code class="inline">POST /acquire/upload</code> + <code class="inline">POST /acquire/url/probe</code> + <code class="inline">GET /events/stream</code> + <code class="inline">GET /events/history</code> endpoints. See <a href="web_ui.md">docs/web_ui.md</a> for the panel-by-panel tour and <a href="web_ui_deferred.md">docs/web_ui_deferred.md</a> for the explicit v1.x backlog.
+  <div class="callout">
+    <strong>What shipped.</strong> Every Web UI panel is live (Ingest / Run / Jobs / Catalog / Search / Cost / Catalog detail / Lineage graph / Profile workspace + examples library with fork-this / Settings) with schema-driven param forms, live SSE updates, debounced cost preview, per-kind artifact previews, the visual DAG composer + CodeMirror YAML editor + live <code class="inline">POST /profiles/validate</code>, and the six-tab settings surface (tokens, backends health, plugin extras + catalog, storage stats + GC, config). Backed by a typed REST client wrapping the Phase-6 endpoints (<code class="inline">POST /search</code>, <code class="inline">GET /cost/summary</code>, <code class="inline">GET /cost/log</code>, <code class="inline">POST /run/preview</code>, <code class="inline">POST /acquire/upload</code>, <code class="inline">POST /acquire/url/probe</code>, <code class="inline">GET /events/stream</code>, <code class="inline">GET /events/history</code>, <code class="inline">POST /profiles</code> + <code class="inline">/validate</code>, <code class="inline">/plugins/extras</code> + <code class="inline">/catalog</code>, <code class="inline">/storage/stats</code> + <code class="inline">/gc</code>). See <a href="web_ui.md">docs/web_ui.md</a> for the panel-by-panel tour and <a href="web_ui_deferred.md">docs/web_ui_deferred.md</a> for the v1.x backlog.
   </div>
 
   <div class="callout">
-    <strong>What's next.</strong> Commits 47&ndash;50 ship the profile workspace (visual DAG composer + CodeMirror YAML editor + live <code class="inline">POST /profiles/validate</code>), profile examples library with fork-this, plugin catalog (extras show-don't-install + per-op/backend visibility gate), settings panel (tokens, backends health, storage stats), and the <code class="inline">+ui</code> multi-stage Dockerfile + v0.6.0 release cut. Phase 7 (acoustic speaker identity &mdash; voice fingerprints, cross-recording clustering) lands post-v0.6.0 on top of Phase 5's name-CSV <code class="inline">speakers.identify</code>.
+    <strong>What's next.</strong> Phase 7 (acoustic speaker identity &mdash; voice fingerprints, cross-recording clustering) lands post-v0.6.0 on top of Phase 5's name-CSV <code class="inline">speakers.identify</code>: new ops <code class="inline">speakers.embed_voice</code> / <code class="inline">speakers.cluster</code> / <code class="inline">speakers.match</code>, new artifact kinds <code class="inline">SpeakerEmbedding</code> + <code class="inline">SpeakerProfile</code>, voice-fingerprint DB reusing the pgvector backend, and namespace-scoped privacy controls.
   </div>
 </section>
 
 </main>
 
 <footer>
-  <span class="brand">FRAMEPULSE &middot; v0.6.0-dev</span>
+  <span class="brand">FRAMEPULSE &middot; v0.6.0</span>
   <div class="build">
-    <span>BUILD <b>PHASE 6 NEAR CLOSE / 7</b></span>
+    <span>BUILD <b>PHASE 6 COMPLETE / 7</b></span>
     <span>COMMITS <b>65+</b></span>
     <span>TESTS <b>886 PY &middot; 54 FE</b></span>
     <span>CACHE <b>SQLITE + POSTGRES</b></span>

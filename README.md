@@ -86,9 +86,11 @@ FastAPI process as the REST API. Full feature parity with the CLI:
 ingest (upload / URL / livestream / batch), schema-driven run forms
 with live cost preview, job dashboard with SSE updates, catalog browser
 with per-kind preview affordances, lineage graph viewer, sync search,
-cost ledger with rollup bars + monthly burn projection. New panels
-(profile workspace, plugin catalog, settings) land in the rest of
-Phase 6.
+cost ledger with rollup bars + monthly burn projection, profile
+workspace with visual DAG composer + CodeMirror YAML editor + live
+compile + fork-this for bundled profiles, and a six-tab settings
+panel (Tokens / Backends / Plugins · Extras / Plugins · Catalog /
+Storage / Config).
 
 ```bash
 pnpm -C web install --frozen-lockfile   # one-time
@@ -126,15 +128,14 @@ add it to `media_engine/bootstrap.py::_op_classes()` /
 
 ## Status
 
-**v0.5.0 shipped; v0.6.0 near close.** Phases 0–5 are complete
-(49 commits). Phase 6 (local-first Web UI, plan §12.5) is one
-commit from done: commits 39–49 + three audit-fix passes have
-landed — Ingest, Run, Jobs, Catalog, Search, Cost, Lineage,
-Profile workspace + examples library with fork-this, **and the
-six-tab Settings panel** (Tokens / Backends / Plugins Extras /
-Plugins Catalog / Storage / Config) are all live. Only the
-`+ui` Docker stage + screenshots + v0.6.0 release cut (commit 50)
-remain.
+**v0.6.0 shipped (2026-05-22).** Phases 0–6 are complete (50
+commits). Phase 6 (local-first Web UI, plan §12.5) delivered the
+full SvelteKit SPA bundled at `/ui` plus the `+ui` multi-stage
+Dockerfile (Node-free runtime image): Ingest, Run, Jobs, Catalog,
+Search, Cost, Lineage, Profile workspace + examples library with
+fork-this, and the six-tab Settings panel (Tokens / Backends /
+Plugins Extras / Plugins Catalog / Storage / Config) are all live
+with full CLI parity.
 
 Suite: 886 passed / 29 skipped (dep- and API-key-gated). Ruff +
 strict pyright clean. Frontend: 54 Vitest unit tests, svelte-check

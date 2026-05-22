@@ -551,8 +551,9 @@ instead of treating them as settable strings — the validator
 already overwrote any client value, so this is purely a UX
 clarification; the regenerated ``docs/openapi.json`` +
 ``docs/mcp_tools.json`` reflect both markers.
-**34 ops.** Suite: 773 passed / 29 skipped (dependency/API-key/network
-gated); `ruff` and strict `pyright` clean.
+**34 ops.** Suite: 886 passed / 29 skipped (dependency/API-key/network
+gated); `ruff` and strict `pyright` clean. Frontend: 54 Vitest unit
+tests across 8 suites, svelte-check 0/0 on 571 files.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
 > backend ``sqlite-vss`` (loadable extension). We ship a plain SQLite
@@ -913,6 +914,21 @@ roadmap; this section is the reconciliation):
     request. SQLAlchemy spins up a new engine + pool per
     construction; reusing the long-lived cache the engine already
     holds removes that per-click overhead.
+  - **`+ui` Dockerfile is a Node-free runtime image** (commit 50).
+    The build adds a `node:22-bookworm-slim` stage that runs
+    `pnpm -C web install --frozen-lockfile && pnpm -C web build`
+    against the `web/` source tree; the runtime stage stays on
+    `python:${PYTHON_VERSION}-slim` and only `COPY --from=ui-build`s
+    the populated `media_engine/web/dist/` directory. No Node
+    binary, no pnpm cache, no JS toolchain leaks into the runtime
+    image. `tests/test_dockerfile.py` asserts the `ui-build` stage
+    is present and the runtime stage does not `apt-get install
+    nodejs` to keep that invariant.
+  - **`docs/quickstart.html` Web UI + Profiles expansion** (commit 50)
+    folds the panel-by-panel tour from `web_ui.md` + the profile
+    authoring loop from `writing_a_profile.md` into the executive
+    overview, so the single HTML doc is self-contained for a
+    new reader. Additive only — nothing was removed.
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit
@@ -925,24 +941,18 @@ audit — validate string-loader, composer debounce, source field,
 rename guard`, `fix(phase-6): post-commit-49 audit — cache reuse,
 N+1 collapse, drift guard`.
 
-Phases 0–5 are complete; v0.5.0 is the current release. Phase 6
-(local-first Web UI) is one commit from close: commits 39–49 +
-three audit-fix passes have landed. Only commit 50 (docs +
-screenshots + `+ui` Dockerfile + v0.6.0 release cut) remains.
+Phases 0–6 are complete; v0.6.0 is the current release. Phase 6
+(local-first Web UI) closed with commits 39–50 + three audit-fix
+passes (post-46, post-48, post-49) + two docs syncs in the
+release window. Commit 50 shipped the docs refresh, the six
+bundled screenshots (regenerable via
+`scripts/gen_ui_screenshots.sh`), the `+ui` multi-stage Dockerfile
+(Node-free runtime image), and the `docs/quickstart.html` Web UI +
+Profiles expansion.
 
-After Phase 5, two further phases are formalised in plan §12.5 +
-§12.6 and queued post-v0.5.0:
+After Phase 6, one further phase is formalised in plan §12.6 and
+queued post-v0.6.0:
 
-- **Phase 6 — Local-first Web UI** (commits 39–50). A SvelteKit /
-  Next.js SPA bundled in the engine container under `/ui`, served
-  by `med web start`. Full GUI parity with the CLI: ingestion
-  (upload / URL / livestream / batch), run configuration with
-  schema-driven param forms and live cost preview, job dashboard
-  with SSE updates, catalog + lineage browser, search + cost
-  surfaces, a profile workspace with a visual DAG composer + YAML
-  editor + examples library, plugin manager for optional extras +
-  custom op/backend modules, settings (resources.yaml editor,
-  namespace switcher, token CRUD, backend health).
 - **Phase 7 — Acoustic speaker identity** (commits 51–54). Voice
   fingerprinting on top of `audio.diarize`. New ops:
   `speakers.embed_voice`, `speakers.cluster` (HDBSCAN cross-

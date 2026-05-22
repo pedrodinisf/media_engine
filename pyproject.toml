@@ -1,6 +1,6 @@
 [project]
 name = "media_engine"
-version = "0.5.0"
+version = "0.6.0"
 description = "Universal media-processing engine — typed artifacts, composable operations, pluggable backends."
 readme = "README.md"
 requires-python = ">=3.11"

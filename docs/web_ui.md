@@ -12,13 +12,16 @@ the architectural rationale (mount model, paste-token bootstrap, SSE
 auth) see [`architecture.md`](architecture.md) §11 + §12; for items
 explicitly deferred to v1.x see [`web_ui_deferred.md`](web_ui_deferred.md).
 
-> **Status (2026-05-22).** Phase 6 commits 39–49 + post-46 + post-48 +
-> post-49 audits have landed. Every panel is live: Ingest, Run, Jobs,
-> Catalog, Search, Cost, Lineage, **Profile workspace + examples
-> library**, **and Settings** (Tokens / Backends / Plugins ·
-> Extras / Plugins · Catalog / Storage / Config). Commit 50 — docs
-> refresh + screenshots + the `+ui` multi-stage Dockerfile + the
-> v0.6.0 release cut — is the only remaining work.
+> **Status — v0.6.0 (2026-05-22) — Phase 6 complete.** Twelve
+> numbered commits (39–50) + three audit-fix passes (post-46, post-48,
+> post-49) + two docs syncs landed in the release window. Every panel
+> is live: Ingest, Run, Jobs, Catalog, Search, Cost, Lineage,
+> **Profile workspace + examples library**, and **Settings** (Tokens
+> / Backends / Plugins · Extras / Plugins · Catalog / Storage /
+> Config). The `+ui` multi-stage Dockerfile (Node-free runtime image),
+> the six bundled screenshots regenerable via
+> `scripts/gen_ui_screenshots.sh`, and the `docs/quickstart.html`
+> Web UI + Profiles expansion all ship in this release.
 
 ---
 
@@ -455,15 +458,17 @@ UI by default. CI runs both gates.
 ## 8. Tests
 
 - **Python.** `tests/test_api_*.py` covers every Phase-6 endpoint
-  with happy-path + 4xx coverage. The full suite is 843 passing /
-  29 skipped as of post-commit-46 audit.
-- **Frontend unit.** `web/tests/unit/` — Vitest. 27 tests covering
-  the schema form renderer, the lineage layout helper, artifact
-  REST helpers, token store, cost / search format helpers, and
-  the datetime-local local↔UTC bridge.
-- **Frontend e2e.** Playwright (`web/tests/e2e/`). One smoke test
-  today: setup-and-home. Commit 50 adds `upload-and-job` and
-  `profile-fork-edit-run` against a real `med api start --port 8765`.
+  with happy-path + 4xx coverage. The full suite is 886 passing /
+  29 skipped as of v0.6.0.
+- **Frontend unit.** `web/tests/unit/` — Vitest. 54 tests across
+  8 suites covering the schema form renderer, the lineage layout
+  helper, artifact REST helpers, token store, cost / search format
+  helpers, the datetime-local local↔UTC bridge, the profile
+  YAML↔graph round-trip, the profile-name validator + fork
+  payload, and the Settings tabs' data shapes.
+- **Frontend e2e.** Playwright (`web/tests/e2e/`). Smoke test for
+  setup-and-home today; the commit-50 `screenshots.spec.ts`
+  drives every panel for the bundled screenshot capture.
 
 Run them all:
 
@@ -493,18 +498,8 @@ pnpm -C web exec playwright test    # gated by CI=1
 
 ## 10. What's *not* here yet
 
-These are explicitly Phase 6 v1 scope but ship in the remaining
-commit in the same release window:
+A handful of small follow-ups consciously deferred to v1.x:
 
-- **`+ui` multi-stage Dockerfile** (commit 50) — final image with
-  no Node runtime; today's compose stack still requires a host-side
-  `pnpm -C web build`.
-- **Six bundled screenshots** (commit 50) — feature tour images
-  under `docs/web_ui/`, regenerable via
-  `scripts/gen_ui_screenshots.sh`.
-- **v0.6.0 release cut** (commit 50) — version bump,
-  `CHANGELOG.md` finalise, README refresh, architecture §11
-  closing summary.
 - **Per-node schema-driven param editor in the profile workspace.**
   The split-view ships today; the right pane's "Node …" card only
   exposes id + backend. Params are edited directly in the YAML
@@ -515,5 +510,8 @@ commit in the same release window:
   lands in v1.x. `MEDIA_ENGINE_*` env vars are owned by the
   deploy, not the UI.
 
-Items deferred *past* Phase 6 v1 (v1.x backlog) are catalogued in
+The full v1.x backlog (wavesurfer waveforms, OCR bounding-box
+overlays, t-SNE / UMAP embedding projection, mobile / responsive
+layout, i18n, daemon lifecycle UI, the SSE job-scoped-nonce
+hardening, etc.) is catalogued in
 [`web_ui_deferred.md`](web_ui_deferred.md).

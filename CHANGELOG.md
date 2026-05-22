@@ -6,42 +6,18 @@ once we ship v1.0 (after Phase 6 — the REST surface needs to freeze
 first). Until then expect 0.x to bump frequently and best-effort
 backwards compatibility.
 
-## [0.6.0-dev] — Unreleased (Phase 6, commits 39–49 of 50 + 3 audits)
+## [0.6.0] — 2026-05-22
 
-Phase 6 (local-first Web UI, plan §12.5) is mid-flight. Commits 39–49
-have landed plus three audit-fix passes (post-46, post-48, post-49);
-commit 50 is the remaining work (docs + screenshots + `+ui` multi-
-stage Dockerfile + the v0.6.0 release cut).
-
-### Fixed (post-commit-49 audit, same release window)
-
-- **Reuse `state.engine.cache` in `/storage/stats` + `/storage/gc`**
-  instead of constructing a fresh `Cache(...)` per request. The
-  pre-fix path spun up a new SQLAlchemy engine + connection pool on
-  every Settings tab activation; reusing the long-lived cache on the
-  engine handle removes that overhead.
-- **Hoisted lazy imports**: `from sqlalchemy import select` (in
-  `/storage/stats`) and `from media_engine.runtime.plugins import
-  load_catalog` (in `mcp/server.py:_filtered_op_names`) moved to
-  module-level. Both were on hot paths — the MCP filter fires on
-  every `tools/list` call.
-- **Inlined `_catalog_response(state)` helper** so PUT
-  `/plugins/catalog` returns the recomputed view without re-calling
-  the GET handler through a `# type: ignore`-masked direct call.
-- **Lifted `declared_resources` onto `OperationSummary`** so the
-  Web UI's Settings → Config tab renders per-op resource
-  allocations in **one** HTTP request, not N+1 detail fetches. The
-  field stays on `OperationDetail` (it's inherited).
-- **Regression test: `_EXTRAS_CATALOG` parity with pyproject.toml**.
-  The hard-coded extras list in `api/plugins.py` would silently
-  drift if pyproject gained a new extra; the test now asserts
-  bidirectional parity and fails CI if anyone adds an extra without
-  updating the route.
-
-## [0.6.0-dev partial — commits 39–48]
-
-Earlier 0.6.0-dev entries (commits 39–48 + post-46 + post-48 audits)
-preserved below.
+Phase 6 (local-first Web UI, plan §12.5) closes. Twelve numbered
+commits (39–50) plus three audit-fix passes (post-46, post-48,
+post-49) and two docs syncs landed in the release window. The engine
+now ships a SvelteKit SPA bundled at `/ui`, served by the same
+FastAPI process as REST: ingest, run, jobs, catalog (+ detail +
+lineage), search, cost, profile workspace, and a six-tab settings
+panel are all live with full CLI parity. Commit 50 adds the `+ui`
+multi-stage Dockerfile (Node-free runtime image), six bundled
+screenshots (regenerable via `scripts/gen_ui_screenshots.sh`), and
+the `docs/quickstart.html` Web UI + Profiles expansion.
 
 ### Added
 
@@ -160,7 +136,12 @@ preserved below.
   seed; renaming would silently invalidate every prior search
   cache row. Documented in `architecture.md` §11.
 
-### Fixed (post-commit-46 audit, same release window)
+### Fixed (post-release Phase 6 audits)
+
+Three audit passes ran inside the v0.6.0 release window. Per-pass
+granularity is preserved in git history (`fix(phase-6): post-commit-46
+audit`, `fix(phase-6): post-commit-48 audit`, `fix(phase-6):
+post-commit-49 audit`); the consolidated findings:
 
 - **`/cost/log` `until` filter applied AFTER engine `limit`**
   shrank the candidate set, so far-back matching rows were
@@ -193,9 +174,6 @@ preserved below.
   namespace to equal the engine's; the actual scope is the
   engine's). `monthlyBurnProjection` comment now matches
   implementation ($0 spend → $0, not null).
-
-### Fixed (post-commit-48 audit, same release window)
-
 - **`POST /profiles/validate` did synchronous tmp-file disk I/O
   on every keystroke** — the pre-audit path created a workdir,
   wrote the YAML, called the path-based loader, then unlinked +
@@ -240,6 +218,36 @@ preserved below.
   rewritten — commit 48 shipped the examples library, not the
   per-node SchemaForm; that's a smaller follow-up tracked in
   `web_ui.md` §10.
+- **Reuse `state.engine.cache` in `/storage/stats` + `/storage/gc`**
+  instead of constructing a fresh `Cache(...)` per request. The
+  pre-fix path spun up a new SQLAlchemy engine + connection pool on
+  every Settings tab activation; reusing the long-lived cache on the
+  engine handle removes that overhead.
+- **Hoisted lazy imports**: `from sqlalchemy import select` (in
+  `/storage/stats`) and `from media_engine.runtime.plugins import
+  load_catalog` (in `mcp/server.py:_filtered_op_names`) moved to
+  module-level. Both were on hot paths — the MCP filter fires on
+  every `tools/list` call.
+- **Inlined `_catalog_response(state)` helper** so PUT
+  `/plugins/catalog` returns the recomputed view without re-calling
+  the GET handler through a `# type: ignore`-masked direct call.
+- **Lifted `declared_resources` onto `OperationSummary`** so the
+  Web UI's Settings → Config tab renders per-op resource
+  allocations in **one** HTTP request, not N+1 detail fetches. The
+  field stays on `OperationDetail` (it's inherited).
+- **Regression test: `_EXTRAS_CATALOG` parity with pyproject.toml**.
+  The hard-coded extras list in `api/plugins.py` would silently
+  drift if pyproject gained a new extra; the test now asserts
+  bidirectional parity and fails CI if anyone adds an extra without
+  updating the route.
+
+### Notes
+
+- **Phase 7 (acoustic speaker identity)** queues next — see plan
+  §12.6: `speakers.embed_voice` / `speakers.cluster` / `speakers.match`
+  + `SpeakerEmbedding` + `SpeakerProfile` artifact kinds, stable
+  `Speaker_<sha8>` ids across recordings, voice-fingerprint DB
+  reusing the pgvector backend.
 
 ## [0.5.0] — 2026-05-22
 

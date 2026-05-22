@@ -4,7 +4,7 @@ import media_engine
 
 
 def test_version_is_set() -> None:
-    assert media_engine.__version__ == "0.5.0"
+    assert media_engine.__version__ == "0.6.0"
 
 
 def test_package_imports() -> None:
