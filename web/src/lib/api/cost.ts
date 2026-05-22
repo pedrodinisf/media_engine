@@ -87,10 +87,42 @@ export function fetchCostLog(q: LogQuery = {}): Promise<CostLogResponse> {
 }
 
 /**
+ * Format a UTC ISO timestamp as a `YYYY-MM-DDTHH:mm` value suitable
+ * for `<input type="datetime-local">`. The input element rejects the
+ * `Z` suffix + sub-second precision so we strip both. The user reads
+ * the value as *local* wall-clock time per the datetime-local spec,
+ * so we render via `Date.prototype.get*` (local) rather than `getUTC*`.
+ */
+export function isoToLocalInputValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
+/**
+ * Inverse of {@link isoToLocalInputValue}: parse a datetime-local
+ * value (treated as the user's local time per the HTML spec) and
+ * return the equivalent UTC ISO string. Empty string in → empty out.
+ */
+export function localInputValueToIso(local: string): string {
+  if (!local) return '';
+  // `new Date('YYYY-MM-DDTHH:mm')` parses as local time in every
+  // browser — the same semantics as the datetime-local input itself.
+  const d = new Date(local);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString();
+}
+
+/**
  * Linear monthly extrapolation: total_cents over the window scaled to
- * a 30-day month. Returns the projected USD spend. When the window is
- * less than a minute or the total is zero, returns null — the caller
- * shows "—" rather than a misleading huge projection.
+ * a 30-day month. Returns the projected USD spend. Zero spend returns
+ * a literal $0 (a useful answer); sub-minute or unparseable windows
+ * return null so the caller can show "—" instead of a misleading huge
+ * projection.
  */
 export function monthlyBurnProjection(
   total_cents: number,

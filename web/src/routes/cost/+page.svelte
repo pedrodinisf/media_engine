@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { ApiError } from '$lib/api/client';
   import {
     COST_GROUP_BY,
     fetchCostLog,
     fetchCostSummary,
+    isoToLocalInputValue,
+    localInputValueToIso,
     monthlyBurnProjection,
     type CostGroupBy,
     type CostLogResponse,
@@ -12,8 +14,9 @@
   } from '$lib/api/cost';
   import CostBars from '$lib/components/charts/CostBars.svelte';
 
-  // Default window: last 30 days. Locked into local state on mount so
-  // the same window is used for both /cost/summary and /cost/log.
+  // Default window: last 30 days. The state holds UTC ISO strings so
+  // the same canonical form goes to /cost/summary and /cost/log; the
+  // datetime-local inputs use a local-time bridge via $derived setters.
   function isoMinusDays(days: number): string {
     const d = new Date();
     d.setDate(d.getDate() - days);
@@ -21,8 +24,31 @@
   }
 
   let groupBy = $state<CostGroupBy>('op');
-  let since = $state(isoMinusDays(30));
-  let until = $state(new Date().toISOString());
+
+  // Compute the initial UTC ISO + matching local-input strings at
+  // module init so the two $state pairs start in sync; the dedicated
+  // commit helpers below keep them in sync on user edits. Pre-computing
+  // also silences svelte/state_referenced_locally — the local-string
+  // states must not reactively depend on the ISO states (the inputs
+  // are the source of truth post-init).
+  const _initSinceIso = isoMinusDays(30);
+  const _initUntilIso = new Date().toISOString();
+
+  let sinceIso = $state(_initSinceIso);
+  let untilIso = $state(_initUntilIso);
+  let sinceLocal = $state(isoToLocalInputValue(_initSinceIso));
+  let untilLocal = $state(isoToLocalInputValue(_initUntilIso));
+
+  function commitSinceLocal(v: string): void {
+    sinceLocal = v;
+    const iso = localInputValueToIso(v);
+    if (iso) sinceIso = iso;
+  }
+  function commitUntilLocal(v: string): void {
+    untilLocal = v;
+    const iso = localInputValueToIso(v);
+    if (iso) untilIso = iso;
+  }
 
   let summary = $state<CostSummaryResponse | null>(null);
   let summaryError = $state<string | null>(null);
@@ -37,7 +63,12 @@
     summaryLoading = true;
     summaryError = null;
     try {
-      summary = await fetchCostSummary({ group_by: groupBy, since, until });
+      // Read inside untrack — the $effect that drives this only wants
+      // to refire on groupBy changes; the date inputs are explicit
+      // (Refresh button) so users can finish typing without firing N
+      // requests mid-keystroke.
+      const [g, s, u] = untrack(() => [groupBy, sinceIso, untilIso]);
+      summary = await fetchCostSummary({ group_by: g, since: s, until: u });
     } catch (e) {
       summaryError = e instanceof ApiError ? e.detail : String(e);
       summary = null;
@@ -51,8 +82,9 @@
     logError = null;
     if (reset) logOffset = 0;
     try {
+      const [s, u, off] = untrack(() => [sinceIso, untilIso, logOffset]);
       const page = await fetchCostLog({
-        since, until, limit: 50, offset: logOffset,
+        since: s, until: u, limit: 50, offset: off,
       });
       if (reset || log === null) {
         log = page;
@@ -70,27 +102,36 @@
   }
 
   async function loadMore(): Promise<void> {
-    if (log?.next_offset === null || log?.next_offset === undefined) return;
+    if (log?.next_offset === null || log === null) return;
     logOffset = log.next_offset;
     await loadLog(false);
   }
 
-  onMount(async () => {
-    await Promise.all([loadSummary(), loadLog(true)]);
-  });
-
-  // Re-fetch the rollup when the group-by toggle changes (window
-  // changes are explicit via the date inputs + Refresh button so a
-  // half-typed date doesn't fire 10 requests).
+  // Single source of truth for re-fetching the rollup: any time the
+  // user picks a different group-by axis. The first run (on mount)
+  // also drives the initial fetch — no separate onMount call, so no
+  // race between a stale `summary === null` gate and an in-flight
+  // first load.
   $effect(() => {
     const _g = groupBy;
-    void _g;
-    if (summary !== null) void loadSummary();
+    void _g; // tracked dependency
+    void loadSummary();
   });
 
+  // The log doesn't auto-refetch on filter changes (the Refresh
+  // button does); we just need an initial load.
+  onMount(() => {
+    void loadLog(true);
+  });
+
+  // Projection is anchored to the echoed summary window — NOT live
+  // sinceIso/untilIso — so the displayed projection always matches
+  // the displayed rollup, even mid-typing.
   let projection = $derived.by(() => {
     if (!summary) return null;
-    return monthlyBurnProjection(summary.total_cents, since, until);
+    const winStart = summary.since ?? sinceIso;
+    const winEnd = summary.until ?? untilIso;
+    return monthlyBurnProjection(summary.total_cents, winStart, winEnd);
   });
 </script>
 
@@ -111,19 +152,25 @@
   style="background: var(--bg-card); border: 1px solid var(--border-soft);"
 >
   <label class="col-span-3">
-    <span class="block text-xs font-semibold mb-1" style="color: var(--text-secondary);">Since</span>
+    <span class="block text-xs font-semibold mb-1" style="color: var(--text-secondary);">
+      Since <span style="color: var(--text-muted);">(local)</span>
+    </span>
     <input
       type="datetime-local"
-      bind:value={since}
+      value={sinceLocal}
+      oninput={(e) => commitSinceLocal((e.currentTarget as HTMLInputElement).value)}
       class="w-full px-2 py-1.5 rounded text-xs font-mono"
       style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
     />
   </label>
   <label class="col-span-3">
-    <span class="block text-xs font-semibold mb-1" style="color: var(--text-secondary);">Until</span>
+    <span class="block text-xs font-semibold mb-1" style="color: var(--text-secondary);">
+      Until <span style="color: var(--text-muted);">(local)</span>
+    </span>
     <input
       type="datetime-local"
-      bind:value={until}
+      value={untilLocal}
+      oninput={(e) => commitUntilLocal((e.currentTarget as HTMLInputElement).value)}
       class="w-full px-2 py-1.5 rounded text-xs font-mono"
       style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
     />

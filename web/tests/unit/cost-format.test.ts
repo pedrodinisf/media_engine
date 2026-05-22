@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { COST_GROUP_BY, monthlyBurnProjection } from '$lib/api/cost';
+import {
+  COST_GROUP_BY,
+  isoToLocalInputValue,
+  localInputValueToIso,
+  monthlyBurnProjection,
+} from '$lib/api/cost';
 import { SEARCH_MODES } from '$lib/api/search';
 
 describe('cost helpers', () => {
@@ -26,6 +31,31 @@ describe('cost helpers', () => {
     const start = '2026-05-01T00:00:00Z';
     const end = '2026-05-01T00:00:30Z';
     expect(monthlyBurnProjection(50, start, end)).toBeNull();
+  });
+});
+
+describe('datetime-local bridge', () => {
+  it('formats UTC ISO as a YYYY-MM-DDTHH:mm value the input accepts', () => {
+    // Use a value that's the same in UTC and in the test runner's
+    // local tz: noon GMT/UTC for a +0 offset env. Vitest under
+    // default settings runs as UTC (TZ unset → UTC in CI; locally
+    // we accept either by checking the regex shape instead of the
+    // exact value).
+    const out = isoToLocalInputValue('2026-04-22T15:30:00.000Z');
+    expect(out).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    expect(out).not.toMatch(/Z$/);
+  });
+
+  it('round-trips a value through local → ISO → local', () => {
+    const local = '2026-04-22T15:30';
+    const iso = localInputValueToIso(local);
+    expect(iso).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(isoToLocalInputValue(iso)).toBe(local);
+  });
+
+  it('returns empty string on unparseable input', () => {
+    expect(localInputValueToIso('')).toBe('');
+    expect(isoToLocalInputValue('not-a-date')).toBe('');
   });
 });
 

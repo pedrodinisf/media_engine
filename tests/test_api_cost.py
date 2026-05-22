@@ -240,3 +240,58 @@ def test_cost_log_limit_upper_bound_422(
 def test_cost_log_requires_token(client: TestClient) -> None:
     r = client.get("/cost/log")
     assert r.status_code == 401
+
+
+def test_cost_log_until_past_returns_far_back_rows(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    """Regression: when ``until`` is in the past, the route must paginate
+    over MATCHING rows — not over the newest N rows then filter.
+
+    Pre-fix bug: the engine-side ``limit`` shrunk the candidate set to
+    the newest ``limit+offset+1`` rows BEFORE the until-filter ran, so
+    every newer-than-until row consumed slots and far-back matching
+    rows were invisible.
+    """
+    now = datetime.now(UTC)
+    # 100 rows from the last 100 minutes (all newer than the cutoff)
+    # + 5 rows from 5 hours ago (all older than the cutoff). With
+    # limit=50 the pre-fix code fetched the newest 51 rows (all
+    # future.op), then filtered by until → empty. We want the route
+    # to see the 5 past.op rows regardless of where they sit in the
+    # newest-first ordering.
+    for i in range(100):
+        api_engine.cache.record_cost(
+            op_name="future.op",
+            backend_name=None,
+            estimated_cents=0.0, actual_cents=0.0,
+            tokens_in=0, tokens_out=0, duration_seconds=0.1,
+            namespace=api_engine.config.namespace,
+            ts=now - timedelta(minutes=i),
+        )
+    expected_ids: set[str] = set()
+    for i in range(5):
+        api_engine.cache.record_cost(
+            op_name="past.op",
+            backend_name=None,
+            estimated_cents=0.0, actual_cents=0.0,
+            tokens_in=0, tokens_out=0, duration_seconds=0.1,
+            namespace=api_engine.config.namespace,
+            ts=now - timedelta(hours=5, minutes=i),
+        )
+    for row in api_engine.cache.cost_log(namespace=api_engine.config.namespace):
+        if row.op_name == "past.op":
+            expected_ids.add(row.id)
+
+    # Cutoff is 2 hours ago — every future.op row is newer (filtered
+    # out); every past.op row is older (kept).
+    until = (now - timedelta(hours=2)).isoformat()
+    r = client.get(
+        "/cost/log",
+        params={"until": until, "limit": 50, "offset": 0},
+        headers=auth,
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert {item["id"] for item in items} == expected_ids
+    assert all(item["op_name"] == "past.op" for item in items)

@@ -6,10 +6,11 @@ log. The shell + UI share the same engine APIs (``Engine.cost_summary``
 + ``Engine.cost_log_entries``); these routes thin-wrap them with
 group-by + pagination handled in-route per plan §3.5.
 
-Both endpoints are bearer-gated and scope reads to ``token.namespace``.
-The ``until`` query param + ``group_by`` aggregation are route-level
-concerns (the engine APIs themselves don't support them); the engine
-contract from Phase 5 stays intact.
+Both endpoints are bearer-gated and scope reads to the engine
+process's namespace; ``require_token`` rejects tokens whose namespace
+doesn't match. The ``until`` query param + ``group_by`` aggregation
+are route-level concerns (the engine APIs themselves don't support
+them); the engine contract from Phase 5 stays intact.
 """
 
 from __future__ import annotations
@@ -222,17 +223,25 @@ def get_cost_log(
     since_dt = _parse_iso(since, "since")
     until_dt = _parse_iso(until, "until")
 
-    # cost_log_entries returns newest-first; over-fetch by offset+limit+1
-    # so we can both apply offset/until filters in Python AND detect a
-    # next page. For tiny ledgers this is fine; if anyone hits a regime
-    # where this matters, push pagination + ``until`` into the cache.
-    raw = state.engine.cost_log_entries(
-        since=since_dt,
-        op_name=op_name,
-        limit=offset + limit + 1,
-    )
-    if until_dt is not None:
-        raw = [r for r in raw if r.ts <= until_dt]
+    # cost_log_entries returns newest-first. When ``until`` is None,
+    # the bounded ``limit=offset+limit+1`` fetch is exactly what we
+    # need. When ``until`` is set, the engine API has no upper bound,
+    # so an engine-side limit would shrink the candidate set BEFORE
+    # the until-filter — burying matching older rows. Fetch unbounded
+    # in that path and paginate in Python. Acceptable at v1 local
+    # scale; if cost-log size becomes an issue, push ``until`` into
+    # ``Cache.cost_log``.
+    if until_dt is None:
+        raw = state.engine.cost_log_entries(
+            since=since_dt,
+            op_name=op_name,
+            limit=offset + limit + 1,
+        )
+    else:
+        raw_all = state.engine.cost_log_entries(
+            since=since_dt, op_name=op_name
+        )
+        raw = [r for r in raw_all if r.ts <= until_dt]
 
     window = raw[offset : offset + limit + 1]
     has_more = len(window) > limit

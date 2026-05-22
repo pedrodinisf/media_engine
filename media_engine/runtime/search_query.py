@@ -68,7 +68,12 @@ def embed_query_string(cfg: EngineConfig, query: str) -> str:
 
     derived_id = compute_derived_artifact_id(
         kind=Kind.Embedding,
-        op_name="_search.query",
+        # ``_cli.search.query`` is preserved verbatim from the
+        # pre-extraction CLI implementation: the op_name participates
+        # in the content-addressed id, so renaming it would silently
+        # invalidate every cached query-embedding row. The name is an
+        # opaque cache key, not a runtime identifier.
+        op_name="_cli.search.query",
         op_version="1.0.0",
         backend_name="sentence-transformers",
         backend_version=str(model_name),
