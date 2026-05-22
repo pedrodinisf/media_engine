@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from pydantic import AnyUrl
@@ -80,11 +81,33 @@ class MCPSecurityConfig:
         return op_name in self.allowed_ops
 
 
-def _filtered_op_names(security: MCPSecurityConfig) -> list[str]:
+def _filtered_op_names(
+    security: MCPSecurityConfig,
+    *,
+    config_dir: Path | None = None,
+) -> list[str]:
+    """Op names that survive both the security allow-list AND the
+    plugin-catalog visibility gate.
+
+    The catalog gate (Phase 6 commit 49 — ``plugins.toml``) is the
+    operator's "hide this op from discovery" knob; the security
+    config is the "do not let an MCP client call this op" knob. We
+    AND them here so ``tools/list`` reflects both. ``config_dir=None``
+    leaves the catalog gate in its empty (everything visible) state —
+    handy for tests that don't care about plugin filtering.
+    """
+    from media_engine.runtime.plugins import load_catalog
+
+    catalog = (
+        load_catalog(config_dir)
+        if config_dir is not None
+        else None
+    )
     return [
         op.name
         for op in OpRegistry.list_all()
         if security.is_allowed(op.name)
+        and (catalog is None or catalog.is_op_visible(op.name))
     ]
 
 
@@ -128,7 +151,9 @@ def build_mcp_server(
     @server.list_tools()
     async def _list_tools() -> list[Any]:  # pyright: ignore[reportUnusedFunction]
         tools: list[Any] = []
-        for op_name in _filtered_op_names(security):
+        for op_name in _filtered_op_names(
+            security, config_dir=engine.config.config_dir
+        ):
             op_class = OpRegistry.get(op_name)
             spec = export_op_as_mcp_tool(op_class)
             tools.append(
