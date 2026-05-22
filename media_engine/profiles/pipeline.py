@@ -13,6 +13,8 @@ The compiler:
 
 from __future__ import annotations
 
+from typing import Any
+
 from media_engine.artifacts import AnyArtifact
 from media_engine.backends import BackendRegistry
 from media_engine.ops import OpRegistry
@@ -164,3 +166,82 @@ def compile_profile(profile: Profile, sources: dict[str, AnyArtifact]) -> Pipeli
     if isinstance(profile, PipelineProfile):
         return compile_pipeline_profile(profile, sources)
     return compile_prompt_profile(profile, sources)
+
+
+def validate_profile_structure(profile: Profile) -> list[dict[str, Any]]:
+    """Validate a profile compiles without requiring source artifacts.
+
+    Backs ``POST /profiles/validate`` and the Web UI's live compile
+    indicator. Performs every check ``compile_profile`` does *except*
+    the runtime "sources match declared inputs" check — the user picks
+    sources later via the Sources modal, and the validator's job is
+    "does this YAML describe a runnable shape?".
+
+    Returns one ``{id, op, backend, inputs}`` dict per compiled node in
+    declaration order. Raises ``ProfileCompileError`` on op/backend
+    issues, cycles, or unresolved input refs.
+    """
+    from typing import cast as _cast
+
+    if isinstance(profile, PromptProfile):
+        # Prompt profiles wrap a single op call; the only structural
+        # check is that the op exists.
+        if profile.default_op not in {op.name for op in OpRegistry.list_all()}:
+            raise ProfileCompileError(
+                f"profile {profile.name!r} default_op "
+                f"{profile.default_op!r} not registered"
+            )
+        return [
+            {
+                "id": "run",
+                "op": profile.default_op,
+                "backend": profile.default_backend,
+                "inputs": [],
+            }
+        ]
+
+    # PipelineProfile path — same checks as compile_pipeline_profile,
+    # minus the source-existence guard.
+    nodes: list[DAGNode] = []
+    for spec in profile.graph:
+        _validate_op_and_backend(spec)
+        nodes.append(
+            DAGNode(
+                id=spec.id,
+                op_name=spec.op,
+                params=dict(spec.params),
+                backend=spec.backend,
+                input_node_ids=_input_refs(spec),
+                depends_on=list(spec.depends_on),
+            )
+        )
+
+    # validate_and_sort only reads sources.keys(); satisfying the type
+    # with a None-valued placeholder dict is sufficient for the
+    # structural check. The pipeline never runs — this is pure
+    # validation.
+    placeholder_sources = _cast(
+        "dict[str, AnyArtifact]", {s.name: None for s in profile.inputs}
+    )
+    pipeline = Pipeline(
+        name=profile.name,
+        sources=placeholder_sources,
+        nodes=nodes,
+        outputs=profile.outputs or _default_outputs(profile.graph),
+    )
+    try:
+        validate_and_sort(pipeline)
+    except (CycleError, ValueError) as e:
+        raise ProfileCompileError(
+            f"profile {profile.name!r}: invalid graph — {e}"
+        ) from e
+
+    return [
+        {
+            "id": spec.id,
+            "op": spec.op,
+            "backend": spec.backend,
+            "inputs": _input_refs(spec),
+        }
+        for spec in profile.graph
+    ]

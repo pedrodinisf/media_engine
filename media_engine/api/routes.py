@@ -50,6 +50,7 @@ from media_engine.profiles.loader import (
 from media_engine.profiles.pipeline import (
     ProfileCompileError,
     compile_profile,
+    validate_profile_structure,
 )
 from media_engine.profiles.schema import PipelineProfile, PromptProfile
 from media_engine.runtime.cache import ApiTokenInfo, Job
@@ -866,6 +867,155 @@ def upload_profile_endpoint(
         description=body.description,
         path=str(target),
     )
+
+
+class ValidateProfileRequest(BaseModel):
+    pipeline_yaml: str
+
+
+class CompiledNodeRef(BaseModel):
+    id: str
+    op: str
+    backend: str | None = None
+    inputs: list[str] = Field(default_factory=lambda: cast(list[str], []))
+
+
+class ValidateProfileResponse(BaseModel):
+    """Shape of ``POST /profiles/validate``.
+
+    Success: ``ok=True`` + ``compiled_nodes``. Failure: ``ok=False`` +
+    typed error envelope. The endpoint returns ``200`` for both shapes
+    so the Web UI's live-compile indicator doesn't have to special-case
+    expected-failure responses — it just reads ``body.ok``.
+    """
+
+    ok: bool
+    compiled_nodes: list[CompiledNodeRef] = Field(
+        default_factory=lambda: cast(list[CompiledNodeRef], [])
+    )
+    error_class: str | None = None
+    message: str | None = None
+    line: int | None = None
+
+
+def _extract_yaml_line(err: BaseException | None) -> int | None:
+    """Pull a 1-based line number out of a PyYAML error when present.
+
+    PyYAML's ``YAMLError`` subclasses carry ``problem_mark`` /
+    ``context_mark`` with a 0-based line index. ``None`` propagates
+    through (a missing ``__cause__`` just means no line hint).
+    """
+    if err is None:
+        return None
+    mark = getattr(err, "problem_mark", None) or getattr(err, "context_mark", None)
+    line = getattr(mark, "line", None) if mark is not None else None
+    return line + 1 if isinstance(line, int) else None
+
+
+@router.post("/profiles/validate", response_model=ValidateProfileResponse)
+def post_profiles_validate(
+    body: ValidateProfileRequest,
+    state: Annotated[AppState, Depends(get_state)],
+    token: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> ValidateProfileResponse:
+    """Compile-check a profile YAML without persisting it.
+
+    The Web UI's profile workspace calls this every 500 ms of idle to
+    surface op typos / unwired refs / cycles to the user before they
+    save or run. Same `load_profile` + `validate_profile_structure`
+    pipeline a real submission goes through; never writes to disk.
+    """
+    del token  # auth-only; validation is namespace-agnostic
+    # Write to a tmp file so the loader's path-based error messages
+    # come back useful, and so the inline pipeline_yaml path in
+    # POST /pipelines stays the single load-from-disk seam.
+    from uuid import uuid4
+
+    tmp = state.engine.storage.ensure_workdir(
+        f"validate-{uuid4().hex[:8]}"
+    )
+    tmp_path = tmp / "profile.yaml"
+    tmp_path.write_text(body.pipeline_yaml or "", encoding="utf-8")
+    try:
+        try:
+            profile = load_profile(tmp_path)
+        except ProfileLoadError as e:
+            return ValidateProfileResponse(
+                ok=False,
+                error_class="ProfileLoadError",
+                message=str(e),
+                line=_extract_yaml_line(e.__cause__),
+            )
+        try:
+            compiled = validate_profile_structure(profile)
+        except ProfileCompileError as e:
+            return ValidateProfileResponse(
+                ok=False,
+                error_class="ProfileCompileError",
+                message=str(e),
+            )
+    finally:
+        import contextlib as _ctx
+
+        with _ctx.suppress(Exception):
+            tmp_path.unlink()
+        with _ctx.suppress(Exception):
+            tmp.rmdir()
+
+    return ValidateProfileResponse(
+        ok=True,
+        compiled_nodes=[CompiledNodeRef(**c) for c in compiled],
+    )
+
+
+@router.delete("/profiles/{name}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_profile_endpoint(
+    name: str,
+    state: Annotated[AppState, Depends(get_state)],
+    token: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> None:
+    """Remove a user-overrideable profile from ``{config_dir}/profiles/``.
+
+    Refuses to delete bundled profiles (``<repo>/profiles/``) — the
+    bundled set is shipped with the package and overwriting it from a
+    running process would surprise the next user who upgrades. Returns
+    404 when no profile by that name exists in the user's directory
+    (even if a bundled profile with the same name exists — the user
+    can't delete what they don't own).
+    """
+    del token
+    if not _PROFILE_NAME_RE.match(name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"invalid profile name {name!r}: must match "
+                f"{_PROFILE_NAME_RE.pattern}"
+            ),
+        )
+    user_dir = (state.engine.config.config_dir / "profiles").resolve()
+    if not user_dir.exists():
+        raise HTTPException(status_code=404, detail="profile not found")
+
+    # Look for any of the three legal extensions; we only own files we
+    # created (POST /profiles writes .yaml), but a user editing by hand
+    # could have dropped a .yml or .md sidecar.
+    target: Path | None = None
+    for suffix in (".yaml", ".yml", ".md"):
+        candidate = (user_dir / f"{name}{suffix}").resolve()
+        if not candidate.is_relative_to(user_dir):
+            # Defense in depth — the kebab regex already forbids
+            # slashes, but resolve() should never escape the dir.
+            raise HTTPException(
+                status_code=400,
+                detail="profile name resolves outside the profiles directory",
+            )
+        if candidate.is_file():
+            target = candidate
+            break
+    if target is None:
+        raise HTTPException(status_code=404, detail="profile not found")
+    target.unlink()
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────
