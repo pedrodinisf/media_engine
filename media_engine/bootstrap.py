@@ -49,6 +49,8 @@ def _op_classes() -> list[type]:
     from media_engine.ops.intelligence.extract import IntelligenceExtract
     from media_engine.ops.intelligence.summarize import IntelligenceSummarize
     from media_engine.ops.metadata.scrape_page import MetadataScrapePage
+    from media_engine.ops.report.session import ReportSession
+    from media_engine.ops.report.zeitgeist import ReportZeitgeist
     from media_engine.ops.search.fulltext import SearchFulltext
     from media_engine.ops.search.hybrid import SearchHybrid
     from media_engine.ops.search.semantic import SearchSemantic
@@ -83,6 +85,8 @@ def _op_classes() -> list[type]:
         IntelligenceExtract,
         IntelligenceSummarize,
         MetadataScrapePage,
+        ReportSession,
+        ReportZeitgeist,
         SearchFulltext,
         SearchHybrid,
         SearchSemantic,
