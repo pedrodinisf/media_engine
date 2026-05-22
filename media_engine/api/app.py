@@ -31,6 +31,7 @@ from media_engine.api._state import AppState
 from media_engine.api.health import router as health_router
 from media_engine.api.middleware import UISecurityHeadersMiddleware
 from media_engine.api.routes import router
+from media_engine.api.uploads import router as uploads_router
 from media_engine.bootstrap import register_all
 from media_engine.config import EngineConfig
 from media_engine.runtime.engine import Engine
@@ -129,6 +130,7 @@ def build_app(
     )
     app.include_router(health_router)
     app.include_router(router)
+    app.include_router(uploads_router)
 
     # Phase 6 commit 40: optionally mount the SvelteKit SPA at /ui. We
     # check at app-build time rather than at request time so a missing

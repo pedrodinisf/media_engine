@@ -69,6 +69,12 @@ class EngineConfig(BaseSettings):
     # Garbage-collect orphan workdirs older than this many hours
     # (also used by ``med storage gc --workdirs``).
     gc_workdir_retention_hours: int = 24
+    # Phase 6: cap on a single ``POST /acquire/upload`` body to prevent
+    # a malicious client from filling the disk through the new web-UI
+    # multipart endpoint. The upload streams to a tmp file and aborts
+    # past this limit; the rest of the engine (acquire.upload op, daemon
+    # client, CLI ingest) is unaffected.
+    max_upload_mb: int = 2048
 
     @classmethod
     def load(cls, config_file: Path | None = None) -> EngineConfig:
