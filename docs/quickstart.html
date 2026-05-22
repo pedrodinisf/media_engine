@@ -1498,10 +1498,12 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
     <a href="#principles"><span class="id">005</span> Principles</a>
     <a href="#catalog"><span class="id">006</span> Catalog</a>
     <a href="#operations"><span class="id">007</span> Operations</a>
-    <a href="#cost"><span class="id">008</span> Cost</a>
-    <a href="#deployment"><span class="id">009</span> Deploy</a>
-    <a href="#chronology"><span class="id">010</span> Chronology</a>
-    <a href="#status"><span class="id">011</span> Status</a>
+    <a href="#web-ui"><span class="id">008</span> Web UI</a>
+    <a href="#profiles"><span class="id">009</span> Profiles</a>
+    <a href="#cost"><span class="id">010</span> Cost</a>
+    <a href="#deployment"><span class="id">011</span> Deploy</a>
+    <a href="#chronology"><span class="id">012</span> Chronology</a>
+    <a href="#status"><span class="id">013</span> Status</a>
   </div>
 </nav>
 
@@ -2012,7 +2014,7 @@ flowchart TD
     <div class="decision-cell"><div class="dc-label">▸ shell</div><div class="dc-title">CLI (cold)</div><div class="dc-when">One-shot scripting, CI jobs, ad-hoc reprocessing.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ shell</div><div class="dc-title">CLI + daemon</div><div class="dc-when">Local dev with hot models. CLI auto-routes via 50&thinsp;ms ping.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ http</div><div class="dc-title">REST + SSE</div><div class="dc-when">Service integration, web frontends, async job pattern.</div></div>
-    <div class="decision-cell"><div class="dc-label">▸ browser</div><div class="dc-title">Web UI <span style="font-size:10px;color:var(--accent-amber);">PH 6 MID</span></div><div class="dc-when">Local-first SvelteKit SPA at <code class="inline">/ui</code>. Full GUI parity with the CLI.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ browser</div><div class="dc-title">Web UI <span style="font-size:10px;color:var(--accent-green);">v0.6.0</span></div><div class="dc-when">Local-first SvelteKit SPA at <code class="inline">/ui</code>. Full GUI parity with the CLI &mdash; see &sect;008.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ stdio</div><div class="dc-title">MCP</div><div class="dc-when">AI agents (Claude Code &amp; friends). Allow-listed tool surface.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ in-proc</div><div class="dc-title">Python API</div><div class="dc-when">Embedded use. <code class="inline">from media_engine import Engine</code>.</div></div>
   </div>
@@ -2187,10 +2189,230 @@ asyncio.run(<span class="fn">go</span>())</pre>
 
 
 <!-- ────────────────────────────────────────────────────────────
-     008 — COST MODEL
+     008 — WEB UI
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="web-ui">
+  <div class="eyebrow">WEB UI <span class="id">008 · BROWSER SURFACE</span></div>
+  <h2 class="section-title">Every CLI verb has a panel.</h2>
+  <p class="section-lede">
+    The SvelteKit single-page app at <code class="inline">/ui</code> shares one FastAPI process with REST. Same engine, same cache, same artifacts &mdash; the browser is just a different client. Phase 6 (commits 39&ndash;50 + three audits + two docs syncs) wired up eight panels with full GUI parity for the read &amp; write surface; the CLI stays first-class for power users + CI. <strong>Local-first by default:</strong> <code class="inline">med web start</code> binds loopback, paste-token auth, same-origin only.
+  </p>
+
+  <div class="decision">
+    <div class="decision-cell"><div class="dc-label">▸ /ui/ingest</div><div class="dc-title">Ingest</div><div class="dc-when">Upload local file · paste URL · record livestream · batch URLs &rarr; <code class="inline">acquire.*</code>.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ /ui/run</div><div class="dc-title">Run</div><div class="dc-when">Op picker + schema-driven form + backend health + 250&thinsp;ms debounced cost preview.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ /ui/jobs</div><div class="dc-title">Jobs</div><div class="dc-when">Live SSE-driven table; per-job detail with events / op runs / outputs / failure envelope.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ /ui/catalog</div><div class="dc-title">Catalog</div><div class="dc-when">Paginated artifact list + per-kind previews; detail tab carries the lineage graph.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ /ui/search</div><div class="dc-title">Search</div><div class="dc-when">Type-as-you-go: fulltext (FTS5) · semantic (kNN) · hybrid (RRF). 200 results max.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ /ui/cost</div><div class="dc-title">Cost</div><div class="dc-when">Per-{op, backend, namespace} rollup bars + monthly burn projection + drill-down ledger.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ /ui/profiles</div><div class="dc-title">Profiles</div><div class="dc-when">Card grid + fork-this for bundled profiles &rarr; split-view workspace (visual DAG + CodeMirror YAML).</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ /ui/settings</div><div class="dc-title">Settings</div><div class="dc-when">Six tabs: Tokens · Backends · Plugins Extras · Plugins Catalog · Storage · Config.</div></div>
+  </div>
+
+  <h3 class="section-title" style="margin-top: 36px; font-size: 18px;">Panel walkthrough.</h3>
+
+  <div class="note-stack">
+    <div class="note-row">
+      <span class="note-key">Ingest</span>
+      <span class="note-val">Four tabs &mdash; <strong>Upload</strong> streams a file to <code class="inline">POST /acquire/upload?commit=false</code> for an ffprobe preview, then <code class="inline">?commit=true</code> to submit the <code class="inline">acquire.upload</code> job. <strong>URL</strong> calls <code class="inline">POST /acquire/url/probe</code> for a yt-dlp <code class="inline">--dump-single-json</code> preview before firing <code class="inline">acquire.url</code>. <strong>Livestream</strong> + <strong>Batch</strong> submit <code class="inline">acquire.livestream</code> / a fanned-out <code class="inline">POST /pipelines</code> respectively. Size cap: <code class="inline">MEDIA_ENGINE_MAX_UPLOAD_MB</code> (default 2048). Mirrors <code class="inline">med acquire</code> / <code class="inline">med acquire-url</code> / <code class="inline">med acquire-live</code> / <code class="inline">med batch</code> 1:1.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Run</span>
+      <span class="note-val">Two-column generic runner. Op list from <code class="inline">GET /operations</code>; clicking an op re-renders the form from <code class="inline">params_schema.model_json_schema()</code>. Backend picker shows live health badges from <code class="inline">GET /backends/{name}?op=...</code>. The form's 250&thinsp;ms debounced cost preview hits <code class="inline">POST /run/preview</code> (no job submission) so you see resolved backend + wall-clock or cents + tokens before pressing Submit. Auto-derived <code class="inline">*_sha</code> fields are hidden (validator overwrites anyway). Mirrors <code class="inline">med run &lt;op&gt; --param k=v --backend B</code> 1:1.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Jobs</span>
+      <span class="note-val">List page is a live table from <code class="inline">GET /jobs</code> invalidated by the global SSE tail <code class="inline">GET /events/stream</code>. Detail page tabs: <strong>Events</strong> (<code class="inline">GET /jobs/{id}/events</code> with <code class="inline">?token=...</code> since <code class="inline">EventSource</code> can't set headers) · <strong>Op runs</strong> · <strong>Outputs</strong> · <strong>Failure</strong> envelope. Per-row cancel hits <code class="inline">DELETE /jobs/{id}</code>. Mirrors <code class="inline">med events tail</code> + <code class="inline">med events history</code>.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Catalog</span>
+      <span class="note-val">List page paginates <code class="inline">GET /artifacts</code> with kind-chip filters; detail page (<code class="inline">GET /artifacts/{id}</code>) has three tabs &mdash; <strong>Preview</strong> with a per-kind native renderer (Video <code class="inline">&lt;video&gt;</code> · Audio <code class="inline">&lt;audio&gt;</code> · Image + EXIF · FrameSet grid · Transcript click-to-seek · Diarization timeline · OCRText monospace · Chunks expandable · Embedding stats · Analysis JSON tree · Markdown rendered · Document pdf.js + plain-text fallback · WebPage metadata), <strong>Metadata</strong> JSON tree, <strong>Lineage</strong> graph. Mirrors <code class="inline">med ls</code> / <code class="inline">med show</code> / <code class="inline">med lineage</code>.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Search</span>
+      <span class="note-val">Synchronous <code class="inline">POST /search</code> under a 30&thinsp;s timeout (not a job &mdash; sub-second on sub-1k corpora). Mode toggle <code class="inline">fulltext</code> / <code class="inline">semantic</code> / <code class="inline">hybrid</code>, <code class="inline">top_k</code> slider 1&ndash;50 (server bounds at 200), kind filter. Semantic + hybrid embed the query through <code class="inline">runtime/search_query.py</code> (shared with <code class="inline">med search</code>). Debounce 300&thinsp;ms; in-flight responses dropped on input change. Mirrors <code class="inline">med search</code>.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Cost</span>
+      <span class="note-val">Filter bar (<code class="inline">since</code> + <code class="inline">until</code> datetime-local pickers, group-by toggle) + rollup bars sized via <code class="inline">d3-scale</code>'s linear scale (one row per key, with USD total) + paginated drill-down over <code class="inline">GET /cost/log</code> (newest-first; <code class="inline">until</code>-filter switches to unbounded fetch + Python filter so far-back rows show through, per post-46 audit). Monthly burn-rate projection anchored to the server-echoed window. Mirrors <code class="inline">med cost summary</code> / <code class="inline">med cost ls</code>.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Profiles</span>
+      <span class="note-val">Card grid over <code class="inline">GET /profiles</code> with a 🔒/✎ source badge (server-supplied <code class="inline">ProfileSummary.source</code>) and a lazy body excerpt. <strong>Fork-this</strong> on bundled cards opens a modal that kebab-case-validates client-side, then POSTs the renamed copy to <code class="inline">{config_dir}/profiles/</code>. <strong>Workspace</strong> at <code class="inline">/ui/profiles/[name]</code> is the split view: visual DAG composer (Svelte Flow + dagre) on the left, CodeMirror 6 YAML editor on the right, 650&thinsp;ms live compile via <code class="inline">POST /profiles/validate</code> (150&thinsp;ms parse + 500&thinsp;ms validate) in the footer. YAML is canonical; edits round-trip through the <code class="inline">yaml.Document</code> AST so comments + key order survive byte-identical. Header actions: Save (refuses YAML-driven renames), Run (Sources modal &rarr; <code class="inline">POST /pipelines</code> with inline <code class="inline">pipeline_yaml</code>), Delete (user profiles only). Mirrors <code class="inline">med profile ls</code> / <code class="inline">show</code> / <code class="inline">run</code>.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Settings</span>
+      <span class="note-val">Six lazy-loaded tabs. <strong>Tokens</strong> mints + lists + revokes bearer tokens (<code class="inline">POST /tokens</code> / <code class="inline">GET /tokens</code> / <code class="inline">DELETE /tokens/{id}</code>). <strong>Backends</strong> rollup from <code class="inline">GET /backends</code> with a parallel "Refresh health" button. <strong>Plugins · Extras</strong> shows the 16 pyproject extras + install status (server-side <code class="inline">importlib.util.find_spec</code> probe) + copy-to-clipboard install commands &mdash; UI never executes installs. <strong>Plugins · Catalog</strong> hides ops/backends from discovery surfaces (REST <code class="inline">/operations</code>, MCP <code class="inline">tools/list</code>, UI op picker) via <code class="inline">{config_dir}/plugins.toml</code> &mdash; enforcement, not security (the MCP allow-list is the security gate). <strong>Storage</strong> shows <code class="inline">GET /storage/stats</code> rollup + GC preview / apply (<code class="inline">POST /storage/gc</code>). <strong>Config</strong> read-only view of <code class="inline">declared_resources</code> per op (carried on <code class="inline">OperationSummary</code> since post-49 audit; one HTTP call, not N+1). Mirrors <code class="inline">med api token create|ls|revoke</code> / <code class="inline">med storage stats|gc</code> / <code class="inline">med config</code>.</span>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-head">
+      <h4>Browser &harr; engine request lifecycle</h4>
+      <span class="label"><span class="status-dot green"></span>FIG 8.1 · SAME-ORIGIN · BEARER + SSE</span>
+    </div>
+    <div class="mermaid" id="d-webui">
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant B as Browser<br>(/ui SPA)
+    participant F as FastAPI<br>(/ui mount + /run + /events)
+    participant E as Engine
+    participant S as Cache + Store
+
+    U->>B: paste token at /ui/setup
+    B->>B: persist to localStorage<br>(media_engine:bearer)
+    B->>F: GET /operations<br>Authorization: Bearer ...
+    F-->>B: 200 + op list
+
+    U->>B: submit Run form
+    B->>F: POST /run/preview (250ms debounce)
+    F->>E: Engine.estimate_op_cost(...)
+    E-->>F: CostEstimate
+    F-->>B: cost + backend + tokens
+    B->>F: POST /run
+    F->>E: dispatch (Job created)
+    F-->>B: 202 + job_id
+
+    B->>F: EventSource(/jobs/JOB/events?token=...)
+    F-->>B: SSE OpStarted
+    E->>S: cache lookup (hit/miss)
+    E->>S: persist artifact
+    F-->>B: SSE Progress + OpCompleted
+    B->>B: invalidate jobs list
+    B->>F: GET /artifacts/{id}
+    F-->>B: typed artifact
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Security posture.</strong> CSP scoped to <code class="inline">/ui/*</code> only (<code class="inline">default-src 'self'</code>, plus <code class="inline">wasm-unsafe-eval</code> for pdf.js + <code class="inline">style-src 'unsafe-inline'</code> for Svelte's scoped CSS); same-origin CORS unless <code class="inline">MEDIA_ENGINE_CORS_ORIGINS</code> opens specifics; bearer tokens namespace-gated (token namespace must equal engine namespace &mdash; 403 otherwise); <code class="inline">?token=</code> on SSE routes is an explicit tradeoff for loopback / private-network deploys, with a v1.x job-scoped-nonce hardening path catalogued in <a href="web_ui_deferred.md">web_ui_deferred.md</a>.
+  </div>
+
+  <div class="callout amber">
+    <strong>v1.x backlog (small, post-v0.6.0).</strong> Per-node schema-driven param editor in the profile workspace (today: edit params in the YAML pane); inline <code class="inline">config.toml</code> + <code class="inline">resources.yaml</code> editors in Settings &rarr; Config (today: read-only); Wavesurfer.js audio waveform; OCR bounding-box overlays; t-SNE / UMAP embedding projection; pdf.js advanced rendering; mobile / responsive layout; i18n; httpOnly-cookie session hardening; job-scoped SSE nonces. Each item has a recorded bring-in trigger in <a href="web_ui_deferred.md">docs/web_ui_deferred.md</a> &mdash; revisit before Phase 7 lands.
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     009 — PROFILES
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="profiles">
+  <div class="eyebrow">PROFILES <span class="id">009 · DATA, NOT CODE</span></div>
+  <h2 class="section-title">Reusable pipelines as YAML.</h2>
+  <p class="section-lede">
+    Engine principle 4: profiles are data, not code. A profile is a named, parameterized pipeline stored as YAML (for explicit DAGs) or Markdown with frontmatter (for prompt-driven shorthand). The engine compiles it to a runtime <code class="inline">Pipeline</code> and dispatches through the same DAG executor that powers <code class="inline">Engine.run</code> &mdash; caching, lineage, semaphores, retry, partial completion, all of it.
+  </p>
+
+  <div class="cost-grid">
+    <div class="cost-card green">
+      <div class="stage">FLAVOR 01 &middot; PIPELINE</div>
+      <h4>YAML DAG &mdash; explicit multi-op</h4>
+      <p>Used when a workflow chains 3+ ops, needs fan-out / fan-in, or wants explicit input wiring. The <code class="inline">graph</code> field is a list of op invocations; the engine compiles it to a <code class="inline">runtime.dag.Pipeline</code> via topological wave sort, refusing to start on cycles, unresolved refs, or duplicate node ids.</p>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">yaml</span> &middot; profiles/analysis-full/profile.yaml</span></div>
+<pre><span class="kw">profile_schema_version</span>: <span class="str">"1.0"</span>
+<span class="kw">name</span>: analysis-full
+<span class="kw">kind</span>: pipeline
+<span class="kw">description</span>: Spoken video &rarr; speaker-diarized intelligence + Markdown report
+
+<span class="kw">inputs</span>:
+  - { <span class="kw">name</span>: source, <span class="kw">kind</span>: video }
+
+<span class="kw">graph</span>:
+  - <span class="kw">id</span>: audio
+    <span class="kw">op</span>: video.extract_audio
+    <span class="kw">inputs</span>: { in: source }
+  - <span class="kw">id</span>: transcript
+    <span class="kw">op</span>: audio.transcribe_diarized
+    <span class="kw">inputs</span>: { audio: audio }
+    <span class="kw">params</span>: { language: en }
+  - <span class="kw">id</span>: analysis
+    <span class="kw">op</span>: intelligence.analyze
+    <span class="kw">inputs</span>: { t: transcript }
+    <span class="kw">params</span>: { prompt_path: analysis-full/prompt.md }
+  - <span class="kw">id</span>: report
+    <span class="kw">op</span>: report.session
+    <span class="kw">inputs</span>: { a: analysis }
+
+<span class="kw">outputs</span>: [transcript, analysis, report]</pre>
+      </div>
+    </div>
+    <div class="cost-card amber">
+      <div class="stage">FLAVOR 02 &middot; PROMPT</div>
+      <h4>Markdown + frontmatter &mdash; single VLM/LLM call</h4>
+      <p>Used when a workflow is one VLM call wrapped around a custom system prompt + (optionally) a JSON output schema. The Markdown body becomes the <code class="inline">system_prompt</code> param to <code class="inline">default_op</code>. Five starter prompt profiles ship under <code class="inline">profiles/*.md</code> (video-knowledge, technical-academic, diy-electronics, cooking-recipes, general-custom).</p>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">markdown</span> &middot; profiles/technical-academic.md</span></div>
+<pre>---
+<span class="kw">profile_schema_version</span>: <span class="str">"1.0"</span>
+<span class="kw">name</span>: technical-academic
+<span class="kw">kind</span>: prompt
+<span class="kw">default_op</span>: video.multimodal
+<span class="kw">default_backend</span>: gemini
+<span class="kw">schema_path</span>: profiles/analysis-full/analysis_schema.json
+---
+You are an expert technical reviewer. Extract:
+- Major arguments
+- Supporting evidence
+- Open questions
+
+Output as Markdown headings. Be concise.</pre>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="section-title" style="margin-top: 36px; font-size: 18px;">Field reference &amp; semantics.</h3>
+
+  <div class="note-stack">
+    <div class="note-row">
+      <span class="note-key">profile_schema_version</span>
+      <span class="note-val">Always <code class="inline">"1.0"</code> for now. Lets the loader migrate without breaking older files. Required.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">name</span>
+      <span class="note-val">Used by <code class="inline">med profile run NAME</code> and <code class="inline">POST /pipelines { profile_name }</code>. Must be unique across all discovery directories. Server-side kebab-case validation (<code class="inline">[a-z0-9-]+</code>) on <code class="inline">POST /profiles</code> blocks path traversal.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">kind</span>
+      <span class="note-val"><code class="inline">pipeline</code> for YAML DAGs, <code class="inline">prompt</code> for Markdown shorthand. The discriminator that picks the loader path.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">inputs[].name + kind</span>
+      <span class="note-val">Caller-supplied source artifacts. <code class="inline">name</code> is the label referenced from <code class="inline">graph[].inputs</code>; <code class="inline">kind</code> is the lowercase <code class="inline">Kind</code> value (<code class="inline">video</code>, <code class="inline">audio</code>, <code class="inline">image</code>, &hellip;) checked at compile time. <code class="inline">med profile run NAME --input name=ID</code> binds them.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">graph[].id / op / inputs / params / backend / depends_on</span>
+      <span class="note-val">One entry per node. <code class="inline">id</code> is unique within the profile; <code class="inline">op</code> is a registered op name (<code class="inline">med ops</code> to list); <code class="inline">inputs</code> maps op-input labels to source names or upstream node ids (list form <code class="inline">[source]</code> also accepted); <code class="inline">params</code> is op-specific and validated against the op's <code class="inline">params_model</code>; <code class="inline">backend</code> pins a specific backend; <code class="inline">depends_on</code> declares extra dependencies that cascade failure.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">outputs</span>
+      <span class="note-val">Node ids whose artifacts are returned. Defaults to the leaf nodes if omitted.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Discovery order</span>
+      <span class="note-val">Three directories, later wins: (1) <code class="inline">~/.config/media_engine/profiles/</code> (your personal profiles, editable from the Web UI), (2) <code class="inline">&lt;engine repo&gt;/profiles/</code> (bundled starters, read-only in the Web UI), (3) any <code class="inline">--profile-dir</code> override. <code class="inline">med profile ls</code> + <code class="inline">GET /profiles</code> show the resolved set.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Run-time semantics</span>
+      <span class="note-val">Compiled pipelines dispatch through <code class="inline">runtime.dag.Pipeline</code>: ready nodes run concurrently in an <code class="inline">asyncio.TaskGroup</code>; per-resource semaphores (<code class="inline">apple_neural_engine: 1</code>, <code class="inline">cloud_concurrent: 4</code>, &hellip;) bound parallelism; every node's output is cached by <code class="inline">(op, version, backend, params, input_ids)</code>; per-node retry policy applies (cloud defaults to 3 attempts exponential); a failed node fails its dependents but independent siblings keep running. Result is <strong>partial completion</strong>, surfaced through the Web UI Jobs detail page.</span>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Fork-and-edit is the supported edit loop.</strong> The Web UI profiles index shows a 🔒 badge on bundled profiles + a one-click <strong>fork-this</strong> modal. Pick a kebab-case name; the workspace opens with the renamed copy under <code class="inline">{config_dir}/profiles/</code>. From there: edit the YAML (650&thinsp;ms live compile catches mistakes), Save (<code class="inline">POST /profiles</code>), Run (Sources modal &rarr; <code class="inline">POST /pipelines</code> with inline <code class="inline">pipeline_yaml</code> so unsaved drafts execute). The CLI loop is the same: <code class="inline">cp profiles/X.yaml ~/.config/media_engine/profiles/X-mine.yaml</code> &rarr; edit &rarr; <code class="inline">med profile run X-mine</code>.
+  </div>
+
+  <p style="font-size: 12px; color: var(--text-muted); margin-top: 16px;">Full field-by-field tutorial in <a href="writing_a_profile.md">docs/writing_a_profile.md</a>; the analysis-full reference pipeline is documented in <a href="profile_analysis_full.md">docs/profile_analysis_full.md</a>.</p>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     010 — COST MODEL
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="cost">
-  <div class="eyebrow">COST MODEL <span class="id">008 · MONEY</span></div>
+  <div class="eyebrow">COST MODEL <span class="id">010 · MONEY</span></div>
   <h2 class="section-title">Two stages, both honest.</h2>
   <p class="section-lede">
     The engine never hides spend. You see what it will probably cost before you press go, and what it actually cost after. Cache hits and thin composite wrappers are explicitly not double-billed.
@@ -2220,10 +2442,10 @@ asyncio.run(<span class="fn">go</span>())</pre>
 
 
 <!-- ────────────────────────────────────────────────────────────
-     009 — DEPLOYMENT
+     011 — DEPLOYMENT
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="deployment">
-  <div class="eyebrow">DEPLOYMENT <span class="id">009 · SHAPES</span></div>
+  <div class="eyebrow">DEPLOYMENT <span class="id">011 · SHAPES</span></div>
   <h2 class="section-title">Same engine, six deployment models.</h2>
   <p class="section-lede">
     The engine is single-process by design; the async surface bounds parallelism with resource semaphores. Scale horizontally by sharing one Postgres + permanent_store across multiple stateless replicas. Multi-tenant: one process per namespace, tokens scoped accordingly.
@@ -2250,10 +2472,10 @@ asyncio.run(<span class="fn">go</span>())</pre>
 
 
 <!-- ────────────────────────────────────────────────────────────
-     010 — CHRONOLOGY
+     012 — CHRONOLOGY
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="chronology">
-  <div class="eyebrow">CHRONOLOGY <span class="id">010 · 9 DAYS · 57+ COMMITS</span></div>
+  <div class="eyebrow">CHRONOLOGY <span class="id">012 · 9 DAYS · 65+ COMMITS</span></div>
   <h2 class="section-title">v0.6.0 shipped; Phase 6 closed on the Web UI.</h2>
   <p class="section-lede">
     Phases 0&ndash;6 shipped between <strong>2026-05-14</strong> and <strong>2026-05-22</strong>. v0.6.0 is the current release: fifty numbered commits + three Phase-6 audit-fix passes + two docs syncs (sixty-five+ total commits across the release window), thirty-four operations, thirty-plus backends, six transports (CLI, daemon, REST + SSE, MCP stdio, Python API, and the new SvelteKit Web UI at <code class="inline">/ui</code>). Phase 7 (acoustic speaker identity, plan &sect;12.6) queues next.
@@ -2262,7 +2484,7 @@ asyncio.run(<span class="fn">go</span>())</pre>
   <div class="diagram">
     <div class="diagram-head">
       <h4>Implementation timeline</h4>
-      <span class="label"><span class="status-dot amber live"></span>FIG 10.1 · 9 DAYS · 7 PHASES TOTAL · 57+ COMMITS LANDED</span>
+      <span class="label"><span class="status-dot amber live"></span>FIG 12.1 · 9 DAYS · 7 PHASES TOTAL · 65+ COMMITS LANDED</span>
     </div>
     <div class="itl" role="img" aria-label="Implementation timeline showing six phases between May 14 and May 24, 2026">
 
@@ -2572,10 +2794,10 @@ asyncio.run(<span class="fn">go</span>())</pre>
 
 
 <!-- ────────────────────────────────────────────────────────────
-     011 — MISSION STATUS
+     013 — MISSION STATUS
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="status">
-  <div class="eyebrow">MISSION STATUS <span class="id">011 · WHERE WE ARE</span></div>
+  <div class="eyebrow">MISSION STATUS <span class="id">013 · WHERE WE ARE</span></div>
   <h2 class="section-title">Phase 6 complete &mdash; v0.6.0 shipped (2026-05-22).</h2>
   <p class="section-lede">
     Phases 0&ndash;6 are closed (v0.6.0). Phase 6 (local-first Web UI, plan &sect;12.5) delivered the full SvelteKit SPA bundled at <code class="inline">/ui</code> over twelve numbered commits (39&ndash;50) plus three audit-fix passes and two docs syncs: Ingest, Run, Jobs, Catalog, Search, Cost, Lineage, Profile workspace + examples library with fork-this, and the six-tab Settings panel are all live with full CLI parity. The <code class="inline">+ui</code> multi-stage Dockerfile (Node-free runtime image), six bundled screenshots, and the <code class="inline">docs/quickstart.html</code> Web UI + Profiles expansion ship in this release. v1.0 lands when the REST surface freezes &mdash; the only Phase-6-adjacent v1.x backlog is the small follow-ups in <a href="web_ui_deferred.md">web_ui_deferred.md</a>.

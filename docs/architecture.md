@@ -929,6 +929,29 @@ roadmap; this section is the reconciliation):
     authoring loop from `writing_a_profile.md` into the executive
     overview, so the single HTML doc is self-contained for a
     new reader. Additive only — nothing was removed.
+  - **CSP `script-src` allows `'unsafe-inline'`** (commit 50,
+    discovered while running the screenshot generator). SvelteKit's
+    adapter-static index.html ships an inline boot ``<script>`` that
+    bootstraps the SPA (`__sveltekit_<hash> = { base, assets };
+    Promise.all([…])`). The earlier `script-src 'self'
+    'wasm-unsafe-eval'` blocked it; the SPA never hydrated and any
+    browser hit got a blank page. Without runtime nonces (which a
+    static mount can't supply) the choice is between accepting
+    `'unsafe-inline'` (matches `style-src`'s existing posture) or
+    rotating hashes per build (brittle). v1 takes the former; the
+    httpOnly-cookie + hash-rotation hardening path is catalogued
+    in `web_ui_deferred.md`.
+  - **`GET /ui/{spa_path:path}` SPA-fallback handler** (commit 50,
+    same discovery). `StaticFiles(html=True)` only serves index.html
+    for the directory root; a browser refresh on `/ui/jobs` or any
+    direct deep-URL paste hit FastAPI and got `{"detail":"Not
+    Found"}`. The fallback handler returns the real asset when the
+    path resolves to a file under the dist tree (`/ui/_app/...`,
+    `/ui/favicon.ico`) and otherwise returns `index.html` so
+    SvelteKit's client router takes over. Path-traversal guarded
+    via `.resolve().relative_to(dist.resolve())`. Four regression
+    tests in `tests/test_api_ui_mount.py` cover the deep-path,
+    asset-passthrough, and traversal cases.
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit

@@ -24,6 +24,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from media_engine.api._state import AppState
@@ -141,6 +142,36 @@ def build_app(
     index_html = dist / "index.html"
     if index_html.is_file():
         app.add_middleware(UISecurityHeadersMiddleware)
+        # Phase 6 commit 50: SPA-fallback handler for deep routes.
+        # SvelteKit's adapter-static emits a single index.html; the
+        # client router resolves /ui/<route> in-memory. Without this
+        # fallback, a refresh on /ui/jobs (or a direct paste of a deep
+        # URL, or any client-router-driven nav) hits StaticFiles, which
+        # returns 404 because no file matches. The route below catches
+        # any /ui/<path> that didn't resolve to a real file and returns
+        # the SPA shell so the client router can take over.
+        # Order matters: this MUST be declared before the mount so
+        # FastAPI matches the explicit route first; the StaticFiles
+        # mount handles real assets (/ui/_app/..., /ui/favicon.ico).
+        _spa_index = index_html
+
+        @app.get("/ui/{spa_path:path}", include_in_schema=False)
+        async def ui_spa_fallback(  # pyright: ignore[reportUnusedFunction]
+            spa_path: str,
+        ) -> FileResponse:
+            # If the requested path maps to a real file under the dist
+            # tree, let StaticFiles serve it (we re-resolve here because
+            # this handler shadows the mount for /ui/<path>).
+            target = (dist / spa_path).resolve()
+            try:
+                target.relative_to(dist.resolve())
+            except ValueError:
+                # Path traversal — fall through to the SPA shell.
+                return FileResponse(_spa_index)
+            if target.is_file():
+                return FileResponse(target)
+            return FileResponse(_spa_index)
+
         app.mount(
             "/ui",
             StaticFiles(directory=str(dist), html=True),

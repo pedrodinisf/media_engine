@@ -7,17 +7,27 @@ We scope every header to `/ui/*` responses so the API surface (under
 the same FastAPI app) is unaffected — REST clients live on
 `/operations`, `/jobs`, etc., and don't need a CSP.
 
-Header rationale (commit 40 §9):
+Header rationale (commit 40 §9, refined by commit 50):
 
 - ``Content-Security-Policy``
   - ``default-src 'self'`` — only same-origin loads.
   - ``img-src 'self' data: blob:`` — supports inline thumbnails + blob
-    previews of artifacts the catalog browser will render (commit 44).
+    previews of artifacts the catalog browser renders (commit 44).
   - ``media-src 'self' blob:`` — same, for ``<video>`` + ``<audio>``.
   - ``worker-src 'self' blob:`` — pdf.js spawns its renderer in a worker
     backed by a blob URL.
-  - ``script-src 'self' 'wasm-unsafe-eval'`` — pdf.js's wasm-backed
-    fallback build needs the wasm CSP token; no third-party CDN.
+  - ``script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'`` — pdf.js's
+    wasm-backed fallback build needs the wasm CSP token; ``'unsafe-inline'``
+    is required because SvelteKit's adapter-static bundle emits an inline
+    boot ``<script>`` block in index.html that bootstraps the SPA
+    (``__sveltekit_<hash> = { base, assets }; Promise.all([…import…])``).
+    Without it the SPA never hydrates and the page stays blank. Adapter-
+    static can emit a hash-mode meta CSP per build but the hash changes
+    every rebuild, and SvelteKit's HTTP-CSP mode requires runtime nonces
+    that the static mount can't supply. The tradeoff is acceptable for a
+    loopback-first, same-origin UI (no third-party scripts, token already
+    XSS-readable in localStorage). A v1.x hardening path (httpOnly cookie
+    + hash-rotation build) is catalogued in ``web_ui_deferred.md``.
   - ``style-src 'self' 'unsafe-inline'`` — Svelte's scoped styles + the
     Tailwind v4 runtime inject inline ``<style>`` tags.
 - ``X-Content-Type-Options: nosniff`` — refuses to MIME-sniff a binary
@@ -41,7 +51,7 @@ _CSP = (
     "img-src 'self' data: blob:; "
     "media-src 'self' blob:; "
     "worker-src 'self' blob:; "
-    "script-src 'self' 'wasm-unsafe-eval'; "
+    "script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; "
     "style-src 'self' 'unsafe-inline'; "
     "font-src 'self' data:; "
     "connect-src 'self'; "

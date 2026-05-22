@@ -241,6 +241,38 @@ post-commit-49 audit`); the consolidated findings:
   bidirectional parity and fails CI if anyone adds an extra without
   updating the route.
 
+### Fixed (commit 50, discovered while regenerating screenshots)
+
+- **`/ui` CSP blocked SvelteKit's inline boot script.** The
+  `UISecurityHeadersMiddleware` shipped `script-src 'self'
+  'wasm-unsafe-eval'`; SvelteKit's adapter-static index.html
+  contains an inline `<script>` block that wires
+  `__sveltekit_<hash> = { base, assets }` + the dynamic-import
+  Promise. Without `'unsafe-inline'` on script-src the SPA never
+  hydrated — every browser hit got a blank page. Added
+  `'unsafe-inline'` to script-src with a documented tradeoff
+  (loopback-first, same-origin only, no third-party scripts;
+  v1.x hardening path is httpOnly cookies). Regression test in
+  `tests/test_api_ui_mount.py` asserts the directive is present.
+- **`/ui/<deep-path>` returned a 404 JSON.** `StaticFiles(html=True)`
+  serves index.html for the directory root but doesn't fall back
+  for arbitrary paths. A browser refresh on `/ui/jobs` (or a
+  bookmark-paste of `/ui/catalog/<id>`, or any direct deep-URL
+  load) hit the API surface and got `{"detail":"Not Found"}`
+  instead of the SPA shell. Added a `GET /ui/{spa_path:path}`
+  fallback in `app.py` that serves the real file when it exists
+  under the dist tree and otherwise returns `index.html` so
+  SvelteKit's client router can resolve the route. Path-traversal
+  guarded via `.resolve().relative_to(dist.resolve())`.
+- **`med api token create --namespace` ignored
+  `MEDIA_ENGINE_NAMESPACE`.** The CLI option defaulted to the
+  literal string `"default"` rather than `EngineConfig().namespace`,
+  so minting a token inside an env-set namespace silently produced
+  a `default`-scoped token that 403'd against the real engine
+  process. The screenshot script now passes `--namespace
+  "${MEDIA_ENGINE_NAMESPACE}"` explicitly; a permanent fix lands
+  in the post-50 audit pass.
+
 ### Notes
 
 - **Phase 7 (acoustic speaker identity)** queues next — see plan

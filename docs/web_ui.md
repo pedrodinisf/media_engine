@@ -110,6 +110,8 @@ flat nav strip:
 
 ### 4.1 Ingest (`/ui/ingest`)
 
+![Ingest panel — upload / URL / livestream / batch tabs](web_ui/ingest.png)
+
 Four tabs, each maps directly to an `acquire.*` CLI verb:
 
 | Tab | REST | CLI equivalent |
@@ -145,6 +147,8 @@ semaphores.
 
 ### 4.2 Run (`/ui/run`)
 
+![Run panel — op picker + schema-driven form + live cost preview](web_ui/run.png)
+
 The generic single-op runner. Two-column layout: op list on the left,
 form on the right.
 
@@ -174,6 +178,8 @@ Anything `med run` accepts, the form accepts.
 
 ### 4.3 Jobs (`/ui/jobs` + `/ui/jobs/[id]`)
 
+![Jobs dashboard — live SSE-driven table with status badges](web_ui/jobs.png)
+
 **List page** (`/ui/jobs`). Live table from `GET /jobs`, invalidated
 by SSE events from `GET /events/stream` (the global cross-job tail).
 Status badges (pending / running / completed / failed / cancelled),
@@ -195,6 +201,8 @@ if the task naturally completed in the same window — see Phase 4
 audit fix #2 in [`CHANGELOG.md`](../CHANGELOG.md)).
 
 ### 4.4 Catalog (`/ui/catalog` + `/ui/catalog/[id]`)
+
+![Catalog detail — Transcript preview with click-to-seek segments](web_ui/catalog-detail.png)
 
 **List page** (`/ui/catalog`). Paginated artifact list from
 `GET /artifacts`, newest-first. Kind chips filter the result set
@@ -283,6 +291,8 @@ Regression covered by `tests/test_api_cost.py::test_cost_log_until_past_returns_
 
 ### 4.7 Lineage graph (built into `/ui/catalog/[id]?tab=lineage`)
 
+![Lineage graph viewer — Svelte Flow + dagre auto-layout](web_ui/lineage.png)
+
 Svelte Flow + dagre over the lineage JSON. Nodes are colored by
 kind, click drills into the upstream artifact, and the cycle /
 depth-truncation affordance renders the `truncated_reason` ("max
@@ -305,6 +315,8 @@ workspace.
 
 **Workspace** (`/ui/profiles/[name]`). The heart of Phase 6's
 "data, not code" promise. Split view, **YAML is canonical**:
+
+![Profile workspace — visual DAG composer + CodeMirror YAML editor + live compile](web_ui/profile-workspace.png)
 
 - **Left** — visual DAG composer (Svelte Flow + dagre auto-layout).
   Op palette down the side; click an op to append a new node to
@@ -452,6 +464,21 @@ exists and errors with the build hint if not.
 **Wheel build.** `scripts/build_web.sh` runs `pnpm install` +
 `pnpm build` ahead of `hatch build`; the resulting wheel ships the
 UI by default. CI runs both gates.
+
+**Container build.** `infra/docker/Dockerfile` is a four-stage
+multi-stage build: a `ui-build` stage on `node:22-bookworm-slim`
+runs `pnpm -C web build`, the runtime image copies the resulting
+`media_engine/web/dist/` tree from it, and no Node toolchain
+lands in the final image. See [`deployment.md`](deployment.md)
+for `--target api-only` (headless variant) and `--target
+ui-build` (dist tree only).
+
+**Screenshots.** The six PNGs in `docs/web_ui/` are regenerable
+via `scripts/gen_ui_screenshots.sh`: the script boots a clean
+`med web start` on an isolated namespace, seeds synthetic
+fixtures via `scripts/_screenshot_fixtures.py`, and drives
+Playwright (`web/tests/e2e/screenshots.spec.ts`) through each
+panel at 1440×900. Operator-invoked — not part of CI.
 
 ---
 

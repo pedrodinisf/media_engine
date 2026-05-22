@@ -84,6 +84,34 @@ def test_ui_index_html_at_explicit_path(client_with_ui: TestClient) -> None:
     assert "media_engine UI" in r.text
 
 
+def test_ui_spa_fallback_serves_index_for_deep_path(
+    client_with_ui: TestClient,
+) -> None:
+    """Commit 50: a refresh on ``/ui/jobs`` (or any client-router-only
+    route) must return the SPA shell, not the FastAPI 404 JSON."""
+    r = client_with_ui.get("/ui/jobs")
+    assert r.status_code == 200
+    assert "media_engine UI" in r.text
+
+
+def test_ui_spa_fallback_serves_real_assets(client_with_ui: TestClient) -> None:
+    """SPA fallback must NOT shadow real files under the dist tree."""
+    r = client_with_ui.get("/ui/_app/fake.js")
+    assert r.status_code == 200
+    assert "/* test asset */" in r.text
+
+
+def test_ui_spa_fallback_blocks_traversal(client_with_ui: TestClient) -> None:
+    """A ``/ui/../../etc/passwd`` style path must fall back to index.html,
+    not escape the dist tree."""
+    r = client_with_ui.get("/ui/..%2F..%2Fetc%2Fpasswd")
+    # Either 200 (fallback served index) or 404 (TestClient pre-resolves
+    # path traversal); never expose host files.
+    assert r.status_code in {200, 404}
+    if r.status_code == 200:
+        assert "media_engine UI" in r.text
+
+
 def test_ui_mount_skipped_when_dist_absent(client_without_ui: TestClient) -> None:
     """No /ui mount when the dist tree is missing — headless deploys are fine."""
     r = client_without_ui.get("/ui/")
@@ -118,11 +146,22 @@ def test_ui_responses_carry_csp_header(client_with_ui: TestClient) -> None:
     assert r.status_code == 200
     csp = r.headers.get("content-security-policy")
     assert csp is not None
-    # CSP must include the wasm + worker tokens pdf.js needs (plan §9).
+    # CSP must include the wasm + worker tokens pdf.js needs (plan §9)
+    # plus 'unsafe-inline' on script-src so SvelteKit's adapter-static
+    # inline boot script can hydrate the SPA (commit 50 fix).
     assert "default-src 'self'" in csp
     assert "wasm-unsafe-eval" in csp
     assert "worker-src 'self' blob:" in csp
     assert "frame-ancestors 'none'" in csp
+    # Script-src + style-src both need 'unsafe-inline' for SvelteKit
+    # adapter-static's inline boot + Svelte's scoped styles respectively.
+    assert "script-src" in csp
+    script_directive = next(d for d in csp.split(";") if "script-src" in d)
+    assert "'unsafe-inline'" in script_directive, (
+        "script-src must allow 'unsafe-inline' so SvelteKit's adapter-"
+        "static inline boot script can run; without it the SPA never "
+        "hydrates"
+    )
 
 
 def test_ui_responses_carry_nosniff_and_referrer_policy(

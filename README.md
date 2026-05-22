@@ -81,6 +81,8 @@ Use `--help` on any subcommand for the full flag set, or see
 
 ## Web UI
 
+![Run panel — op picker + schema-driven form + backend health + live cost preview](docs/web_ui/run.png)
+
 A SvelteKit single-page app is bundled at `/ui` and served by the same
 FastAPI process as the REST API. Full feature parity with the CLI:
 ingest (upload / URL / livestream / batch), schema-driven run forms
