@@ -122,3 +122,42 @@ YAML frontmatter) or pipeline (YAML DAG).
 9. Cost-aware: `op.cost_estimate()` everywhere; `--dry-run` shows DAG total.
 10. Resource-aware: declared resources → `asyncio.Semaphore` (e.g. 1 VLM at a
     time on Apple Silicon).
+
+## Roadmap (after Phase 5)
+
+Two post-Phase-5 phases are formalized in
+`~/.claude/plans/goofy-gathering-beaver.md` §12.5 + §12.6 and must be
+respected by future planning:
+
+- **Phase 6 — Local-first Web UI** (commits 39–50, ~3,500 LOC). A
+  SvelteKit/Next.js SPA bundled in the engine container under `/ui`,
+  served by `med web start`. Full GUI parity with the CLI — anything
+  reachable via `med <verb>` is reachable from the UI. Scope:
+  ingestion panel (upload / URL / livestream / batch), run
+  configuration panel (op picker + auto-generated forms from
+  `params_model.model_json_schema()` + cost preview + backend
+  selector), job dashboard with SSE live updates, catalog browser
+  with per-kind preview affordances, lineage graph viewer, search +
+  cost ledger surfaces, profile workspace (visual DAG composer +
+  YAML editor + examples library), plugin manager (toggle optional
+  extras + custom op/backend modules), settings (config.toml,
+  resources.yaml, namespace switcher, token CRUD, backend health).
+  The shell stays first-class for power users and CI; the UI is
+  the path of least resistance for everyone else.
+
+- **Phase 7 — Acoustic speaker identity** (commits 51–54, ~1,500
+  LOC). Extends Phase 5's name-DB `speakers.identify` with voice
+  fingerprints. New ops: `speakers.embed_voice` (pyannote-embedding
+  per Diarization turn), `speakers.cluster` (HDBSCAN cross-
+  recording clustering → stable `Speaker_<sha8>` ids), `speakers.match`
+  (cosine similarity vs a fingerprint DB, reusing
+  pgvector/sqlite-vss). New artifact kinds: `SpeakerEmbedding`,
+  `SpeakerProfile`. Privacy-by-default: namespace-scoped storage,
+  per-namespace purge, opt-out for MCP/REST export. Same voice
+  across different recordings gets the same stable id without
+  needing a pre-built name database.
+
+When adding new features or revisiting plans, check whether the work
+fits Phase 5 / 6 / 7 scope before opening a new phase. Phase 5 stays
+focused on domain profiles + reports + the existing name-match
+`speakers.identify`; acoustic identity is explicitly Phase 7.

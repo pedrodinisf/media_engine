@@ -667,9 +667,33 @@ Phase 4 (REST + full MCP + Postgres + IaaC) is complete; Phase 5
 (domain profiles + speakers + reports + final polish) is the next
 work.
 
+After Phase 5, two further phases are formalised in plan §12.5 +
+§12.6 and queued post-v0.5.0:
+
+- **Phase 6 — Local-first Web UI** (commits 39–50). A SvelteKit /
+  Next.js SPA bundled in the engine container under `/ui`, served
+  by `med web start`. Full GUI parity with the CLI: ingestion
+  (upload / URL / livestream / batch), run configuration with
+  schema-driven param forms and live cost preview, job dashboard
+  with SSE updates, catalog + lineage browser, search + cost
+  surfaces, a profile workspace with a visual DAG composer + YAML
+  editor + examples library, plugin manager for optional extras +
+  custom op/backend modules, settings (resources.yaml editor,
+  namespace switcher, token CRUD, backend health).
+- **Phase 7 — Acoustic speaker identity** (commits 51–54). Voice
+  fingerprinting on top of `audio.diarize`. New ops:
+  `speakers.embed_voice`, `speakers.cluster` (HDBSCAN cross-
+  recording), `speakers.match` (cosine vs a fingerprint DB,
+  reusing the pgvector backend). New artifact kinds:
+  `SpeakerEmbedding`, `SpeakerProfile`. Stable `Speaker_<sha8>`
+  ids that re-identify the same voice across recordings without a
+  pre-built name DB. Privacy-by-default: namespace-scoped storage,
+  per-namespace purge, MCP/REST opt-out.
+
 ---
 
 *Companion docs:* `adding_an_operation.md` (how to add an op + backend),
 `writing_a_profile.md` (YAML pipeline vs MD prompt), `deployment.md`
-(env vars + volumes + probes + scaling, Phase 4). A REST/MCP API
-reference is scheduled for Phase 5 commit 38.
+(env vars + volumes + probes + scaling, Phase 4),
+`quickstart.html` (executive overview + chronology). A REST / MCP /
+CLI reference is scheduled for Phase 5 commit 38.

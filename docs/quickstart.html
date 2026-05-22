@@ -1,0 +1,2691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light" />
+<meta name="description" content="framepulse — the media engine. Typed artifacts, capability-named operations, swappable backends, content-addressed caching, async DAG execution. One substrate, four transports, 31 operations." />
+<title>framepulse · the media engine · Quick Start &amp; Operations Manual</title>
+
+<!-- Mermaid for diagrams -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+
+<style>
+/* ─────────────────────────────────────────────────────────────────
+   Design tokens — Clean NASA (light variant)
+   ───────────────────────────────────────────────────────────────── */
+:root {
+  --bg-page:      #F5F4EE;
+  --bg-card:      #F5F5F0;
+  --bg-alt:       #EEEDE8;
+  --bg-deep:      #E6E5DE;
+  --bg-header:    #2A3328;
+
+  --border-light: #D1D5DB;
+  --border-warm:  #C9C5B8;
+  --border-soft:  #DAD8CE;
+
+  --accent-green:      #059669;
+  --accent-green-soft: rgba(5, 150, 105, 0.08);
+  --accent-green-line: rgba(5, 150, 105, 0.22);
+  --accent-amber:      #D97706;
+  --accent-amber-soft: rgba(217, 119, 6, 0.08);
+  --accent-amber-line: rgba(217, 119, 6, 0.25);
+  --accent-red:        #DC2626;
+  --accent-red-soft:   rgba(220, 38, 38, 0.08);
+
+  --text-primary:   #2D2D2D;
+  --text-secondary: #555D66;
+  --text-muted:     #7B8490;
+  --text-inverse:   #F5F5F0;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, system-ui, sans-serif;
+  --font-mono: 'Monaco', 'Menlo', 'Consolas', 'JetBrains Mono', monospace;
+
+  --max-w: 1280px;
+  --rule:  1px solid var(--border-light);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; scroll-padding-top: 60px; }
+body {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: var(--accent-green); color: #fff; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-alt); }
+::-webkit-scrollbar-thumb { background: var(--border-warm); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+a { color: var(--accent-green); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--accent-green); outline-offset: 2px; border-radius: 3px; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Header — instrument panel
+   ───────────────────────────────────────────────────────────────── */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: 48px;
+  padding: 0 20px;
+  background: var(--bg-header);
+  color: var(--text-inverse);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+}
+.logo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+.logo .name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+}
+.logo .dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  margin: 0 4px 1px 0;
+  vertical-align: middle;
+  animation: pulse 2.4s infinite;
+}
+.logo .tagline {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(245, 245, 240, 0.5);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  border-left: 1px solid rgba(245, 245, 240, 0.2);
+  padding-left: 10px;
+}
+.header-stats {
+  display: flex;
+  gap: 6px;
+  margin-left: 4px;
+  flex-wrap: wrap;
+}
+.stat-pill {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 240, 0.85);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.stat-pill b { font-weight: 700; color: var(--text-inverse); }
+.header-spacer { flex: 1; }
+.header-actions { display: flex; gap: 6px; }
+.tool-btn {
+  height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(245, 245, 240, 0.85);
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.tool-btn:hover {
+  background: rgba(5, 150, 105, 0.22);
+  border-color: rgba(5, 150, 105, 0.5);
+  color: var(--text-inverse);
+  text-decoration: none;
+}
+
+@media (max-width: 860px) { .header-stats { display: none; } }
+@media (max-width: 720px) {
+  .header { gap: 10px; padding: 0 12px; }
+  .logo .tagline { display: none; }
+  .tool-btn { padding: 0 8px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Section nav (toc strip)
+   ───────────────────────────────────────────────────────────────── */
+.toc {
+  position: sticky;
+  top: 48px;
+  z-index: 90;
+  background: var(--bg-page);
+  border-bottom: var(--rule);
+  padding: 8px 32px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.toc::-webkit-scrollbar { display: none; }
+.toc-inner {
+  display: flex;
+  gap: 4px;
+  max-width: var(--max-w);
+  margin: 0 auto;
+  font-family: var(--font-mono);
+}
+.toc a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+.toc a:hover {
+  background: var(--bg-alt);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.toc a .id {
+  font-weight: 500;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+@media (max-width: 720px) { .toc { padding: 8px 16px; } }
+
+/* ─────────────────────────────────────────────────────────────────
+   Page shell
+   ───────────────────────────────────────────────────────────────── */
+main { max-width: var(--max-w); margin: 0 auto; padding: 0 32px 96px; }
+@media (max-width: 720px) { main { padding: 0 18px 64px; } }
+
+section { padding: 56px 0; border-bottom: var(--rule); scroll-margin-top: 110px; }
+section:last-of-type { border-bottom: none; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.eyebrow::before {
+  content: '';
+  width: 28px;
+  height: 1px;
+  background: var(--accent-green);
+  display: inline-block;
+}
+.eyebrow .id {
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.18em;
+}
+
+h1.section-title {
+  font-size: clamp(28px, 5vw, 42px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  max-width: 22ch;
+  margin-bottom: 14px;
+}
+h2.section-title {
+  font-size: clamp(22px, 3.4vw, 30px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  max-width: 36ch;
+}
+.section-lede {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-width: 68ch;
+  margin-bottom: 28px;
+}
+.section-lede strong { color: var(--text-primary); font-weight: 600; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Hero
+   ───────────────────────────────────────────────────────────────── */
+.hero { padding-top: 64px; }
+.hero h1 {
+  font-size: clamp(36px, 6.8vw, 64px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.028em;
+  color: var(--text-primary);
+  max-width: 22ch;
+  margin-bottom: 22px;
+}
+.hero h1 em {
+  font-style: normal;
+  color: var(--accent-green);
+  position: relative;
+}
+.hero h1 em::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -2px;
+  height: 2px;
+  background: var(--accent-green);
+  opacity: 0.32;
+}
+.hero-lede {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 64ch;
+  margin-bottom: 28px;
+}
+.hero-cta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 36px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.btn-primary { background: var(--accent-green); color: #fff; }
+.btn-primary:hover { background: #047857; text-decoration: none; }
+.btn-secondary {
+  background: transparent;
+  border-color: var(--border-light);
+  color: var(--text-secondary);
+}
+.btn-secondary:hover {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+  text-decoration: none;
+}
+.btn .arrow { font-family: var(--font-mono); font-size: 12px; }
+
+.telemetry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-card);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.telemetry-item { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); letter-spacing: 0.04em; }
+.telemetry-item b { color: var(--text-primary); font-weight: 700; }
+.telemetry-item .label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.telemetry-sep { width: 1px; height: 14px; background: var(--border-warm); }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.status-dot.green { background: var(--accent-green); }
+.status-dot.amber { background: var(--accent-amber); }
+.status-dot.red   { background: var(--accent-red); }
+.status-dot.muted { background: var(--text-muted); }
+.status-dot.live  { animation: pulse 2s infinite; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.32; } }
+
+/* ─────────────────────────────────────────────────────────────────
+   Code blocks
+   ───────────────────────────────────────────────────────────────── */
+.code-block {
+  background: #fcfbf5;
+  border: 1px solid var(--border-warm);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+.code-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border-warm);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.code-dots { display: flex; gap: 5px; margin-right: 8px; }
+.code-dot { width: 8px; height: 8px; border-radius: 50%; opacity: 0.7; }
+.code-dot.r { background: #ff5f57; }
+.code-dot.y { background: #febc2e; }
+.code-dot.g { background: #28c840; }
+.code-title { flex: 1; }
+.code-lang { color: var(--accent-green); font-weight: 700; }
+.code-block pre {
+  margin: 0;
+  padding: 16px 18px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #2D2D2D;
+  background: transparent;
+}
+.kw   { color: #c2185b; }
+.fn   { color: #1976d2; }
+.str  { color: #2e7d32; }
+.num  { color: #d97706; }
+.cmt  { color: #94a3b8; font-style: italic; }
+.flag { color: #6b46c1; }
+
+code.inline {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-alt);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border-soft);
+  color: var(--text-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Quick start — terminal-style walkthrough
+   ───────────────────────────────────────────────────────────────── */
+.tour {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+.tour-stage {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tour-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border-warm);
+}
+.tour-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tour-head h3 {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+.tour-head .hint {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+}
+.tour-body { padding: 18px 22px; }
+.tour-body .desc {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 14px;
+  max-width: 72ch;
+}
+.tour-body .desc strong { color: var(--text-primary); font-weight: 600; }
+.tour-body .code-block { margin: 0; }
+.tour-body .code-block pre { padding: 14px 18px; }
+
+.next-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+}
+.next-card {
+  display: block;
+  padding: 16px 18px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-card);
+  transition: all 0.15s;
+  text-decoration: none;
+  color: inherit;
+}
+.next-card:hover {
+  border-color: var(--accent-green);
+  background: var(--bg-alt);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+.next-card .nc-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+}
+.next-card .nc-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.next-card .nc-desc {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Charter — duo
+   ───────────────────────────────────────────────────────────────── */
+.duo {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 24px;
+}
+@media (max-width: 800px) { .duo { grid-template-columns: 1fr; } }
+.duo .panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 26px 28px;
+}
+.duo h3 {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+  font-family: var(--font-mono);
+  margin-bottom: 14px;
+}
+.duo h4 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin-bottom: 14px;
+  line-height: 1.25;
+}
+.duo p {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
+.duo p:last-child { margin-bottom: 0; }
+.duo strong { color: var(--text-primary); font-weight: 600; }
+
+.bullets {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+.bullets li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.bullets li::before {
+  content: '▸';
+  position: absolute;
+  left: 6px;
+  color: var(--accent-green);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.bullets li strong { color: var(--text-primary); font-weight: 600; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Mermaid containers
+   ───────────────────────────────────────────────────────────────── */
+.diagram {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 24px;
+  margin: 16px 0;
+  overflow-x: auto;
+}
+.diagram-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--border-soft);
+}
+.diagram-head h4 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+.diagram-head .label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mermaid {
+  display: flex;
+  justify-content: center;
+  font-family: var(--font-mono) !important;
+}
+.mermaid svg { max-width: 100%; height: auto !important; }
+
+/* Note row reuse */
+.note-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  align-items: start;
+}
+.note-key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+  padding-top: 2px;
+}
+.note-val { font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+.note-val strong { color: var(--text-primary); font-weight: 600; }
+.note-stack { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Principles
+   ───────────────────────────────────────────────────────────────── */
+.principles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.principle {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 18px 20px;
+  transition: background 0.15s;
+}
+.principle:hover { background: var(--bg-alt); }
+.principle-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.principle-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent-green);
+}
+.principle-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.principle-body {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.principle-body code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--accent-amber);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Catalog table
+   ───────────────────────────────────────────────────────────────── */
+.catalog {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.catalog th {
+  text-align: left;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border-warm);
+  white-space: nowrap;
+}
+.catalog td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+.catalog tr:last-child td { border-bottom: none; }
+.catalog tr:hover td { background: var(--bg-alt); }
+.catalog .group {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+  white-space: nowrap;
+}
+.catalog .ops { color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; }
+.catalog .backends { color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
+.catalog .backends b { font-weight: 600; color: var(--text-primary); }
+
+/* ─────────────────────────────────────────────────────────────────
+   Transport decision matrix
+   ───────────────────────────────────────────────────────────────── */
+.decision {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.decision-cell {
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.decision-cell:hover { background: var(--bg-alt); transform: translateY(-1px); }
+.decision-cell .dc-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+}
+.decision-cell .dc-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  letter-spacing: -0.005em;
+}
+.decision-cell .dc-when {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Tab bar
+   ───────────────────────────────────────────────────────────────── */
+.tabs-shell {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-warm);
+  background: var(--bg-alt);
+  overflow-x: auto;
+}
+.tab {
+  flex: 1;
+  min-width: 110px;
+  height: 42px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.12s;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--text-primary); background: var(--bg-deep); }
+.tab.active {
+  color: var(--accent-green);
+  border-bottom-color: var(--accent-green);
+  background: var(--bg-card);
+}
+.tab .glyph { font-size: 13px; opacity: 0.65; font-family: var(--font-mono); }
+.tab.active .glyph { opacity: 1; }
+.tab-panel { display: none; padding: 24px 26px; }
+.tab-panel.active { display: block; }
+.tab-panel h4 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  letter-spacing: -0.012em;
+}
+.tab-panel p {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+  max-width: 68ch;
+}
+.tab-panel p:last-child { margin-bottom: 0; }
+.tab-panel strong { color: var(--text-primary); font-weight: 600; }
+.tab-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 16px;
+}
+.tab-panel ul li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  line-height: 1.55;
+}
+.tab-panel ul li::before {
+  content: '›';
+  position: absolute;
+  left: 4px;
+  color: var(--accent-green);
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Cost cards
+   ───────────────────────────────────────────────────────────────── */
+.cost-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+@media (max-width: 800px) { .cost-grid { grid-template-columns: 1fr; } }
+.cost-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 22px;
+}
+.cost-card.amber { border-left: 3px solid var(--accent-amber); }
+.cost-card.green { border-left: 3px solid var(--accent-green); }
+.cost-card .stage {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.cost-card h4 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  margin-bottom: 10px;
+}
+.cost-card p {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.cost-card p:last-of-type { margin-bottom: 0; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Deployment table
+   ───────────────────────────────────────────────────────────────── */
+.deploy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.deploy-table th, .deploy-table td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.deploy-table tr:last-child td { border-bottom: none; }
+.deploy-table th {
+  background: var(--bg-alt);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.deploy-table tr:hover td { background: var(--bg-alt); }
+.deploy-table .when { color: var(--text-secondary); }
+.deploy-table .cmd { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); font-weight: 600; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Implementation timeline — custom CSS Gantt
+   ───────────────────────────────────────────────────────────────── */
+.itl {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 22px 28px 24px;
+  position: relative;
+}
+.itl-axis {
+  position: relative;
+  margin-left: 156px;
+  height: 26px;
+  border-bottom: 1px solid var(--border-warm);
+}
+.itl-tick {
+  position: absolute;
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transform: translateX(-3px);
+}
+.itl-tick::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 1px;
+  height: 5px;
+  background: var(--border-warm);
+}
+.itl-tick.today {
+  color: var(--accent-amber);
+  font-weight: 700;
+}
+.itl-tick.today::after { background: var(--accent-amber); height: 8px; }
+
+.itl-rows {
+  position: relative;
+  margin-top: 16px;
+}
+.itl-now {
+  position: absolute;
+  top: -16px;
+  bottom: -8px;
+  width: 2px;
+  background: var(--accent-amber);
+  z-index: 6;
+  pointer-events: none;
+  margin-left: 156px;
+}
+.itl-now::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 10px;
+  height: 10px;
+  background: var(--accent-amber);
+  border: 2px solid var(--bg-card);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--accent-amber);
+  animation: pulse-now 2.4s infinite;
+}
+.itl-now-label {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--accent-amber);
+  white-space: nowrap;
+}
+.itl-row {
+  display: grid;
+  grid-template-columns: 156px 1fr;
+  align-items: center;
+  height: 34px;
+  margin-bottom: 5px;
+}
+.itl-row-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-right: 18px;
+}
+.itl-id {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--accent-green);
+  min-width: 22px;
+}
+.itl-row.future .itl-id { color: var(--accent-amber); }
+.itl-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.itl-track {
+  position: relative;
+  height: 26px;
+  background:
+    repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(10% - 1px),
+      var(--border-soft) calc(10% - 1px),
+      var(--border-soft) 10%
+    );
+  border-radius: 3px;
+}
+.itl-bar {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  background: var(--accent-green);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  min-width: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.itl-bar.future {
+  background: transparent;
+  border: 1.5px dashed var(--accent-amber);
+  top: 4px; bottom: 4px;
+}
+.itl-bar-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
+}
+.itl-bar.future .itl-bar-text {
+  color: var(--accent-amber);
+  text-shadow: none;
+  font-weight: 600;
+}
+.itl-legend {
+  display: flex;
+  gap: 18px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.itl-legend .swatch {
+  display: inline-block;
+  width: 18px; height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.itl-legend .swatch.done   { background: var(--accent-green); }
+.itl-legend .swatch.future { background: transparent; border: 1.5px dashed var(--accent-amber); }
+
+@media (max-width: 720px) {
+  .itl { padding: 16px 18px 18px; }
+  .itl-axis { margin-left: 90px; height: 22px; }
+  .itl-now { margin-left: 90px; }
+  .itl-tick { font-size: 9px; }
+  .itl-row { grid-template-columns: 90px 1fr; height: 32px; }
+  .itl-row-label { padding-right: 10px; gap: 6px; }
+  .itl-name { font-size: 11px; }
+  .itl-bar-text { font-size: 9px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Chronology — phase cards + axis pip strip
+   ───────────────────────────────────────────────────────────────── */
+.chrono-axis {
+  position: relative;
+  margin: 24px 0 36px;
+  padding: 28px 0 18px;
+  border-top: 1px dashed var(--border-warm);
+  border-bottom: 1px dashed var(--border-warm);
+}
+.chrono-axis-line {
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--accent-green) 0%,
+    var(--accent-green) 78%,
+    var(--accent-amber) 78%,
+    var(--accent-amber) 100%);
+  transform: translateY(-50%);
+}
+.chrono-axis-now {
+  position: absolute;
+  top: 50%;
+  left: 78%;
+  width: 14px;
+  height: 14px;
+  background: var(--accent-amber);
+  border: 3px solid var(--bg-page);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px var(--accent-amber);
+  animation: pulse-now 2s infinite;
+}
+@keyframes pulse-now {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent-amber); }
+  50% { box-shadow: 0 0 0 6px rgba(217, 119, 6, 0.15); }
+}
+.chrono-axis-now::after {
+  content: 'NOW';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--accent-amber);
+  white-space: nowrap;
+}
+.chrono-marks {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  height: 0;
+}
+.chrono-mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.chrono-mark .pip {
+  width: 10px;
+  height: 10px;
+  background: var(--accent-green);
+  border: 2px solid var(--bg-page);
+  border-radius: 50%;
+}
+.chrono-mark.future .pip { background: var(--bg-card); border-color: var(--accent-amber); }
+.chrono-mark .label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  position: absolute;
+  top: 16px;
+}
+.chrono-mark .id {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent-green);
+  position: absolute;
+  bottom: 16px;
+}
+.chrono-mark.future .id { color: var(--accent-amber); }
+
+.phases {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+.phase-card {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  gap: 20px;
+  padding: 20px 22px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  align-items: start;
+  transition: background 0.15s;
+}
+.phase-card:hover { background: var(--bg-alt); }
+.phase-card.future {
+  border-left: 3px solid var(--accent-amber);
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.03), transparent 40%);
+}
+.phase-card.done { border-left: 3px solid var(--accent-green); }
+.phase-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-top: 2px;
+}
+.phase-id b {
+  display: block;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin-top: 2px;
+  margin-bottom: 4px;
+  font-weight: 700;
+  line-height: 1;
+}
+.phase-card.future .phase-id b { color: var(--accent-amber); }
+.phase-card.done .phase-id b { color: var(--accent-green); }
+.phase-body h4 {
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+.phase-body p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+.phase-body p:last-child { margin-bottom: 0; }
+.phase-deliverables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.deliverable {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: var(--accent-green-soft);
+  color: var(--accent-green);
+  border: 1px solid var(--accent-green-line);
+  letter-spacing: 0.04em;
+}
+.phase-card.future .deliverable {
+  background: var(--accent-amber-soft);
+  color: var(--accent-amber);
+  border-color: var(--accent-amber-line);
+}
+.phase-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.phase-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+.phase-status.done {
+  color: var(--accent-green);
+  background: var(--accent-green-soft);
+  border: 1px solid var(--accent-green-line);
+}
+.phase-status.next {
+  color: var(--accent-amber);
+  background: var(--accent-amber-soft);
+  border: 1px solid var(--accent-amber-line);
+}
+.phase-window {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.phase-commits {
+  font-size: 11px;
+  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.phase-commits .unit { font-weight: 500; color: var(--text-muted); margin-left: 3px; }
+@media (max-width: 720px) {
+  .phase-card { grid-template-columns: 1fr; gap: 12px; }
+  .phase-meta { flex-direction: row; flex-wrap: wrap; align-items: center; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Mission status
+   ───────────────────────────────────────────────────────────────── */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.metric {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 18px 20px;
+}
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent-green);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.metric-value .unit {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin-left: 4px;
+}
+.metric-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.callout {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--accent-green);
+  border-radius: 6px;
+  padding: 14px 18px;
+  margin: 18px 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.callout strong { color: var(--accent-green); font-weight: 700; }
+.callout.amber { border-left-color: var(--accent-amber); }
+.callout.amber strong { color: var(--accent-amber); }
+
+/* ─────────────────────────────────────────────────────────────────
+   Footer
+   ───────────────────────────────────────────────────────────────── */
+footer {
+  border-top: var(--rule);
+  padding: 28px 32px 32px;
+  max-width: var(--max-w);
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+footer .brand { color: var(--text-primary); font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
+footer .build { display: flex; gap: 14px; flex-wrap: wrap; }
+footer .build span b { color: var(--text-primary); font-weight: 700; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Reveal animation
+   ───────────────────────────────────────────────────────────────── */
+.fade {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.fade.visible { opacity: 1; transform: translateY(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+  .fade { opacity: 1; transform: none; }
+}
+
+@media print {
+  .header, .toc, footer, .hero-cta, .tabs { display: none; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  section { page-break-inside: avoid; padding: 24px 0; }
+  .tab-panel { display: block !important; padding: 12px 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header" role="banner">
+  <span class="logo">
+    <span class="dot"></span><span class="name">FRAMEPULSE</span>
+    <span class="tagline">the media engine</span>
+  </span>
+  <nav class="header-stats" aria-label="Build status">
+    <span class="stat-pill">PHASE <b>4/5</b></span>
+    <span class="stat-pill"><b>31</b> OPS</span>
+    <span class="stat-pill"><b>30</b> BACKENDS</span>
+    <span class="stat-pill"><b>702</b> TESTS</span>
+  </nav>
+  <span class="header-spacer"></span>
+  <div class="header-actions">
+    <a class="tool-btn" href="../README.md">Readme</a>
+    <a class="tool-btn" href="architecture.md">Arch</a>
+    <a class="tool-btn" href="deployment.md">Deploy</a>
+  </div>
+</header>
+
+<!-- TOC strip -->
+<nav class="toc" aria-label="Section navigation">
+  <div class="toc-inner">
+    <a href="#overview"><span class="id">001</span> Overview</a>
+    <a href="#quickstart"><span class="id">002</span> Quick Start</a>
+    <a href="#charter"><span class="id">003</span> Charter</a>
+    <a href="#topology"><span class="id">004</span> Topology</a>
+    <a href="#principles"><span class="id">005</span> Principles</a>
+    <a href="#catalog"><span class="id">006</span> Catalog</a>
+    <a href="#operations"><span class="id">007</span> Operations</a>
+    <a href="#cost"><span class="id">008</span> Cost</a>
+    <a href="#deployment"><span class="id">009</span> Deploy</a>
+    <a href="#chronology"><span class="id">010</span> Chronology</a>
+    <a href="#status"><span class="id">011</span> Status</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- ────────────────────────────────────────────────────────────
+     001 — OVERVIEW
+     ──────────────────────────────────────────────────────────── -->
+<section class="hero fade" id="overview">
+  <div class="eyebrow">OVERVIEW <span class="id">001 · FRAMEPULSE</span></div>
+  <h1>Typed media pipelines that survive <em>every interface</em>.</h1>
+  <p class="hero-lede">
+    framepulse is a universal media-processing engine. Hand it a video, audio
+    file, image, URL, document, or live stream &mdash; pull back typed
+    artifacts (transcripts, frame analyses, structured extractions,
+    embeddings, summaries, search results) through one cache-coherent
+    substrate. One engine, four transports, thirty-one capability-named
+    operations, thirty pluggable backends.
+  </p>
+  <div class="hero-cta">
+    <a class="btn btn-primary" href="#quickstart">Quick start <span class="arrow">↓</span></a>
+    <a class="btn btn-secondary" href="#topology">Architecture <span class="arrow">→</span></a>
+    <a class="btn btn-secondary" href="#chronology">Roadmap <span class="arrow">→</span></a>
+  </div>
+
+  <div class="telemetry" role="status" aria-label="Live build telemetry">
+    <span class="telemetry-item"><span class="status-dot green live"></span><span class="label">Suite</span> <b>702 passed</b> &middot; 29 skipped</span>
+    <span class="telemetry-sep"></span>
+    <span class="telemetry-item"><span class="label">Lint</span> <b>ruff clean</b></span>
+    <span class="telemetry-sep"></span>
+    <span class="telemetry-item"><span class="label">Types</span> <b>pyright strict</b></span>
+    <span class="telemetry-sep"></span>
+    <span class="telemetry-item"><span class="label">Cache</span> SQLite <b>or</b> Postgres</span>
+    <span class="telemetry-sep"></span>
+    <span class="telemetry-item"><span class="label">Arch</span> arm64 <b>+</b> amd64</span>
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     002 — QUICK START (streamlined, linear)
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="quickstart">
+  <div class="eyebrow">QUICK START <span class="id">002 · ONBOARDING</span></div>
+  <h2 class="section-title">From <code class="inline">uv sync</code> to a typed transcript in under a minute.</h2>
+  <p class="section-lede">
+    Four stages: install, ingest, run, inspect. Every command goes through
+    the same engine the REST API and the MCP server use, so an artifact
+    created on the shell shows up everywhere immediately.
+  </p>
+
+  <div class="tour">
+
+    <article class="tour-stage">
+      <header class="tour-head">
+        <span class="tour-num">1</span>
+        <h3>Install · macOS</h3>
+        <span class="hint">Homebrew · uv · ~2 min</span>
+      </header>
+      <div class="tour-body">
+        <p class="desc">Three Homebrew packages then <code class="inline">uv sync</code>. The optional extras (<strong>api</strong>, <strong>mcp</strong>, <strong>transcribe-mlx</strong>, <strong>embed</strong>, <strong>vlm-cloud</strong>, <strong>postgres</strong>, &hellip;) are pure opt-in — install only the ones you'll actually call.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; macOS · Apple Silicon or Intel</span></div>
+<pre><span class="cmt"># 1. Prerequisites — ffmpeg is required by every media op</span>
+<span class="fn">brew</span> install uv ffmpeg
+
+<span class="cmt"># 2. Clone and sync — minute one</span>
+<span class="fn">git</span> clone https://github.com/&lt;you&gt;/framepulse.git
+<span class="kw">cd</span> framepulse
+<span class="fn">uv sync</span> <span class="flag">--extra</span> api <span class="flag">--extra</span> mcp <span class="flag">--extra</span> transcribe-mlx <span class="flag">--extra</span> embed
+
+<span class="cmt"># 3. Sanity check — should print 31 capability-named ops</span>
+<span class="fn">uv run med</span> ops
+<span class="fn">uv run med</span> config</pre>
+        </div>
+        <p class="desc" style="margin-top: 12px;">For Apple Silicon: <code class="inline">--extra transcribe-mlx</code> pulls in <code class="inline">mlx-whisper</code> (uses the Neural Engine). For Intel or cross-platform, swap in <code class="inline">--extra vlm-cloud</code> to route through Gemini/Claude instead.</p>
+      </div>
+    </article>
+
+    <article class="tour-stage">
+      <header class="tour-head">
+        <span class="tour-num">2</span>
+        <h3>Ingest a real video</h3>
+        <span class="hint">yt-dlp · streams sha256 · ffprobe-classifies</span>
+      </header>
+      <div class="tour-body">
+        <p class="desc">Hand framepulse any URL <strong>yt-dlp can resolve</strong> (YouTube, Vimeo, direct HLS, m3u8 playlist, raw <code class="inline">.mp4</code>) or a local file. The engine streams the bytes through sha256 as they land, calls <code class="inline">ffprobe</code> to classify the kind (Video / Audio / Image), and lands the file in the sha256-sharded permanent store. Stdout is just the id.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; first real download</span></div>
+<pre><span class="cmt"># A short public-domain test clip (Wikimedia · Big Buck Bunny, ~10 MB)</span>
+<span class="kw">URL</span>=<span class="str">"https://upload.wikimedia.org/wikipedia/commons/transcoded/c/c0/Big_Buck_Bunny_4K.webm/Big_Buck_Bunny_4K.webm.480p.vp9.webm"</span>
+
+<span class="kw">VID</span>=<span class="str">$(</span><span class="fn">uv run med</span> acquire-url <span class="str">"$URL"</span><span class="str">)</span>
+<span class="fn">echo</span> <span class="str">"acquired: $VID"</span>          <span class="cmt"># sha256 hex, 64 chars</span>
+
+<span class="cmt"># Inspect what just landed</span>
+<span class="fn">uv run med</span> show <span class="str">$VID</span>            <span class="cmt"># typed Video metadata</span>
+<span class="fn">uv run med</span> ls <span class="flag">--kind</span> Video      <span class="cmt"># registry view</span>
+
+<span class="cmt"># Any URL yt-dlp can handle works the same way:</span>
+<span class="cmt">#   uv run med acquire-url "https://www.youtube.com/watch?v=&lt;id&gt;"</span>
+<span class="cmt">#   uv run med acquire-url "https://vimeo.com/&lt;id&gt;"</span>
+<span class="cmt"># Local files take the same shape:</span>
+<span class="cmt">#   uv run med acquire ~/Downloads/clip.mp4</span></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="tour-stage">
+      <header class="tour-head">
+        <span class="tour-num">3</span>
+        <h3>Run the pipeline</h3>
+        <span class="hint">cost preview → confirm → dispatch</span>
+      </header>
+      <div class="tour-body">
+        <p class="desc">Generic runner. Cost preview prints first — <code class="inline">--yes</code> skips the prompt, <code class="inline">--dry-run</code> exits after the estimate without spending. Pass an explicit backend with <code class="inline">--backend</code>, or rely on the op's selection logic (model prefix &rarr; backend).</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; Video → Audio → Transcript → Analysis</span></div>
+<pre><span class="cmt"># Video → Audio (ffmpeg, no cloud cost)</span>
+<span class="kw">AUDIO</span>=<span class="str">$(</span><span class="fn">uv run med</span> extract-audio <span class="str">$VID</span><span class="str">)</span>
+
+<span class="cmt"># Audio → Transcript — local on Apple Silicon via mlx-whisper</span>
+<span class="kw">TX</span>=<span class="str">$(</span><span class="fn">uv run med</span> run audio.transcribe \
+    <span class="flag">--input</span> <span class="str">$AUDIO</span> <span class="flag">--backend</span> mlx-whisper <span class="flag">--yes</span><span class="str">)</span>
+
+<span class="fn">uv run med</span> show <span class="str">$TX</span>              <span class="cmt"># segments, language, model used</span>
+
+<span class="cmt"># Transcript → Analysis — pick any backend (mlx-lm / claude / gemini)</span>
+<span class="fn">uv run med</span> run intelligence.summarize \
+    <span class="flag">--input</span> <span class="str">$TX</span> \
+    <span class="flag">--param</span> focus=<span class="str">"key arguments"</span> \
+    <span class="flag">--backend</span> mlx-lm <span class="flag">--yes</span></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="tour-stage">
+      <header class="tour-head">
+        <span class="tour-num">4</span>
+        <h3>Inspect</h3>
+        <span class="hint">cache · lineage · ledger · search</span>
+      </header>
+      <div class="tour-body">
+        <p class="desc">Every artifact is content-addressed, typed, and queryable. Walk the provenance tree, browse the spend ledger, hybrid-search the corpus.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; introspection</span></div>
+<pre><span class="cmt"># browse the typed registry</span>
+<span class="fn">uv run med</span> ls <span class="flag">--kind</span> Transcript <span class="flag">--limit</span> <span class="num">10</span>
+<span class="fn">uv run med</span> ls <span class="flag">--kind</span> Analysis   <span class="flag">--limit</span> <span class="num">10</span>
+
+<span class="cmt"># upstream provenance — depth-limited, cycle-safe tree</span>
+<span class="fn">uv run med</span> lineage <span class="str">$TX</span> <span class="flag">--depth</span> <span class="num">6</span>
+
+<span class="cmt"># actual spend (per-execution rows; cache hits never billed)</span>
+<span class="fn">uv run med</span> cost summary
+<span class="fn">uv run med</span> cost ls <span class="flag">--op</span> intelligence.summarize
+
+<span class="cmt"># hybrid search — semantic + fulltext via Reciprocal Rank Fusion</span>
+<span class="fn">uv run med</span> search <span class="str">"main argument of the talk"</span> <span class="flag">--mode</span> hybrid <span class="flag">--top-k</span> <span class="num">5</span></pre>
+        </div>
+      </div>
+    </article>
+
+    <article class="tour-stage">
+      <header class="tour-head">
+        <span class="tour-num">5</span>
+        <h3>Prove the cache</h3>
+        <span class="hint">reanalysis at zero upstream cost</span>
+      </header>
+      <div class="tour-body">
+        <p class="desc">The killer feature: <strong>change one knob, only that op re-runs</strong>. Everything upstream returns from cache instantly. Both summaries persist side-by-side; both are reachable by id.</p>
+        <div class="code-block">
+          <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; reanalysis without re-spending</span></div>
+<pre><span class="cmt"># Try a second analytical lens on the same transcript</span>
+<span class="cmt"># — only the summarize op re-runs; transcribe + extract are cache hits</span>
+<span class="fn">uv run med</span> run intelligence.summarize \
+    <span class="flag">--input</span> <span class="str">$TX</span> \
+    <span class="flag">--param</span> focus=<span class="str">"counterarguments and open questions"</span> \
+    <span class="flag">--backend</span> mlx-lm <span class="flag">--yes</span>
+
+<span class="cmt"># Both summaries now live in the catalog</span>
+<span class="fn">uv run med</span> ls <span class="flag">--kind</span> Analysis <span class="flag">--limit</span> <span class="num">5</span>
+
+<span class="cmt"># Re-running the exact same call is FREE — instant cache hit</span>
+<span class="fn">uv run med</span> run intelligence.summarize \
+    <span class="flag">--input</span> <span class="str">$TX</span> \
+    <span class="flag">--param</span> focus=<span class="str">"key arguments"</span> \
+    <span class="flag">--backend</span> mlx-lm <span class="flag">--yes</span>
+<span class="cmt"># → CostEstimate: 0 (cache hit), same artifact id returned</span></pre>
+        </div>
+      </div>
+    </article>
+
+  </div>
+
+  <div class="next-steps">
+    <a class="next-card" href="#operations">
+      <div class="nc-label">→ Transports</div>
+      <div class="nc-title">Run as a service</div>
+      <div class="nc-desc">REST + SSE under uvicorn, MCP for Claude Code, or a warm daemon for hot models.</div>
+    </a>
+    <a class="next-card" href="#topology">
+      <div class="nc-label">→ Pipelines</div>
+      <div class="nc-title">Write a YAML profile</div>
+      <div class="nc-desc">Multi-step DAGs as data, validated at load, dispatched async with retry and partial completion.</div>
+    </a>
+    <a class="next-card" href="#deployment">
+      <div class="nc-label">→ Production</div>
+      <div class="nc-title">Ship to Kubernetes</div>
+      <div class="nc-desc">Docker image, Helm chart, Terraform module — multi-arch, health probes, JSON logging.</div>
+    </a>
+    <a class="next-card" href="#cost">
+      <div class="nc-label">→ Money</div>
+      <div class="nc-title">See what it costs</div>
+      <div class="nc-desc">Per-op estimates upfront, real-spend ledger after — cache hits and composites never billed twice.</div>
+    </a>
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     003 — CHARTER
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="charter">
+  <div class="eyebrow">CHARTER <span class="id">003 · WHAT &amp; WHY</span></div>
+  <h2 class="section-title">One substrate, many surfaces.</h2>
+
+  <div class="duo">
+    <div class="panel">
+      <h3>What it is</h3>
+      <h4>A universal substrate for typed media processing.</h4>
+      <p>
+        Hand framepulse any media artifact &mdash; a video, an audio file, an
+        image, a URL, a PDF, a live HLS stream &mdash; and pull back typed
+        outputs through one cache-coherent engine. <strong>Thirty-one
+        capability-named operations</strong> apply uniformly across every
+        input: ingest, extract, transcribe, diarize, analyze, summarize,
+        embed, search, render. <strong>Fourteen typed artifact kinds</strong>
+        flow between them.
+      </p>
+      <p>
+        What makes it universal is the strict separation between <em>what</em>
+        and <em>how</em>. Operations are named for the capability &mdash;
+        <code class="inline">audio.transcribe</code>, never
+        <code class="inline">mlx_whisper.transcribe</code> &mdash; and the
+        technology lives in a swappable backend layer behind every op.
+        mlx-whisper, pyannote, Gemini, Claude, sentence-transformers, pgvector,
+        OpenCLIP, RapidOCR&hellip; the registry has thirty of them across
+        local and cloud. Same op, different provider, no collision.
+      </p>
+      <p>
+        The cache is <strong>content-addressed at sha256 depth</strong>. Every
+        artifact id is the hash of <code class="inline">(kind, op,
+        op_version, backend, backend_version, params,
+        sorted_input_ids)</code>. Identical inputs and params yield identical
+        ids &mdash; deterministically, cross-machine, cross-transport.
+        Re-running anything is free. Bumping <code class="inline">op.version</code>
+        or swapping a backend is the only way to invalidate.
+      </p>
+      <p>
+        Pipelines are <strong>data, not code</strong>. A YAML profile
+        describes a DAG of op invocations. The engine compiles it, runs the
+        graph through an async <code class="inline">TaskGroup</code> executor
+        with resource-bounded parallelism, retries cloud-flaky backends,
+        emits a structured event stream, and writes a spend-ledger row for
+        every actual execution.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>Why it exists</h3>
+      <h4>To stop reinventing the same plumbing.</h4>
+      <p>
+        Every team that touches media ends up writing the same five hundred
+        lines: an ffmpeg subprocess wrapper, a Whisper invoker, a cache
+        scheme that breaks on the second model swap, retry logic for the
+        cloud VLM, a homegrown cost log. Each iteration is subtly
+        incompatible with the next. Each new pipeline is a new program.
+      </p>
+      <p>
+        framepulse factors all of that into one substrate. <strong>New media
+        tools become profiles (YAML data), not new programs (code).</strong>
+        The same op catalog answers from a shell, an HTTP request, an MCP
+        tool call from an AI agent, or a Python <code class="inline">import</code>.
+        The same cache row is reachable from each of them. The same cost
+        ledger captures every cent, regardless of which transport drove it.
+      </p>
+      <p>
+        Reanalysis is a one-knob change. Tweak the
+        <code class="inline">focus</code> param on a summarize call &mdash;
+        only that node re-runs. The transcribe, the extract, the embed,
+        the chunk: all return from cache instantly. Try a different
+        prompt, a different model, a different backend &mdash; the cache
+        keys are versioned, so the new shape lives alongside the old
+        without collision.
+      </p>
+
+      <ul class="bullets">
+        <li><strong>Any media</strong> &middot; 14 typed artifact kinds, content-addressed</li>
+        <li><strong>Any backend</strong> &middot; 30 registered, local + cloud, hot-swappable</li>
+        <li><strong>Any transport</strong> &middot; CLI, daemon, REST, MCP, Python</li>
+        <li><strong>Any deployment</strong> &middot; laptop, Docker, Kubernetes, Terraform</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     004 — TOPOLOGY
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="topology">
+  <div class="eyebrow">TOPOLOGY <span class="id">004 · ARCHITECTURE</span></div>
+  <h2 class="section-title">Five layers, four transports, one engine.</h2>
+  <p class="section-lede">
+    Every transport hits the same <code class="inline">Engine</code>. The
+    engine resolves an op + backend, checks the content-addressed cache, and
+    either returns the cached artifact or runs the op &mdash; persisting the
+    result, indexing it, ledgering the cost. Pipelines are the same machinery
+    fanned out across an async DAG.
+  </p>
+
+  <div class="diagram">
+    <div class="diagram-head">
+      <h4>System architecture</h4>
+      <span class="label"><span class="status-dot green"></span>FIG 4.1 · DATAFLOW</span>
+    </div>
+    <div class="mermaid" id="d-arch">
+flowchart TB
+    classDef trans   fill:#F5F5F0,stroke:#2A3328,color:#2D2D2D
+    classDef engine  fill:#059669,stroke:#047857,color:#ffffff
+    classDef ops     fill:#D97706,stroke:#B45309,color:#ffffff
+    classDef back    fill:#F5F4EE,stroke:#C9C5B8,color:#2D2D2D
+    classDef art     fill:#EEEDE8,stroke:#C9C5B8,color:#2D2D2D
+    classDef persist fill:#2A3328,stroke:#2A3328,color:#F5F4EE
+
+    CLI[CLI<br>med]:::trans
+    DAEMON[Daemon<br>Unix socket]:::trans
+    REST[REST plus SSE<br>FastAPI]:::trans
+    MCP[MCP stdio<br>allow-list]:::trans
+
+    ENGINE([Engine<br>resolve · cache · dispatch]):::engine
+    DAG[DAG Executor<br>TaskGroup · semaphores · retry]:::engine
+
+    OPS[31 Operations · group.verb<br>acquire · audio · video · frames · image<br>intelligence · embed · chunk · search<br>transcript · document · web]:::ops
+    BACK[30 Backends · swappable<br>mlx-whisper · pyannote · gemini · claude<br>openai · voyage · sentence-transformers<br>open-clip · rapidocr · pgvector]:::back
+
+    ART[14 Artifact Kinds · sha256-addressed<br>Video · Audio · Image · FrameSet · Transcript<br>Diarization · OCRText · Chunks · Embedding<br>Analysis · SessionAnalysis · Markdown<br>Document · WebPage]:::art
+
+    CACHE[(Cache<br>SQLite / Postgres<br>plus pgvector / FTS5)]:::persist
+    STORE[(Permanent store<br>sha256-sharded FS)]:::persist
+
+    CLI    --> ENGINE
+    DAEMON --> ENGINE
+    REST   --> ENGINE
+    MCP    --> ENGINE
+    ENGINE --> DAG
+    DAG    --> OPS
+    OPS -.->|select_backend| BACK
+    BACK --> ART
+    ART --> CACHE
+    ART --> STORE
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-head">
+      <h4>Engine.run lifecycle</h4>
+      <span class="label"><span class="status-dot green"></span>FIG 4.2 · CACHE-COHERENT EXECUTION</span>
+    </div>
+    <div class="mermaid" id="d-run">
+flowchart TD
+    classDef startNode fill:#2A3328,stroke:#2A3328,color:#F5F4EE
+    classDef step      fill:#F5F5F0,stroke:#C9C5B8,color:#2D2D2D
+    classDef decision  fill:#FEF3C7,stroke:#D97706,color:#92400E
+    classDef hitStep   fill:#D1FAE5,stroke:#047857,color:#064E3B
+    classDef missStep  fill:#FEE7CF,stroke:#B45309,color:#7C2D12
+    classDef done      fill:#059669,stroke:#047857,color:#ffffff
+
+    A([Client calls run]):::startNode
+    B[Resolve op and backend]:::step
+    C[Compute params hash]:::step
+    D[(Cache lookup)]:::step
+    E{Cache HIT?}:::decision
+
+    F[Fetch artifacts]:::hitStep
+    G([Return cached<br>no events · no spend]):::done
+
+    H[Disk-space gate]:::missStep
+    I[Emit OpStarted]:::missStep
+    J[Run op with retry]:::missStep
+    K[Backend executes]:::missStep
+    L[Store sha256-keyed file]:::missStep
+    M[Record run + cost]:::missStep
+    N[Emit OpCompleted]:::missStep
+    O([Return new artifacts<br>persisted · ledgered]):::done
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E -->|yes| F
+    F --> G
+    E -->|no| H
+    H --> I
+    I --> J
+    J --> K
+    K --> L
+    L --> M
+    M --> N
+    N --> O
+    </div>
+  </div>
+
+  <div class="note-stack">
+    <div class="note-row">
+      <span class="note-key">Cache</span>
+      <span class="note-val"><strong>SQLite + WAL</strong> by default (zero-config); <strong>Postgres opt-in</strong> via <code class="inline">MEDIA_ENGINE_DB_URL</code>. Six tables (<code class="inline">cached_artifacts</code>, <code class="inline">cached_operation_runs</code>, <code class="inline">cost_log</code>, <code class="inline">events</code>, <code class="inline">jobs</code>, <code class="inline">api_tokens</code>); alembic migration mirrored against the ORM and regression-tested.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Storage</span>
+      <span class="note-val"><code class="inline">{store}/artifacts/{sha[:2]}/{sha}.{ext}</code> &middot; sha256-keyed, 2-char shard, atomic <code class="inline">.tmp</code>+rename, hardlink mode for zero-copy ingestion. <code class="inline">StorageBackend</code> Protocol shipped; S3 implementation deferred to v1.x.</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">DAG</span>
+      <span class="note-val">Topological wave sort with cycle/unresolved-dep detection at <em>compile</em> time. <code class="inline">asyncio.TaskGroup</code> per ready-wave, per-resource semaphores (e.g. <code class="inline">apple_neural_engine: 1</code>), per-node retry policy, <strong>partial completion</strong> (a failed node fails its dependents but siblings keep running).</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Lineage</span>
+      <span class="note-val">Every artifact's <code class="inline">derived_from</code> is a tuple of parent ids; walked through the cache as a depth-limited, cycle-safe tree. <code class="inline">truncated_reason</code> surfaces <em>why</em> a walk stopped (<code class="inline">"max_depth"</code> today).</span>
+    </div>
+    <div class="note-row">
+      <span class="note-key">Tenancy</span>
+      <span class="note-val">One process per namespace. Cache rows tagged; tokens carry namespace; <code class="inline">require_token</code> rejects (403) on mismatch. Multiple processes safely share one <code class="inline">cache.db</code> &mdash; the engine stamps its namespace on every output.</span>
+    </div>
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     005 — PRINCIPLES
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="principles">
+  <div class="eyebrow">PRINCIPLES <span class="id">005 · DESIGN INVARIANTS</span></div>
+  <h2 class="section-title">Ten engine invariants worth knowing.</h2>
+  <p class="section-lede">
+    These aren't aspirational. Each one is enforced by the type system, the
+    registry, the cache schema, the test suite, or some combination. Bending
+    one breaks the cache-coherence guarantees that make the rest fast.
+  </p>
+
+  <div class="principles">
+    <article class="principle"><div class="principle-head"><span class="principle-num">01</span><span class="principle-title">Capability-named operations</span></div><div class="principle-body"><code>audio.transcribe</code>, never <code>mlx_whisper.transcribe</code>. Technology lives in the backend layer. Names validated at registration.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">02</span><span class="principle-title">Content-addressed cache</span></div><div class="principle-body">Every artifact id is <code>sha256(kind, op, op_v, backend, backend_v, params, sorted(inputs))</code>. Identical inputs &rArr; identical id &rArr; cache hit.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">03</span><span class="principle-title">Swappable backends</span></div><div class="principle-body">Same op, different provider. Backend name + version are <em>in</em> the cache key, so mlx-whisper and Gemini transcripts coexist without collision.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">04</span><span class="principle-title">Profiles are data</span></div><div class="principle-body">YAML DAG or Markdown-with-frontmatter, no Python required. <code>med profile run my-pipeline --input source=$ID</code>.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">05</span><span class="principle-title">Zero domain opinions</span></div><div class="principle-body">No sentiment dimensions, no speaker schemas in the core. Profile-supplied JSON schemas validate via a built-in zero-dep validator.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">06</span><span class="principle-title">Streaming-first events</span></div><div class="principle-body">Every op emits <code>OpStarted</code> / <code>Progress</code> / <code>ArtifactReady</code> / <code>OpCompleted</code> / <code>OpFailed</code>. Daemon and REST forward over their own transports.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">07</span><span class="principle-title">MCP-native</span></div><div class="principle-body">Every registered op auto-exports as an MCP tool. Allow-list defaults to read-only <code>search.*</code>; writeful ops opt in.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">08</span><span class="principle-title">DAG, not linear pipeline</span></div><div class="principle-body">Fan-out / fan-in with resource-bounded parallelism. Per-node retry. Partial completion: a failed node fails dependents; siblings keep running.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">09</span><span class="principle-title">Cost-aware</span></div><div class="principle-body"><code>op.cost_estimate()</code> everywhere; <code>--dry-run</code> previews the DAG total; <code>med cost summary</code> shows actuals from the post-hoc ledger.</div></article>
+    <article class="principle"><div class="principle-head"><span class="principle-num">10</span><span class="principle-title">Resource-aware</span></div><div class="principle-body">Declared resources &rArr; <code>asyncio.Semaphore</code>. 1 VLM at a time on Apple Silicon. Tunable per-deployment via <code>resources.yaml</code>.</div></article>
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     006 — CAPABILITY CATALOG
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="catalog">
+  <div class="eyebrow">CAPABILITY CATALOG <span class="id">006 · 31 OPS · 30 BACKENDS</span></div>
+  <h2 class="section-title">Every operation the engine speaks.</h2>
+  <p class="section-lede">
+    Operations are capability-named (<code class="inline">group.verb</code>) and grouped by domain. Each row's <em>backends</em> column lists the swappable implementations behind that op &mdash; same artifact contract, different provider, distinct cache key.
+  </p>
+
+  <table class="catalog">
+    <thead>
+      <tr><th>Group</th><th>Operations</th><th>Backends</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="group">acquire</td><td class="ops">upload &middot; url &middot; livestream</td><td class="backends"><b>upload:</b> local-fs &middot; <b>url:</b> yt-dlp, playwright-hls &middot; <b>livestream:</b> ffmpeg-recorder</td></tr>
+      <tr><td class="group">video</td><td class="ops">extract_audio &middot; trim &middot; sample_frames &middot; multimodal</td><td class="backends"><b>sample_frames:</b> ffmpeg-uniform, pyscenedetect &middot; <b>multimodal:</b> gemini, vllm-mlx</td></tr>
+      <tr><td class="group">audio</td><td class="ops">transcribe &middot; detect_language &middot; diarize &middot; transcribe_diarized</td><td class="backends"><b>transcribe / detect:</b> mlx-whisper &middot; <b>diarize:</b> pyannote &middot; <b>transcribe_diarized:</b> composite</td></tr>
+      <tr><td class="group">frames</td><td class="ops">subsample &middot; analyze &middot; compare</td><td class="backends"><b>analyze:</b> gemini, vllm-mlx &middot; <b>compare:</b> gemini</td></tr>
+      <tr><td class="group">image</td><td class="ops">describe &middot; ocr &middot; classify</td><td class="backends"><b>describe:</b> gemini &middot; <b>ocr:</b> rapidocr, gemini-vision &middot; <b>classify:</b> open-clip, gemini</td></tr>
+      <tr><td class="group">intelligence</td><td class="ops">extract &middot; summarize &middot; classify &middot; analyze</td><td class="backends"><b>extract:</b> mlx-lm, claude, gemini &middot; <b>others:</b> composite over extract</td></tr>
+      <tr><td class="group">chunk + embed</td><td class="ops">chunk.semantic &middot; embed.text</td><td class="backends"><b>chunk:</b> nltk default &middot; <b>embed:</b> sentence-transformers</td></tr>
+      <tr><td class="group">transcript</td><td class="ops">parse &middot; merge</td><td class="backends">Pure-Python parsers: srt, speakered_txt, vtt</td></tr>
+      <tr><td class="group">document + web</td><td class="ops">document.parse &middot; web.fetch &middot; metadata.scrape_page</td><td class="backends"><b>document:</b> pymupdf &middot; <b>web:</b> httpx, playwright &middot; <b>scrape:</b> playwright</td></tr>
+      <tr><td class="group">search</td><td class="ops">semantic &middot; fulltext &middot; hybrid</td><td class="backends"><b>semantic:</b> sqlite, pgvector &middot; <b>fulltext:</b> sqlite-fts5, postgres-tsvector &middot; <b>hybrid:</b> RRF composite</td></tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     007 — OPERATIONS MANUAL
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="operations">
+  <div class="eyebrow">OPERATIONS MANUAL <span class="id">007 · TRANSPORTS</span></div>
+  <h2 class="section-title">Five ways to talk to the same engine.</h2>
+  <p class="section-lede">
+    Pick whichever transport fits the task. They share one cache.db and one permanent_store &mdash; an artifact created on the shell shows up immediately in REST, MCP, the daemon, and the Python API. No cross-transport sync to think about.
+  </p>
+
+  <div class="decision">
+    <div class="decision-cell"><div class="dc-label">▸ shell</div><div class="dc-title">CLI (cold)</div><div class="dc-when">One-shot scripting, CI jobs, ad-hoc reprocessing.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ shell</div><div class="dc-title">CLI + daemon</div><div class="dc-when">Local dev with hot models. CLI auto-routes via 50&thinsp;ms ping.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ http</div><div class="dc-title">REST + SSE</div><div class="dc-when">Service integration, web frontends, async job pattern.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ stdio</div><div class="dc-title">MCP</div><div class="dc-when">AI agents (Claude Code &amp; friends). Allow-listed tool surface.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ in-proc</div><div class="dc-title">Python API</div><div class="dc-when">Embedded use. <code class="inline">from media_engine import Engine</code>.</div></div>
+  </div>
+
+  <div class="tabs-shell">
+    <div class="tabs" role="tablist" aria-label="Transport tabs">
+      <button class="tab active" role="tab" data-target="t-cli"     aria-selected="true"><span class="glyph">▸</span>CLI</button>
+      <button class="tab"        role="tab" data-target="t-profile" aria-selected="false"><span class="glyph">⚙</span>PROFILES</button>
+      <button class="tab"        role="tab" data-target="t-daemon"  aria-selected="false"><span class="glyph">◷</span>DAEMON</button>
+      <button class="tab"        role="tab" data-target="t-rest"    aria-selected="false"><span class="glyph">⌗</span>REST</button>
+      <button class="tab"        role="tab" data-target="t-mcp"     aria-selected="false"><span class="glyph">⚡</span>MCP</button>
+      <button class="tab"        role="tab" data-target="t-python"  aria-selected="false"><span class="glyph">π</span>PYTHON</button>
+    </div>
+
+    <div class="tab-panel active" id="t-cli" role="tabpanel">
+      <h4>CLI &mdash; ad-hoc work, scripts, CI</h4>
+      <p>The most direct surface. <code class="inline">med</code> auto-detects a running daemon (50&thinsp;ms ping) and routes through it; falls back to in-process otherwise. Use this for one-shot tasks, shell-friendly scripting, CI jobs, and quick reprocessing.</p>
+      <ul>
+        <li><strong>Ingest:</strong> <code class="inline">med acquire</code>, <code class="inline">med acquire-url</code>, <code class="inline">med acquire-live</code></li>
+        <li><strong>Generic runner:</strong> <code class="inline">med run &lt;op&gt; --input ID --param K=V --backend B</code> &mdash; cost preview, <code class="inline">--yes</code> to skip prompt, <code class="inline">--dry-run</code> to estimate only</li>
+        <li><strong>Read:</strong> <code class="inline">med ls</code>, <code class="inline">med show</code>, <code class="inline">med lineage</code>, <code class="inline">med ops</code>, <code class="inline">med config</code></li>
+        <li><strong>Batch:</strong> <code class="inline">med batch &lt;urls.txt&gt; --concurrency 5</code> &mdash; fan an op over a list through the DAG executor</li>
+        <li><strong>Search:</strong> <code class="inline">med search "query" --mode hybrid --top-k 5</code></li>
+        <li><strong>Spend:</strong> <code class="inline">med cost summary</code> &middot; <code class="inline">med cost ls --since 2026-05-01 --op intelligence.extract</code></li>
+      </ul>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; full pipeline in shell</span></div>
+<pre><span class="kw">VIDEO</span>=<span class="str">$(</span><span class="fn">med</span> acquire ~/Downloads/talk.mp4<span class="str">)</span>
+<span class="kw">AUDIO</span>=<span class="str">$(</span><span class="fn">med</span> extract-audio <span class="str">$VIDEO</span><span class="str">)</span>
+<span class="kw">TX</span>=<span class="str">$(</span><span class="fn">med</span> run audio.transcribe <span class="flag">--input</span> <span class="str">$AUDIO</span> <span class="flag">--yes</span><span class="str">)</span>
+<span class="fn">med</span> run intelligence.summarize <span class="flag">--input</span> <span class="str">$TX</span> \
+    <span class="flag">--param</span> focus=<span class="str">"main argument"</span> <span class="flag">--yes</span>
+
+<span class="fn">med</span> lineage <span class="str">$TX</span> <span class="flag">--depth</span> <span class="num">6</span>
+<span class="fn">med</span> cost summary <span class="flag">--since</span> <span class="num">2026-05-22</span></pre>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="t-profile" role="tabpanel">
+      <h4>Profiles &mdash; reusable pipelines as YAML</h4>
+      <p>When a workflow stops being ad-hoc, write a profile. <strong>Pipeline profiles</strong> describe a YAML DAG of op invocations; <strong>prompt profiles</strong> are Markdown with frontmatter, shorthand for a single VLM/LLM call. Both are validated at load &mdash; missing ops, unknown backends, and cycles all fail before the first task runs.</p>
+      <p>Discovery searches <code class="inline">~/.config/media_engine/profiles/</code>, the repo's bundled <code class="inline">profiles/</code> dir, and any <code class="inline">--profile-dir</code> override. Later directories override earlier ones.</p>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">yaml</span> &middot; profiles/my-pipeline.yaml</span></div>
+<pre><span class="kw">name</span>: my-pipeline
+<span class="kw">kind</span>: pipeline
+<span class="kw">inputs</span>:
+  - { <span class="kw">name</span>: source, <span class="kw">kind</span>: video }
+<span class="kw">graph</span>:
+  - { <span class="kw">id</span>: audio,      <span class="kw">op</span>: video.extract_audio,       <span class="kw">inputs</span>: { in: source } }
+  - { <span class="kw">id</span>: transcript, <span class="kw">op</span>: audio.transcribe_diarized, <span class="kw">inputs</span>: { audio: audio } }
+  - { <span class="kw">id</span>: analysis,   <span class="kw">op</span>: intelligence.analyze,
+      <span class="kw">inputs</span>: { t: transcript },
+      <span class="kw">params</span>: { schema: schemas/my_extract.json } }
+<span class="kw">outputs</span>: [analysis]</pre>
+      </div>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; run a profile</span></div>
+<pre><span class="fn">med</span> profile ls
+<span class="fn">med</span> profile show my-pipeline
+<span class="fn">med</span> profile run my-pipeline <span class="flag">--input</span> source=<span class="str">$VIDEO_ID</span></pre>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="t-daemon" role="tabpanel">
+      <h4>Daemon &mdash; warm models for fast dev loops</h4>
+      <p><code class="inline">med daemon start</code> keeps a long-lived <code class="inline">Engine.open_session()</code> alive across CLI invocations. Warm Whisper, hot Hugging Face cache, shared resource semaphores. Every <code class="inline">med</code> command auto-routes through it via a 50&thinsp;ms ping; falls back to in-process otherwise. No code change required on the caller side.</p>
+      <ul>
+        <li><strong>Lifecycle:</strong> <code class="inline">med daemon start</code> &middot; <code class="inline">med daemon stop</code> &middot; <code class="inline">med daemon status</code> &middot; <code class="inline">med daemon logs --tail 200</code></li>
+        <li><strong>Watch events:</strong> <code class="inline">med events tail --follow</code> &middot; <code class="inline">med events history --since 2026-05-22</code></li>
+        <li><strong>Transport:</strong> Unix socket at <code class="inline">~/.config/media_engine/daemon.sock</code>, JSON-line frames, protocol-versioned with backward-compat check on connect</li>
+        <li><strong>Periodic GC:</strong> daemon sweeps orphan workdirs older than the retention window (default 24&thinsp;h) on a configurable interval (<code class="inline">MEDIA_ENGINE_GC_INTERVAL</code>)</li>
+      </ul>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; daemon-backed batch loop</span></div>
+<pre><span class="fn">med</span> daemon start
+<span class="fn">med</span> events tail <span class="flag">--follow</span> &amp;     <span class="cmt"># live event stream in another pane</span>
+
+<span class="kw">for</span> v <span class="kw">in</span> ~/talks/*.mp4; <span class="kw">do</span>
+  <span class="fn">med</span> profile run my-pipeline <span class="flag">--input</span> source=<span class="str">$(</span><span class="fn">med</span> acquire <span class="str">"$v"</span><span class="str">)</span>
+<span class="kw">done</span>
+
+<span class="fn">med</span> daemon stop</pre>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="t-rest" role="tabpanel">
+      <h4>REST API &mdash; service-style integration</h4>
+      <p><code class="inline">med api start</code> boots FastAPI under uvicorn. <strong>Async-first:</strong> <code class="inline">POST /run</code> and <code class="inline">POST /pipelines</code> return a <code class="inline">job_id</code> immediately; subscribe to <code class="inline">GET /jobs/{id}/events</code> for SSE progress, or poll <code class="inline">GET /jobs/{id}</code> for status.</p>
+      <p><strong>Bearer-token auth</strong> with sha256-hashed storage; raw secret shown once at creation. <strong>OpenAPI</strong> at <code class="inline">/openapi.json</code>. <strong>Probes</strong> at <code class="inline">/health</code> + <code class="inline">/ready</code> are unauthenticated for kubelet. <strong>Orphan job recovery</strong> on lifespan boot flips frozen <code class="inline">running</code> rows to <code class="inline">failed</code> after a crash.</p>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; REST round-trip</span></div>
+<pre><span class="fn">med</span> api start <span class="flag">--host</span> <span class="num">0.0.0.0</span> <span class="flag">--port</span> <span class="num">8000</span> &amp;
+<span class="kw">TOKEN</span>=<span class="str">$(</span><span class="fn">med</span> api token create<span class="str">)</span>   <span class="cmt"># secret printed once to stdout</span>
+
+<span class="kw">JOB</span>=<span class="str">$(</span><span class="fn">curl</span> <span class="flag">-s</span> <span class="flag">-X</span> POST http://localhost:8000/run \
+    <span class="flag">-H</span> <span class="str">"Authorization: Bearer $TOKEN"</span> \
+    <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+    <span class="flag">-d</span> <span class="str">'{"op":"acquire.upload","params":{"source_path":"/data/x.mp4"}}'</span> \
+    <span class="str">|</span> <span class="fn">jq</span> <span class="flag">-r</span> .job_id<span class="str">)</span>
+
+<span class="fn">curl</span> <span class="flag">-N</span> <span class="flag">-H</span> <span class="str">"Authorization: Bearer $TOKEN"</span> \
+     http://localhost:8000/jobs/<span class="str">$JOB</span>/events   <span class="cmt"># SSE stream</span></pre>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="t-mcp" role="tabpanel">
+      <h4>MCP stdio &mdash; Claude Code &amp; agent integration</h4>
+      <p>Every registered op auto-exports as an MCP tool: <code class="inline">group.verb</code> &rarr; <code class="inline">group__verb</code>, with the params model's JSON Schema, an injected <code class="inline">input_artifact_ids</code> array, and a <code class="inline">backend</code> enum. Artifacts surface as <code class="inline">media://&lt;kind&gt;/&lt;id&gt;</code> resources via <code class="inline">resources/list</code> and <code class="inline">resources/read</code>.</p>
+      <p><strong>Security posture:</strong> default allow-list is read-only (<code class="inline">search.semantic</code>, <code class="inline">search.fulltext</code>, <code class="inline">search.hybrid</code>). Writeful ops opt in explicitly via <code class="inline">--allow</code>; <code class="inline">--deny</code> always wins on conflict.</p>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; register with Claude Code</span></div>
+<pre><span class="cmt"># default: read-only (search.* only)</span>
+<span class="fn">claude</span> mcp add framepulse <span class="str">"med mcp serve"</span>
+
+<span class="cmt"># expose specific writeful ops</span>
+<span class="fn">claude</span> mcp add framepulse \
+    <span class="str">"med mcp serve --allow audio.transcribe --allow intelligence.summarize"</span>
+
+<span class="cmt"># or open everything (trusted local-only setups)</span>
+<span class="fn">claude</span> mcp add framepulse <span class="str">"med mcp serve --allow '*'"</span></pre>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="t-python" role="tabpanel">
+      <h4>Python API &mdash; embed in another tool</h4>
+      <p>The public surface is small and stable: <code class="inline">Engine</code>, <code class="inline">Pipeline</code>, <code class="inline">Artifact</code>, <code class="inline">Kind</code>, <code class="inline">register_op</code>, <code class="inline">register_backend</code>. Two factories: <code class="inline">Engine.open_quick()</code> for one-shot scripts, <code class="inline">Engine.open_session()</code> for long-lived processes (warm models, shared semaphores, periodic GC).</p>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">python</span> &middot; embedded use</span></div>
+<pre><span class="kw">import</span> asyncio
+<span class="kw">from</span> media_engine <span class="kw">import</span> Engine
+<span class="kw">from</span> media_engine.bootstrap <span class="kw">import</span> register_all
+
+register_all()  <span class="cmt"># populate op + backend registries</span>
+
+<span class="kw">async def</span> <span class="fn">go</span>():
+    <span class="kw">with</span> Engine.open_session() <span class="kw">as</span> e:
+        [video] = <span class="kw">await</span> e.run(
+            <span class="str">"acquire.upload"</span>, source_path=<span class="str">"/data/talk.mp4"</span>,
+        )
+        [audio] = <span class="kw">await</span> e.run(<span class="str">"video.extract_audio"</span>, inputs=[video.id])
+        [tx]    = <span class="kw">await</span> e.run(<span class="str">"audio.transcribe"</span>, inputs=[audio.id])
+        <span class="fn">print</span>(tx.metadata[<span class="str">"text"</span>][:<span class="num">200</span>])
+
+asyncio.run(<span class="fn">go</span>())</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     008 — COST MODEL
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="cost">
+  <div class="eyebrow">COST MODEL <span class="id">008 · MONEY</span></div>
+  <h2 class="section-title">Two stages, both honest.</h2>
+  <p class="section-lede">
+    The engine never hides spend. You see what it will probably cost before you press go, and what it actually cost after. Cache hits and thin composite wrappers are explicitly not double-billed.
+  </p>
+
+  <div class="cost-grid">
+    <div class="cost-card amber">
+      <div class="stage">STAGE 01 &middot; UPFRONT</div>
+      <h4>Cost estimate</h4>
+      <p>Every backend implements <code class="inline">cost_estimate(inputs, params) &rarr; CostEstimate{local_seconds, cloud_cents, tokens_in, tokens_out}</code>. The engine sums them across a DAG before a single op runs.</p>
+      <p><code class="inline">med run</code> prints the preview and asks before spending. <code class="inline">--yes</code> skips the prompt; the global <code class="inline">--dry-run</code> prints and exits without spending.</p>
+      <p>Pricing tables in <code class="inline">backends/_pricing.py</code> follow the tiered &le;200K vs &gt;200K input-token pattern for Gemini, Claude, OpenAI, and Voyage. Local backends report zero <code class="inline">cloud_cents</code>.</p>
+    </div>
+    <div class="cost-card green">
+      <div class="stage">STAGE 02 &middot; POST-HOC</div>
+      <h4>Actual spend ledger</h4>
+      <p>Every real op execution writes a row to <code class="inline">cost_log</code> with backend-reported <code class="inline">usage</code> (cents, input tokens, output tokens, duration). Cache hits and <code class="inline">records_cost=False</code> composites are <em>not</em> billed.</p>
+      <p><code class="inline">med cost summary</code> rolls up per-op spend. <code class="inline">med cost ls --since 2026-05-01 --op intelligence.extract</code> shows the per-execution receipts.</p>
+      <p>The ledger is namespaced &mdash; multi-tenant deployments see only their own tenant's rows. Same data through REST when the cost endpoints land in Phase 5.</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Reanalysis is free by construction.</strong> Re-running the same profile with one knob tweaked re-uses every upstream cache hit. Change <code class="inline">intelligence.summarize</code>'s <code class="inline">focus</code> param from <em>&ldquo;main argument&rdquo;</em> to <em>&ldquo;counterarguments&rdquo;</em> &mdash; only the summarize node re-runs; ingest, audio extract, and transcribe all return instantly from cache. The new analysis lives next to the old one, both reachable by id.
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     009 — DEPLOYMENT
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="deployment">
+  <div class="eyebrow">DEPLOYMENT <span class="id">009 · SHAPES</span></div>
+  <h2 class="section-title">Same engine, six deployment models.</h2>
+  <p class="section-lede">
+    The engine is single-process by design; the async surface bounds parallelism with resource semaphores. Scale horizontally by sharing one Postgres + permanent_store across multiple stateless replicas. Multi-tenant: one process per namespace, tokens scoped accordingly.
+  </p>
+
+  <table class="deploy-table">
+    <thead>
+      <tr><th>Mode</th><th>Invocation</th><th>When to use</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="cmd">CLI (cold)</td><td class="cmd">med &lt;cmd&gt;</td><td class="when">One-shot scripting, CI jobs, ad-hoc reprocessing. Fresh engine per call.</td></tr>
+      <tr><td class="cmd">CLI (warm)</td><td class="cmd">med daemon start</td><td class="when">Local development with hot models. CLI commands transparently route through the daemon.</td></tr>
+      <tr><td class="cmd">REST</td><td class="cmd">med api start</td><td class="when">Service integration, web frontends, async job pattern with SSE event streams.</td></tr>
+      <tr><td class="cmd">Compose</td><td class="cmd">docker compose up</td><td class="when">Single-host production. Engine container + <code class="inline">pgvector/pgvector:pg16</code> sidecar, named volumes.</td></tr>
+      <tr><td class="cmd">Helm</td><td class="cmd">helm install ... infra/helm/media-engine</td><td class="when">Kubernetes. ConfigMap + Secret + PVC + Service + Ingress + Deployment with liveness/readiness probes.</td></tr>
+      <tr><td class="cmd">Terraform</td><td class="cmd">module "media-engine" { ... }</td><td class="when">Composable into a larger cluster module. Wraps the bundled chart via <code class="inline">helm_release</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Container facts.</strong> Multi-arch (amd64 + arm64), Python&nbsp;3.11-slim base, ships ffmpeg + libpq + curl, runs as a non-root <code class="inline">engine</code> user, exposes 8000, <code class="inline">HEALTHCHECK</code> hits <code class="inline">/ready</code>, defaults to <code class="inline">MEDIA_ENGINE_LOG_FORMAT=json</code>. Storage volume mounted at <code class="inline">/var/lib/media_engine</code>. Wheel install ships the alembic migrations inside the package (<code class="inline">media_engine/_alembic/</code>) so <code class="inline">med db migrate</code> works without the source tree.
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     010 — CHRONOLOGY
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="chronology">
+  <div class="eyebrow">CHRONOLOGY <span class="id">010 · 9 DAYS · 45 COMMITS</span></div>
+  <h2 class="section-title">From scaffold to production substrate in nine days.</h2>
+  <p class="section-lede">
+    Phases 0&ndash;4 shipped between <strong>2026-05-14</strong> and <strong>2026-05-22</strong>: forty-five commits, five audit-fix waves, thirty-one operations, thirty backends, four transports. Phase 5 (starter domain profiles + report ops + final reference docs) is queued.
+  </p>
+
+  <div class="diagram">
+    <div class="diagram-head">
+      <h4>Implementation timeline</h4>
+      <span class="label"><span class="status-dot amber live"></span>FIG 10.1 · 9 DAYS · 6 PHASES · 45 COMMITS</span>
+    </div>
+    <div class="itl" role="img" aria-label="Implementation timeline showing six phases between May 14 and May 24, 2026">
+
+      <!-- Date axis: May 14 → May 24 (10 days = 100%) -->
+      <div class="itl-axis">
+        <span class="itl-tick" style="left: 0%">May 14</span>
+        <span class="itl-tick" style="left: 10%">15</span>
+        <span class="itl-tick" style="left: 20%">16</span>
+        <span class="itl-tick" style="left: 30%">17</span>
+        <span class="itl-tick" style="left: 40%">18</span>
+        <span class="itl-tick" style="left: 50%">19</span>
+        <span class="itl-tick" style="left: 60%">20</span>
+        <span class="itl-tick" style="left: 70%">21</span>
+        <span class="itl-tick today" style="left: 80%">22 ·NOW</span>
+        <span class="itl-tick" style="left: 90%">23</span>
+      </div>
+
+      <div class="itl-rows">
+        <!-- NOW vertical line — placed at May 22 ~22:00 (~88.5%) -->
+        <div class="itl-now" style="left: 88%;"><span class="itl-now-label">TODAY</span></div>
+
+        <!-- Phase 0 — May 14 23:54 → May 15 09:29 -->
+        <div class="itl-row">
+          <div class="itl-row-label"><span class="itl-id">P0</span><span class="itl-name">Skeleton</span></div>
+          <div class="itl-track">
+            <div class="itl-bar" style="left: 9.9%; width: 4%"><span class="itl-bar-text">7</span></div>
+          </div>
+        </div>
+
+        <!-- Phase 1 — May 15 12:45 → May 17 02:28 -->
+        <div class="itl-row">
+          <div class="itl-row-label"><span class="itl-id">P1</span><span class="itl-name">Core ops · DAG</span></div>
+          <div class="itl-track">
+            <div class="itl-bar" style="left: 15.3%; width: 15.7%"><span class="itl-bar-text">10 commits · daemon · MCP exporter · transcribe · diarize · profiles</span></div>
+          </div>
+        </div>
+
+        <!-- Phase 2 — May 17 21:34 → May 19 11:36 -->
+        <div class="itl-row">
+          <div class="itl-row-label"><span class="itl-id">P2</span><span class="itl-name">Multimodal + intelligence</span></div>
+          <div class="itl-track">
+            <div class="itl-bar" style="left: 39%; width: 15.8%"><span class="itl-bar-text">9 commits · VLM (gemini · vllm-mlx) · intelligence ops · cost UX · retry</span></div>
+          </div>
+        </div>
+
+        <!-- Phase 3 — May 19 18:14 → May 20 19:19 -->
+        <div class="itl-row">
+          <div class="itl-row-label"><span class="itl-id">P3</span><span class="itl-name">Acquisition + search</span></div>
+          <div class="itl-track">
+            <div class="itl-bar" style="left: 57.6%; width: 10.4%"><span class="itl-bar-text">7 commits · URL · livestream · document · web · search</span></div>
+          </div>
+        </div>
+
+        <!-- Phase 4 — May 21 00:46 → May 22 12:41 -->
+        <div class="itl-row">
+          <div class="itl-row-label"><span class="itl-id">P4</span><span class="itl-name">REST · MCP · Postgres · IaaC</span></div>
+          <div class="itl-track">
+            <div class="itl-bar" style="left: 70.3%; width: 17%"><span class="itl-bar-text">11 commits · FastAPI · MCP stdio · pgvector · GC · Docker · Helm · resources.yaml + 5 audits</span></div>
+          </div>
+        </div>
+
+        <!-- Phase 5 — scheduled, future -->
+        <div class="itl-row future">
+          <div class="itl-row-label"><span class="itl-id">P5</span><span class="itl-name">Domain profiles + polish</span></div>
+          <div class="itl-track">
+            <div class="itl-bar future" style="left: 90%; width: 10%"><span class="itl-bar-text">scheduled · speakers · reports · reference docs</span></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="itl-legend">
+        <span><span class="swatch done"></span>shipped (45 commits · phases 0–4)</span>
+        <span><span class="swatch future"></span>scheduled (phase 5 · ~4 commits)</span>
+        <span><span class="status-dot amber live"></span>TODAY · May 22</span>
+        <span style="opacity: 0.7">Phase 6 (Web UI · 12 commits) and Phase 7 (acoustic speaker identity · 4 commits) queue after Phase 5 — see cards below.</span>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title" style="margin-top: 36px;">Phase-by-phase deliverables.</h2>
+
+  <div class="chrono-axis">
+    <div class="chrono-axis-line"></div>
+    <div class="chrono-axis-now" aria-label="Current position"></div>
+    <div class="chrono-marks">
+      <div class="chrono-mark" style="left: 0%">
+        <span class="id">P0</span><span class="pip"></span><span class="label">May 14</span>
+      </div>
+      <div class="chrono-mark" style="left: 16%">
+        <span class="id">P1</span><span class="pip"></span><span class="label">May 15</span>
+      </div>
+      <div class="chrono-mark" style="left: 36%">
+        <span class="id">P2</span><span class="pip"></span><span class="label">May 17</span>
+      </div>
+      <div class="chrono-mark" style="left: 56%">
+        <span class="id">P3</span><span class="pip"></span><span class="label">May 19</span>
+      </div>
+      <div class="chrono-mark" style="left: 76%">
+        <span class="id">P4</span><span class="pip"></span><span class="label">May 21</span>
+      </div>
+      <div class="chrono-mark future" style="left: 100%">
+        <span class="id">P5</span><span class="pip"></span><span class="label">May 23 →</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="phases">
+
+    <article class="phase-card done">
+      <div class="phase-id">PHASE <b>0</b></div>
+      <div class="phase-body">
+        <h4>Skeleton — typed substrate &amp; content addressing</h4>
+        <p>The foundations. Typed <code class="inline">Artifact</code> base with <code class="inline">Kind</code> enum, sha256 content addressing for source and derived artifacts, SQLAlchemy 2.0 cache with WAL pragmas, <code class="inline">LocalFSStorage</code> with atomic writes and hardlink mode, <code class="inline">Engine.run</code> single-op execution, Typer CLI with cost preview and lineage tree.</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">artifacts.base</span>
+          <span class="deliverable">runtime.cache</span>
+          <span class="deliverable">runtime.storage</span>
+          <span class="deliverable">acquire.upload</span>
+          <span class="deliverable">video.extract_audio</span>
+          <span class="deliverable">med CLI</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status done"><span class="status-dot green"></span>shipped</span>
+        <span class="phase-window">May 14 → May 15</span>
+        <span class="phase-commits">7<span class="unit">commits</span></span>
+      </div>
+    </article>
+
+    <article class="phase-card done">
+      <div class="phase-id">PHASE <b>1</b></div>
+      <div class="phase-body">
+        <h4>Daemon &amp; the core op families</h4>
+        <p>The warm engine, the MCP exporter, the first ML ops. JSON-RPC daemon over a Unix socket sharing one warm <code class="inline">Engine.open_session()</code> across CLI clients; MCP tool exporter (<code class="inline">med mcp tools-json</code>); audio transcription via mlx-whisper, speaker diarization via pyannote; video trimming and frame sampling; chunk + embed; the async <code class="inline">TaskGroup</code> DAG executor with resource semaphores and retry; YAML/MD profile loader.</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">daemon</span>
+          <span class="deliverable">mcp.exporter</span>
+          <span class="deliverable">audio.transcribe</span>
+          <span class="deliverable">audio.diarize</span>
+          <span class="deliverable">frames.subsample</span>
+          <span class="deliverable">chunk + embed</span>
+          <span class="deliverable">DAG executor</span>
+          <span class="deliverable">profile loader</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status done"><span class="status-dot green"></span>shipped</span>
+        <span class="phase-window">May 15 → May 17</span>
+        <span class="phase-commits">10<span class="unit">commits</span></span>
+      </div>
+    </article>
+
+    <article class="phase-card done">
+      <div class="phase-id">PHASE <b>2</b></div>
+      <div class="phase-body">
+        <h4>Multimodal &amp; intelligence</h4>
+        <p>The VLM/LLM op families and the cost story. <code class="inline">video.multimodal</code> against Gemini cloud and vllm-mlx local; frame-level <code class="inline">frames.analyze</code> and <code class="inline">frames.compare</code>; <code class="inline">image.{describe, ocr, classify}</code>; the <code class="inline">intelligence.{extract, summarize, classify, analyze}</code> family with profile-supplied JSON schemas validated by a zero-dep validator. The cost preview, the spend ledger (<code class="inline">cost_log</code>), and the structured <code class="inline">OpFailed</code> envelope all land here, alongside the events CLI (<code class="inline">med events tail / history</code>).</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">video.multimodal</span>
+          <span class="deliverable">frames.analyze</span>
+          <span class="deliverable">image ops</span>
+          <span class="deliverable">intelligence.extract</span>
+          <span class="deliverable">intelligence.analyze</span>
+          <span class="deliverable">cost UX</span>
+          <span class="deliverable">retry policy</span>
+          <span class="deliverable">events CLI</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status done"><span class="status-dot green"></span>shipped</span>
+        <span class="phase-window">May 17 → May 19</span>
+        <span class="phase-commits">9<span class="unit">commits</span></span>
+      </div>
+    </article>
+
+    <article class="phase-card done">
+      <div class="phase-id">PHASE <b>3</b></div>
+      <div class="phase-body">
+        <h4>Acquisition, ingest, search</h4>
+        <p>Broadening the input surface beyond uploaded files. <code class="inline">acquire.url</code> via yt-dlp + a playwright-hls fallback; <code class="inline">acquire.livestream</code> with HLS recording into segment Videos (SIGUSR1 splits); transcript parsers for srt / speakered_txt / vtt; <code class="inline">document.parse</code> via pymupdf; <code class="inline">web.fetch</code> via httpx + playwright; the search trio (<code class="inline">semantic</code> brute-force cosine, <code class="inline">fulltext</code> via SQLite FTS5, <code class="inline">hybrid</code> via Reciprocal Rank Fusion) with <code class="inline">med search</code>. Lineage hardening, <code class="inline">truncated_reason</code>, the reanalysis recipe in the architecture doc.</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">acquire.url</span>
+          <span class="deliverable">acquire.livestream</span>
+          <span class="deliverable">transcript.parse</span>
+          <span class="deliverable">document.parse</span>
+          <span class="deliverable">web.fetch</span>
+          <span class="deliverable">search.semantic</span>
+          <span class="deliverable">search.fulltext</span>
+          <span class="deliverable">search.hybrid</span>
+          <span class="deliverable">lineage v2</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status done"><span class="status-dot green"></span>shipped</span>
+        <span class="phase-window">May 19 → May 20</span>
+        <span class="phase-commits">7<span class="unit">commits</span></span>
+      </div>
+    </article>
+
+    <article class="phase-card done">
+      <div class="phase-id">PHASE <b>4</b></div>
+      <div class="phase-body">
+        <h4>REST · MCP · Postgres · IaaC</h4>
+        <p>The production transport surface. FastAPI app with bearer-token auth, the <code class="inline">Job</code> concept, SSE event streaming, paginated <code class="inline">/artifacts</code>, profile upload; the full MCP stdio server with read-only-by-default allow-list and <code class="inline">media://</code> resource URIs; Postgres support with alembic migrations and <code class="inline">pgvector</code> + <code class="inline">postgres-tsvector</code> backends; storage stats / GC / LRU eviction / namespacing; the IaaC bundle (multi-arch Dockerfile, docker-compose with pgvector sidecar, Helm chart, Terraform module); <code class="inline">resources.yaml</code> loader for declarative semaphore overrides. Five audit-fix waves caught wheel-install bugs, namespace propagation, MCP SDK import-cleanness, and schema parity issues.</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">FastAPI + SSE</span>
+          <span class="deliverable">jobs table</span>
+          <span class="deliverable">bearer tokens</span>
+          <span class="deliverable">MCP stdio server</span>
+          <span class="deliverable">Postgres + pgvector</span>
+          <span class="deliverable">alembic</span>
+          <span class="deliverable">storage gc + LRU</span>
+          <span class="deliverable">namespacing</span>
+          <span class="deliverable">Docker · Helm · TF</span>
+          <span class="deliverable">health probes</span>
+          <span class="deliverable">resources.yaml</span>
+          <span class="deliverable">5× audits</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status done"><span class="status-dot green"></span>shipped</span>
+        <span class="phase-window">May 21 → May 22</span>
+        <span class="phase-commits">11<span class="unit">commits</span></span>
+      </div>
+    </article>
+
+    <article class="phase-card future">
+      <div class="phase-id">PHASE <b>5</b></div>
+      <div class="phase-body">
+        <h4>Domain profiles &amp; final polish</h4>
+        <p>The last mile of the substrate. <code class="inline">speakers.identify</code> with rapidfuzz fuzzy match against a name-CSV speaker database; <code class="inline">report.session</code> and <code class="inline">report.zeitgeist</code> ops with jinja2 templating; bundled starter pipeline profiles ready to fork; full CLI &amp; REST &amp; MCP reference docs auto-generated from OpenAPI + tool schemas; a CHANGELOG marking the v0.5.0 release pre-1.0 stabilization.</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">speakers.identify · name-DB</span>
+          <span class="deliverable">report.session</span>
+          <span class="deliverable">report.zeitgeist</span>
+          <span class="deliverable">starter profiles</span>
+          <span class="deliverable">reference docs</span>
+          <span class="deliverable">CHANGELOG v0.5.0</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status next"><span class="status-dot amber live"></span>scheduled</span>
+        <span class="phase-window">May 23 →</span>
+        <span class="phase-commits">0<span class="unit">/ 4 commits</span></span>
+      </div>
+    </article>
+
+    <article class="phase-card future">
+      <div class="phase-id">PHASE <b>6</b></div>
+      <div class="phase-body">
+        <h4>Local-first Web UI · full GUI parity with the CLI</h4>
+        <p>The graphical surface. A SvelteKit (or Next.js) single-page app bundled into the engine container under <code class="inline">/ui</code>; one-command boot via <code class="inline">med web start</code>. Anything reachable via <code class="inline">med &lt;verb&gt;</code> reachable from the UI: <strong>ingestion</strong> (drag-and-drop upload, URL paste, livestream recorder, batch URL list), <strong>run configuration</strong> (op picker filtered by input kind, schema-driven param forms from <code class="inline">params_model.model_json_schema()</code>, backend selector with health badges, live cost preview), <strong>inspect</strong> (job dashboard with SSE updates, typed catalog browser with per-kind preview affordances, lineage graph viewer, full <code class="inline">cost_log</code> ledger, hybrid search), <strong>profile workspace</strong> (visual DAG composer + Monaco YAML editor + examples library with fork-this), <strong>plugin manager</strong> (toggle optional extras, manage custom op/backend modules), and <strong>settings</strong> (config.toml, resources.yaml, namespace switcher, token CRUD).</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">SPA + /ui mount</span>
+          <span class="deliverable">med web start</span>
+          <span class="deliverable">ingestion panel</span>
+          <span class="deliverable">run config + cost preview</span>
+          <span class="deliverable">job dashboard · SSE</span>
+          <span class="deliverable">lineage graph</span>
+          <span class="deliverable">profile DAG builder</span>
+          <span class="deliverable">examples library</span>
+          <span class="deliverable">plugin manager</span>
+          <span class="deliverable">settings + resources editor</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status next"><span class="status-dot amber"></span>roadmap</span>
+        <span class="phase-window">post-Phase-5</span>
+        <span class="phase-commits">0<span class="unit">/ 12 commits</span></span>
+      </div>
+    </article>
+
+    <article class="phase-card future">
+      <div class="phase-id">PHASE <b>7</b></div>
+      <div class="phase-body">
+        <h4>Acoustic speaker identity · cross-recording fingerprints</h4>
+        <p>Voice as a stable identifier. Extends Phase 5's name-CSV <code class="inline">speakers.identify</code> with acoustic fingerprinting so the <em>same voice across different recordings</em> gets the <em>same stable id without needing a pre-built name database</em>. New ops: <code class="inline">speakers.embed_voice</code> (pyannote-embedding per Diarization turn), <code class="inline">speakers.cluster</code> (HDBSCAN cross-recording clustering → <code class="inline">Speaker_&lt;sha8&gt;</code> stable ids), <code class="inline">speakers.match</code> (cosine similarity vs a fingerprint DB, reusing pgvector). New artifact kinds: <code class="inline">SpeakerEmbedding</code>, <code class="inline">SpeakerProfile</code>. Unified <code class="inline">speakers.identify</code> combines name-match (Phase 5) and acoustic-match (Phase 7). Privacy-by-default: namespace-scoped storage, per-namespace purge, MCP/REST export opt-out.</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">SpeakerEmbedding kind</span>
+          <span class="deliverable">SpeakerProfile kind</span>
+          <span class="deliverable">speakers.embed_voice</span>
+          <span class="deliverable">speakers.cluster · HDBSCAN</span>
+          <span class="deliverable">speakers.match · cosine</span>
+          <span class="deliverable">unified identify</span>
+          <span class="deliverable">privacy controls</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status next"><span class="status-dot amber"></span>roadmap</span>
+        <span class="phase-window">post-Phase-6</span>
+        <span class="phase-commits">0<span class="unit">/ 4 commits</span></span>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+
+<!-- ────────────────────────────────────────────────────────────
+     011 — MISSION STATUS
+     ──────────────────────────────────────────────────────────── -->
+<section class="fade" id="status">
+  <div class="eyebrow">MISSION STATUS <span class="id">011 · WHERE WE ARE</span></div>
+  <h2 class="section-title">Phase 4 complete &mdash; production substrate, one phase to v1.0.</h2>
+  <p class="section-lede">
+    The engine, the transports, the cache, the cost model, and the deployment story are all done and audited. What remains is the domain layer &mdash; the starter profiles, the report rendering ops, and the final reference docs that turn framepulse from a substrate into a fully-loaded toolkit.
+  </p>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-value">31<span class="unit">ops</span></div><div class="metric-label">Registered</div></div>
+    <div class="metric"><div class="metric-value">30<span class="unit">backends</span></div><div class="metric-label">Pluggable</div></div>
+    <div class="metric"><div class="metric-value">14<span class="unit">kinds</span></div><div class="metric-label">Typed artifacts</div></div>
+    <div class="metric"><div class="metric-value">702<span class="unit">tests</span></div><div class="metric-label">29 gated skips</div></div>
+    <div class="metric"><div class="metric-value">45<span class="unit">commits</span></div><div class="metric-label">Phases 0–4</div></div>
+    <div class="metric"><div class="metric-value">9<span class="unit">days</span></div><div class="metric-label">Time to substrate</div></div>
+  </div>
+
+  <div class="callout amber">
+    <strong>What's left.</strong> Phase 5 brings the bundled domain profiles, the speaker identification op, the session and zeitgeist report renderers, and the auto-generated CLI / REST / MCP reference. The engine itself is feature-complete; what ships in Phase 5 is the curated layer on top of it.
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span class="brand">FRAMEPULSE &middot; v0.1.0</span>
+  <div class="build">
+    <span>BUILD <b>PHASE 4 / 5</b></span>
+    <span>COMMITS <b>45</b></span>
+    <span>TESTS <b>702 / 731</b></span>
+    <span>CACHE <b>SQLITE + POSTGRES</b></span>
+    <span>ARCH <b>ARM64 + AMD64</b></span>
+    <span>UPDATED <b>2026-05-22</b></span>
+  </div>
+</footer>
+
+<script>
+/* Mermaid init — tuned to the NASA light palette */
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#F5F5F0',
+    primaryTextColor: '#2D2D2D',
+    primaryBorderColor: '#C9C5B8',
+    lineColor: '#7B8490',
+    secondaryColor: '#EEEDE8',
+    tertiaryColor: '#F5F4EE',
+    background: '#F5F4EE',
+    mainBkg: '#F5F5F0',
+    secondBkg: '#EEEDE8',
+    tertiaryBkg: '#E6E5DE',
+    nodeBorder: '#C9C5B8',
+    clusterBkg: '#F5F4EE',
+    clusterBorder: '#C9C5B8',
+    edgeLabelBackground: '#F5F4EE',
+    fontFamily: 'Monaco, Menlo, Consolas, monospace',
+    fontSize: '13px',
+    titleColor: '#2D2D2D',
+    /* sequence */
+    actorBkg: '#F5F5F0',
+    actorBorder: '#C9C5B8',
+    actorTextColor: '#2D2D2D',
+    actorLineColor: '#7B8490',
+    signalColor: '#2D2D2D',
+    signalTextColor: '#2D2D2D',
+    labelBoxBkgColor: '#EEEDE8',
+    labelBoxBorderColor: '#C9C5B8',
+    labelTextColor: '#2D2D2D',
+    loopTextColor: '#555D66',
+    noteBkgColor: '#FEF3C7',
+    noteBorderColor: '#D97706',
+    noteTextColor: '#92400E',
+    activationBkgColor: '#059669',
+    activationBorderColor: '#047857',
+    /* gantt */
+    sectionBkgColor: '#F5F4EE',
+    altSectionBkgColor: '#EEEDE8',
+    sectionBkgColor2: '#E6E5DE',
+    taskBkgColor: '#059669',
+    taskTextColor: '#fff',
+    taskTextLightColor: '#fff',
+    taskTextOutsideColor: '#2D2D2D',
+    taskTextDarkColor: '#2D2D2D',
+    activeTaskBkgColor: '#D97706',
+    activeTaskBorderColor: '#B45309',
+    doneTaskBkgColor: '#059669',
+    doneTaskBorderColor: '#047857',
+    critBorderColor: '#DC2626',
+    critBkgColor: '#FEE2E2',
+    todayLineColor: '#DC2626',
+    gridColor: '#D1D5DB'
+  },
+  flowchart: { curve: 'basis', useMaxWidth: true, htmlLabels: true, padding: 20 },
+  sequence: { useMaxWidth: true, wrap: true, mirrorActors: false, boxMargin: 10, messageMargin: 32, actorMargin: 80 },
+  gantt:    { useMaxWidth: true, leftPadding: 100, barHeight: 18, barGap: 4, fontSize: 11, sectionFontSize: 12, gridLineStartPadding: 30, axisFormat: '%b %d' },
+  securityLevel: 'loose'
+});
+
+/* Render Mermaid blocks once the DOM is ready */
+(function () {
+  const run = () => mermaid.run({ querySelector: '.mermaid' });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+})();
+
+/* Tab switcher */
+(function () {
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.target;
+      tabs.forEach(t => {
+        const active = t === tab;
+        t.classList.toggle('active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      document.querySelectorAll('.tab-panel').forEach(p => {
+        p.classList.toggle('active', p.id === target);
+      });
+    });
+  });
+})();
+
+/* Scroll-triggered reveal */
+(function () {
+  if (!('IntersectionObserver' in window)) {
+    document.querySelectorAll('.fade').forEach(el => el.classList.add('visible'));
+    return;
+  }
+  const obs = new IntersectionObserver(
+    entries => entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        obs.unobserve(entry.target);
+      }
+    }),
+    { rootMargin: '0px 0px -60px 0px', threshold: 0.05 }
+  );
+  document.querySelectorAll('.fade').forEach(el => obs.observe(el));
+})();
+</script>
+
+</body>
+</html>

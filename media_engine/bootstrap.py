@@ -52,6 +52,7 @@ def _op_classes() -> list[type]:
     from media_engine.ops.search.fulltext import SearchFulltext
     from media_engine.ops.search.hybrid import SearchHybrid
     from media_engine.ops.search.semantic import SearchSemantic
+    from media_engine.ops.speakers.identify import SpeakersIdentify
     from media_engine.ops.transcript.merge import TranscriptMerge
     from media_engine.ops.transcript.parse import TranscriptParse
     from media_engine.ops.video.extract_audio import VideoExtractAudio
@@ -85,6 +86,7 @@ def _op_classes() -> list[type]:
         SearchFulltext,
         SearchHybrid,
         SearchSemantic,
+        SpeakersIdentify,
         TranscriptMerge,
         TranscriptParse,
         VideoExtractAudio,
