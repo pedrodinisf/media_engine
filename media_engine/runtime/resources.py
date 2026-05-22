@@ -90,6 +90,7 @@ def load_resources_config(path: Path | None) -> ResourcesConfig:
             f"{type(loaded).__name__})"
         )
     specs: list[ResourceSpec] = []
+    _ALLOWED_KEYS = {"capacity", "operations"}
     for name, body in raw.items():
         if isinstance(body, int):
             specs.append(ResourceSpec(name=name, capacity=int(body)))
@@ -100,6 +101,16 @@ def load_resources_config(path: Path | None) -> ResourcesConfig:
                 f"(got {type(body).__name__})"
             )
         body_d: dict[str, Any] = cast(dict[str, Any], body)
+        # Reject typos in the resource body. Without this, ``capcity: 1``
+        # silently creates a resource with default capacity=1 and the
+        # operator never finds out why their override didn't apply.
+        unknown_keys = sorted(set(body_d) - _ALLOWED_KEYS)
+        if unknown_keys:
+            raise ResourcesConfigError(
+                f"{path}: resource {name!r} has unknown key(s) "
+                f"{unknown_keys!r}; allowed: "
+                f"{sorted(_ALLOWED_KEYS)!r}"
+            )
         capacity_raw: Any = body_d.get("capacity", 1)
         if not isinstance(capacity_raw, int) or capacity_raw < 1:
             raise ResourcesConfigError(

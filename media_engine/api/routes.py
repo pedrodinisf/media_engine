@@ -93,6 +93,10 @@ def require_token(
     """
     header = request.headers.get("authorization", "")
     scheme, _, raw_token = header.partition(" ")
+    # Tolerate ``Bearer  <token>`` (extra whitespace between scheme and
+    # secret). Without ``.strip()`` the leading space would be hashed
+    # into the lookup, silently 401-ing valid tokens.
+    raw_token = raw_token.strip()
     if scheme.lower() != "bearer" or not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

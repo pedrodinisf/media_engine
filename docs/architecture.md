@@ -497,8 +497,24 @@ helper; and `IdentifyParams.speaker_db` / `SessionReportParams.template`
 content-addressed cache keys depend on the file's sha (via the
 auto-derived `*_sha` fields), not on the filesystem path — two
 callers referencing the same file by different paths now hit the
-cache. **34 ops.** Suite: 768 passed / 29 skipped
-(dependency/API-key/network gated); `ruff` and strict `pyright` clean.
+cache. A third audit pass focused on Phase 4 (commits 29–34) caught
+one production-blocker, two real bugs, and seven robustness
+improvements: the Dockerfile referenced a nonexistent root `alembic/`
+directory (the migrations actually ship inside the package); the
+`cancel_job` endpoint could overwrite a terminal status with
+`cancelled` under a race; `runtime/eviction.py` deleted
+`cached_operation_runs` rows without a namespace filter (now applied
+as defense-in-depth). Polish: SQLite search payloads gained the
+`"backend"` field for parity with Postgres; bearer parsing tolerates
+extra whitespace; the readiness storage check actually writes+deletes
+a probe file rather than trusting `os.access`; readiness now gates on
+`min_free_gb`; the daemon GC loop logs sweep failures instead of
+swallowing them; `resources.yaml` rejects unknown keys (typo
+detection); `med storage migrate` validates `--to` exists before
+rewriting; the SSE pumper is awaited on disconnect so the
+`bus.subscribe()` generator's cleanup runs deterministically.
+**34 ops.** Suite: 773 passed / 29 skipped (dependency/API-key/network
+gated); `ruff` and strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
 > backend ``sqlite-vss`` (loadable extension). We ship a plain SQLite

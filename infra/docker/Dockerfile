@@ -30,7 +30,12 @@ WORKDIR /build
 # bust the dep cache.
 COPY pyproject.toml uv.lock README.md ./
 COPY media_engine ./media_engine
-COPY alembic ./alembic
+# alembic.ini lives at the repo root; the migration scripts ship inside
+# the package at media_engine/_alembic/ (architecture.md §11 — "Alembic
+# migrations ship inside the package"). cli/db.py builds the alembic
+# Config in-process and pins script_location at the packaged dir, so a
+# root-level alembic/ copy is intentionally absent — there is no
+# alembic/ at the repo root, so the previous COPY here failed at build.
 COPY alembic.ini ./alembic.ini
 
 ENV UV_LINK_MODE=copy

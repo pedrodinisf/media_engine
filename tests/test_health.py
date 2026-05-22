@@ -55,6 +55,62 @@ def test_readiness_reports_unreachable_cache(
     assert cache_check.status == "down"
 
 
+def test_readiness_write_probe_detects_readonly_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``os.access(W_OK)`` lies on a read-only mount; the real probe
+    is writing + deleting a file. Simulate a read-only store by
+    monkeypatching the write call inside ``_check_storage_writable``."""
+    from media_engine.runtime import health as _h
+
+    store = tmp_path / "store"
+    store.mkdir()
+    monkeypatch.setenv("MEDIA_ENGINE_PERMANENT_STORE", str(store))
+    monkeypatch.setenv("MEDIA_ENGINE_WORKDIR", str(tmp_path / "work"))
+    monkeypatch.setenv(
+        "MEDIA_ENGINE_CACHE_DB_URL",
+        f"sqlite+pysqlite:///{tmp_path / 'cache.db'}",
+    )
+    monkeypatch.setenv("MEDIA_ENGINE_MIN_FREE_GB", "0")
+
+    real_write_bytes = Path.write_bytes
+
+    def _fail_for_probe(self: Path, data: bytes) -> int:
+        if ".health-probe-" in self.name:
+            raise PermissionError("simulated read-only mount")
+        return real_write_bytes(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", _fail_for_probe)
+    report = _h.readiness()
+    perm = next(c for c in report.checks if c.name == "permanent_store")
+    assert perm.status == "down"
+    assert not report.ready
+
+
+def test_readiness_free_space_check_reports_down_below_threshold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When free space drops below ``min_free_gb`` the probe must
+    report ``down`` so kubelet pulls the pod out of traffic before
+    the engine's disk-guard error starts surfacing to clients."""
+    from media_engine.runtime import health as _h
+
+    store = tmp_path / "store"
+    store.mkdir()
+    monkeypatch.setenv("MEDIA_ENGINE_PERMANENT_STORE", str(store))
+    monkeypatch.setenv("MEDIA_ENGINE_WORKDIR", str(tmp_path / "work"))
+    monkeypatch.setenv(
+        "MEDIA_ENGINE_CACHE_DB_URL",
+        f"sqlite+pysqlite:///{tmp_path / 'cache.db'}",
+    )
+    # Wildly impossible threshold so we always trip "down".
+    monkeypatch.setenv("MEDIA_ENGINE_MIN_FREE_GB", "999999")
+    report = _h.readiness()
+    fs_check = next(c for c in report.checks if c.name == "free_space")
+    assert fs_check.status == "down"
+    assert not report.ready
+
+
 # ─────────────────────────────────────────────────────────────────
 # REST
 # ─────────────────────────────────────────────────────────────────

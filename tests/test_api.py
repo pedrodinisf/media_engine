@@ -89,6 +89,20 @@ def test_revoked_token_returns_401(
     assert r.status_code == 401
 
 
+def test_bearer_tolerates_extra_whitespace(
+    client: TestClient, api_engine: Engine
+) -> None:
+    """``Authorization: Bearer  <token>`` (extra spaces between scheme
+    and secret) must still authenticate. Without the ``.strip()`` after
+    ``partition``, the leading space would poison the hash lookup."""
+    secret = create_token(api_engine.cache, label="ws")
+    r = client.get(
+        "/operations",
+        headers={"Authorization": f"Bearer  {secret.secret}"},  # two spaces
+    )
+    assert r.status_code == 200
+
+
 def test_token_with_mismatched_namespace_returns_403(
     client: TestClient, api_engine: Engine
 ) -> None:

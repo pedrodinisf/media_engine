@@ -132,6 +132,19 @@ def test_apply_restores_default_when_op_dropped(tmp_path: Path) -> None:
     assert op.declared_resources == original
 
 
+def test_unknown_key_in_resource_body_rejected(tmp_path: Path) -> None:
+    """A typo like ``capcity: 1`` must fail loudly instead of silently
+    falling through to the default capacity=1. The operator otherwise
+    sees no effect and has no clue why."""
+    p = tmp_path / "resources.yaml"
+    p.write_text(
+        "apple_gpu:\n  capcity: 1\n  operations: [audio.transcribe]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ResourcesConfigError, match="unknown key"):
+        load_resources_config(p)
+
+
 def test_make_semaphores_honors_overrides() -> None:
     sems = make_semaphores({"cloud_concurrent": 32, "new_resource": 4})
     # Override sticks.

@@ -16,6 +16,8 @@ and ``cli/health.py`` (terminal); both formats agree on the schema.
 from __future__ import annotations
 
 import os
+import shutil
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -71,13 +73,19 @@ def readiness(config: EngineConfig | None = None) -> HealthReport:
     cfg = config or EngineConfig.load()
     checks: list[CheckResult] = []
 
-    # 1. permanent_store writable
+    # 1. permanent_store writable (real write+delete, not just os.W_OK)
     checks.append(_check_storage_writable(cfg.permanent_store))
 
-    # 2. cache reachable (single SELECT 1 — cheap on both dialects)
+    # 2. free space ≥ min_free_gb — without this, the probe stays green
+    #    while writes start failing with the engine's disk-guard error.
+    checks.append(
+        _check_free_space(cfg.permanent_store, min_free_gb=cfg.min_free_gb)
+    )
+
+    # 3. cache reachable (single SELECT 1 — cheap on both dialects)
     checks.append(_check_cache_reachable(cfg.resolve_cache_db_url()))
 
-    # 3. daemon socket (only relevant when configured + present)
+    # 4. daemon socket (only relevant when configured + present)
     if cfg.daemon_socket is not None or (cfg.config_dir / "daemon.sock").exists():
         checks.append(
             _check_daemon_socket(
@@ -95,6 +103,13 @@ def readiness(config: EngineConfig | None = None) -> HealthReport:
 
 
 def _check_storage_writable(path: Path) -> CheckResult:
+    """Probe by actually writing+deleting a small file.
+
+    ``os.access(..., os.W_OK)`` consults permission bits only and
+    silently passes on read-only mounts, exhausted inodes, ACL
+    overrides, and similar real-world denials. A round-trip with the
+    actual filesystem is the only honest "writable" check.
+    """
     try:
         path.mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -109,7 +124,67 @@ def _check_storage_writable(path: Path) -> CheckResult:
             status="down",
             detail=f"{path} is not writable",
         )
+    probe = path / f".health-probe-{uuid.uuid4().hex[:8]}"
+    try:
+        probe.write_bytes(b"ok")
+    except OSError as e:
+        return CheckResult(
+            name="permanent_store",
+            status="down",
+            detail=f"write probe failed at {path}: {e}",
+        )
+    finally:
+        probe.unlink(missing_ok=True)
     return CheckResult(name="permanent_store", status="ok", detail=str(path))
+
+
+def _check_free_space(path: Path, *, min_free_gb: float) -> CheckResult:
+    """Gate readiness on free disk space matching the engine's disk-guard.
+
+    The engine refuses to start jobs when free space drops below
+    ``min_free_gb``; surfacing that in readiness keeps clients out of a
+    pod that would only produce ``DiskFullError`` until cleanup runs.
+    Reports ``degraded`` between the guard threshold and 2x it so
+    operators see warning without traffic being yanked.
+    """
+    if min_free_gb <= 0:
+        return CheckResult(
+            name="free_space",
+            status="ok",
+            detail="min_free_gb disabled",
+        )
+    try:
+        usage = shutil.disk_usage(path)
+    except OSError as e:
+        return CheckResult(
+            name="free_space",
+            status="degraded",
+            detail=f"cannot stat {path}: {e}",
+        )
+    free_gb = usage.free / (1024 ** 3)
+    if free_gb < min_free_gb:
+        return CheckResult(
+            name="free_space",
+            status="down",
+            detail=(
+                f"{free_gb:.2f} GB free at {path}; threshold "
+                f"{min_free_gb} GB"
+            ),
+        )
+    if free_gb < min_free_gb * 2:
+        return CheckResult(
+            name="free_space",
+            status="degraded",
+            detail=(
+                f"{free_gb:.2f} GB free at {path}; approaching "
+                f"{min_free_gb} GB threshold"
+            ),
+        )
+    return CheckResult(
+        name="free_space",
+        status="ok",
+        detail=f"{free_gb:.2f} GB free at {path}",
+    )
 
 
 def _check_cache_reachable(db_url: str) -> CheckResult:

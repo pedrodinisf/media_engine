@@ -88,14 +88,28 @@ def submit_pipeline(
 
 
 async def cancel_job(state: AppState, job_id: str) -> bool:
-    """Cancel a running job's task. Returns True if a task was found."""
+    """Cancel a running job's task. Returns True if a task was found.
+
+    Race-safe: if the task completed (or failed) during our await, the
+    runner's own ``finally`` block has already written a terminal status,
+    and we must not overwrite it with ``cancelled``. We check
+    ``task.cancelled()`` *after* awaiting and only flip the cache row
+    when cancellation actually took effect.
+    """
     task = state.pop_job_task(job_id)
     if task is None:
         return False
-    if not task.done():
+    was_done = task.done()
+    if not was_done:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await task
+    # If the task raced to natural completion before / during our
+    # cancel, ``task.cancelled()`` is False — the runner already wrote
+    # ``completed`` / ``failed``. Honor that terminal status and signal
+    # "not actually cancelled" to the caller.
+    if was_done or not task.cancelled():
+        return False
     state.cache.update_job(
         job_id=job_id,
         status="cancelled",

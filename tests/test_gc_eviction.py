@@ -299,6 +299,53 @@ def test_storage_migrate_rewrites_paths(
         cache.close()
 
 
+def test_storage_migrate_rejects_missing_dest(
+    runner: CliRunner, cli_env: Path
+) -> None:
+    """Typo in --to → fail fast before touching cache rows. Without
+    this guard the cache silently points at a path that doesn't
+    exist; every subsequent read fails confusingly."""
+    cache = Cache(f"sqlite+pysqlite:///{cli_env / 'cache.db'}")
+    old_root = cli_env / "old"
+    old_root.mkdir()
+    src = old_root / "a.bin"
+    src.write_bytes(b"x")
+    cache.upsert_artifact(
+        MarkdownArtifact(
+            id="z" * 64,
+            kind=Kind.MarkdownArtifact,
+            path=str(src),  # type: ignore[arg-type]
+            metadata={},
+            derived_from=(),
+            produced_by=None,
+            created_at=datetime.now(UTC),
+        )
+    )
+    cache.close()
+    nowhere = cli_env / "this-path-does-not-exist"
+    res = runner.invoke(
+        app,
+        [
+            "storage",
+            "migrate",
+            "--from",
+            str(old_root),
+            "--to",
+            str(nowhere),
+        ],
+    )
+    assert res.exit_code != 0
+    assert "does not exist" in res.stdout or "not writable" in res.stdout
+    # Cache row is untouched.
+    cache = Cache(f"sqlite+pysqlite:///{cli_env / 'cache.db'}")
+    try:
+        art = cache.get_artifact("z" * 64)
+        assert art is not None
+        assert str(art.path).startswith(str(old_root))
+    finally:
+        cache.close()
+
+
 def test_storage_migrate_does_not_match_sibling_prefix(
     runner: CliRunner, cli_env: Path
 ) -> None:

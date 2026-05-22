@@ -189,6 +189,7 @@ class SqliteFts5Backend(Backend):
         )
         payload = {
             "mode": "fulltext",
+            "backend": BACKEND_NAME,
             "query": params.query,
             "results": results,
         }

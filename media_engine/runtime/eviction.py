@@ -198,12 +198,20 @@ def _delete_artifact(cache: Any, artifact: AnyArtifact) -> None:
     with cache.session() as s:
         # Drop runs that reference this id either as input or output. We
         # use a LIKE on the JSON columns — coarse but correct (ids are
-        # 64-char sha256s, no false positives).
+        # 64-char sha256s, no false positives). Also filter by namespace
+        # as defense-in-depth: a multi-tenant cache with one namespace
+        # per operator must not let one tenant's eviction touch another
+        # tenant's run history. The artifact-id primary key already
+        # implies one namespace owns the id, but spelling it out keeps
+        # the query intent explicit and improves the SQL plan.
         marker = f'"{artifact.id}"'
         s.execute(
             delete(CachedOperationRun).where(
-                CachedOperationRun.output_ids_json.like(f"%{marker}%")
-                | CachedOperationRun.input_ids_json.like(f"%{marker}%")
+                (CachedOperationRun.namespace == artifact.namespace)
+                & (
+                    CachedOperationRun.output_ids_json.like(f"%{marker}%")
+                    | CachedOperationRun.input_ids_json.like(f"%{marker}%")
+                )
             )
         )
         s.execute(

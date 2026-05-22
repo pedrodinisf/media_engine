@@ -15,6 +15,7 @@ Three commands:
 from __future__ import annotations
 
 import json
+import os
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any
@@ -202,6 +203,22 @@ def cmd_migrate(
     Idempotent.
     """
     cfg = _load_config()
+    # Guard against typos in --to: rewriting cache rows to a path that
+    # doesn't exist (or isn't writable) makes every subsequent cache
+    # lookup fail mysteriously. Fail fast with an actionable error
+    # before we touch a single row.
+    if not to_path.exists() or not to_path.is_dir():
+        console.print(
+            f"[red]--to path does not exist or is not a directory: "
+            f"{to_path}[/red]\nMove the files first (rsync / mv), then "
+            f"rerun the migrate command."
+        )
+        raise typer.Exit(code=1)
+    if not os.access(to_path, os.W_OK):
+        console.print(
+            f"[red]--to path is not writable: {to_path}[/red]"
+        )
+        raise typer.Exit(code=1)
     cache = Cache(cfg.resolve_cache_db_url())
     try:
         from sqlalchemy import or_, select

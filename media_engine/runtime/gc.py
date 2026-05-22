@@ -20,12 +20,14 @@ that's the simple invariant we promise.
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import logging
 import os
 import shutil
 import time
 from datetime import timedelta
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def sweep_workdirs(
@@ -65,13 +67,20 @@ async def periodic_workdir_gc(
     """Run ``sweep_workdirs`` forever, sleeping ``interval`` between sweeps.
 
     The daemon spawns this as a background task at startup. Cancellation
-    is the only way out — the loop swallows transient errors (a
-    permission-denied entry shouldn't wedge the daemon)."""
+    is the only way out. Transient errors (a permission-denied entry,
+    a file that vanished mid-sweep) are caught + logged at WARNING so
+    the loop keeps running — but they no longer disappear silently the
+    way a bare ``suppress(Exception)`` did, so operators have visibility
+    when GC starts failing systematically.
+    """
     while True:
-        # A permission-denied entry shouldn't wedge the daemon; the
-        # next sweep will retry. Errors are intentionally swallowed.
-        with contextlib.suppress(Exception):
+        try:
             sweep_workdirs(workdir, retention=retention)
+        except Exception:
+            logger.warning(
+                "periodic_workdir_gc sweep failed; retrying after interval",
+                exc_info=True,
+            )
         await asyncio.sleep(interval.total_seconds())
 
 

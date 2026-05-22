@@ -235,6 +235,7 @@ class SqliteSemanticBackend(Backend):
         )
         payload = {
             "mode": "semantic",
+            "backend": BACKEND_NAME,
             "query_embedding_id": query_embedding.id,
             "results": results,
         }

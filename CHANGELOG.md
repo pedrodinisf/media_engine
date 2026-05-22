@@ -54,11 +54,69 @@ top of the primitives + transports shipped in 0.4.x.
 - `pyproject.toml::version` and `media_engine.__version__` → `0.5.0`.
 - `docs/architecture.md` §11 records Phase 5 deviations.
 
-### Fixed (post-release audit, same release window)
+### Fixed (post-release Phase 4 audit, same release window)
+
+A second-pass audit of the Phase 4 surface (commits 29–34, shipped
+before v0.5.0) caught one production-blocker, two real bugs, and
+seven robustness improvements that lived in user-facing endpoints:
+
+- **`infra/docker/Dockerfile` referenced a nonexistent `alembic/`
+  directory** via `COPY alembic ./alembic`. Phase 4 commit 31 moved
+  the migrations inside the package (`media_engine/_alembic/`), but
+  the Dockerfile was never updated. Docker would have failed at build
+  time. Removed the stray COPY (the in-process alembic loader at
+  `cli/db.py:_alembic_config` already pins ``script_location`` at the
+  packaged dir).
+- **`cancel_job` could overwrite a terminal status with `cancelled`.**
+  Race window: task naturally completed during the `await task`, the
+  runner's `finally` wrote `completed`/`failed`, then `cancel_job`
+  blindly wrote `cancelled` on top. Now checks
+  `task.cancelled()` after the await and only flips to `cancelled`
+  when cancellation actually took effect; otherwise returns `False`
+  to the caller.
+- **`runtime/eviction.py` deleted `cached_operation_runs` rows
+  without a namespace filter.** The artifact id is the primary key
+  so cross-tenant collisions are blocked at insert time, but the
+  defense-in-depth filter is now applied — keeps the query intent
+  explicit and improves the SQL plan.
+
+### Improved (post-release Phase 4 audit)
 
 - **FastAPI app `version` sources `media_engine.__version__`.** It was
   hardcoded `0.1.0` since Phase 4; `docs/openapi.json` + the live
   `/openapi.json` now correctly track 0.5.0.
+- **SQLite search-backend metadata parity.** `search.semantic` and
+  `search.fulltext` Analysis payloads now include `"backend":
+  BACKEND_NAME` to match what the Postgres backends already emitted
+  — consumers (reports, dashboards) see a consistent shape across
+  drivers.
+- **Bearer-token parsing tolerates extra whitespace.** `Authorization:
+  Bearer  <token>` (double space) used to 401 silently because the
+  leading space ended up in the hash lookup; now stripped after the
+  partition.
+- **`runtime/health.py::_check_storage_writable` writes a probe file.**
+  `os.access(..., os.W_OK)` lies on read-only mounts, exhausted
+  inodes, and ACL overrides; only a real round-trip is honest.
+- **Readiness probe gates on `min_free_gb`.** Free disk space is now
+  a first-class readiness check — kubelet pulls a pod out of traffic
+  when the engine's disk-guard would have started failing writes.
+  Reports `degraded` between threshold and 2× threshold.
+- **`periodic_workdir_gc` logs swept errors instead of swallowing them.**
+  Failed sweeps used to disappear into `contextlib.suppress(Exception)`;
+  now they log at WARNING with traceback so operators can see when
+  GC stops working.
+- **`runtime/resources.py` rejects unknown keys in a resource body.**
+  A typo like `capcity: 1` used to silently fall through to
+  `capacity=1` (default); now raises `ResourcesConfigError` with the
+  bad key + the allowed set.
+- **`med storage migrate` validates the `--to` path before rewriting
+  cache rows.** A typo used to point every row at a nonexistent
+  directory; now fails fast with a clear error and untouched cache.
+- **SSE pumper awaited on disconnect.** `job_event_stream`'s cleanup
+  now waits for the pumper task to finish cancelling so the underlying
+  `bus.subscribe()` generator's finally-clause (unregisters from
+  `EventBus`) runs before the request returns — keeps the subscriber
+  list clean under heavy SSE churn.
 - **`speakers.identify` builds `speaker_extra` in O(N+M).** The
   payload's `canonical → extra_columns` map used to come from a
   quadratic nested generator (scanned the whole db per match). Now

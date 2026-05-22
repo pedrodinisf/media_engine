@@ -76,3 +76,11 @@ async def job_event_stream(
             yield frame
     finally:
         pumper.cancel()
+        # Wait for the pumper's cancellation to actually propagate so
+        # the underlying ``bus.subscribe()`` async generator's
+        # finally-clause (which unregisters from the EventBus subscriber
+        # list) runs before we return. Without this await, the
+        # subscriber slot lingers until GC, which under heavy SSE churn
+        # leaves stale entries on the bus.
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await pumper
