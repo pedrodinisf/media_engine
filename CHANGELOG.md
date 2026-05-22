@@ -6,12 +6,42 @@ once we ship v1.0 (after Phase 6 — the REST surface needs to freeze
 first). Until then expect 0.x to bump frequently and best-effort
 backwards compatibility.
 
-## [0.6.0-dev] — Unreleased (Phase 6, commits 39–48 of 50 + 2 audits)
+## [0.6.0-dev] — Unreleased (Phase 6, commits 39–49 of 50 + 3 audits)
 
-Phase 6 (local-first Web UI, plan §12.5) is mid-flight. Commits 39–48
-have landed plus post-46 and post-48 audit-fix passes; commits 49–50
-ship the plugin catalog + settings panel, the `+ui` multi-stage
-Dockerfile, and the docs + v0.6.0 release cut.
+Phase 6 (local-first Web UI, plan §12.5) is mid-flight. Commits 39–49
+have landed plus three audit-fix passes (post-46, post-48, post-49);
+commit 50 is the remaining work (docs + screenshots + `+ui` multi-
+stage Dockerfile + the v0.6.0 release cut).
+
+### Fixed (post-commit-49 audit, same release window)
+
+- **Reuse `state.engine.cache` in `/storage/stats` + `/storage/gc`**
+  instead of constructing a fresh `Cache(...)` per request. The
+  pre-fix path spun up a new SQLAlchemy engine + connection pool on
+  every Settings tab activation; reusing the long-lived cache on the
+  engine handle removes that overhead.
+- **Hoisted lazy imports**: `from sqlalchemy import select` (in
+  `/storage/stats`) and `from media_engine.runtime.plugins import
+  load_catalog` (in `mcp/server.py:_filtered_op_names`) moved to
+  module-level. Both were on hot paths — the MCP filter fires on
+  every `tools/list` call.
+- **Inlined `_catalog_response(state)` helper** so PUT
+  `/plugins/catalog` returns the recomputed view without re-calling
+  the GET handler through a `# type: ignore`-masked direct call.
+- **Lifted `declared_resources` onto `OperationSummary`** so the
+  Web UI's Settings → Config tab renders per-op resource
+  allocations in **one** HTTP request, not N+1 detail fetches. The
+  field stays on `OperationDetail` (it's inherited).
+- **Regression test: `_EXTRAS_CATALOG` parity with pyproject.toml**.
+  The hard-coded extras list in `api/plugins.py` would silently
+  drift if pyproject gained a new extra; the test now asserts
+  bidirectional parity and fails CI if anyone adds an extra without
+  updating the route.
+
+## [0.6.0-dev partial — commits 39–48]
+
+Earlier 0.6.0-dev entries (commits 39–48 + post-46 + post-48 audits)
+preserved below.
 
 ### Added
 

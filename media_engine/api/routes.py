@@ -268,12 +268,18 @@ class OperationSummary(BaseModel):
     output_kinds: list[str]
     default_backend: str | None
     variadic_inputs: bool
+    # Surfaced on the summary (not just the detail) so the Web UI's
+    # Settings → Config tab can render per-op resource allocations
+    # without firing N+1 detail requests. Cheap to include — the field
+    # is already a tuple in the op class.
+    declared_resources: list[str] = Field(
+        default_factory=lambda: cast(list[str], [])
+    )
 
 
 class OperationDetail(OperationSummary):
     description: str
     params_schema: dict[str, Any]
-    declared_resources: list[str]
     backends: list[str]
 
 
@@ -1041,7 +1047,6 @@ def get_operation_endpoint(
         **_op_summary(op).model_dump(),
         description=(op.__doc__ or "").strip(),
         params_schema=op.params_model.model_json_schema(),
-        declared_resources=list(op.declared_resources),
         backends=BackendRegistry.for_op(op.name),
     )
 
@@ -1142,4 +1147,5 @@ def _op_summary(op: Any) -> OperationSummary:
         output_kinds=[k.value for k in op.output_kinds],
         default_backend=op.default_backend,
         variadic_inputs=bool(op.variadic_inputs),
+        declared_resources=list(op.declared_resources),
     )

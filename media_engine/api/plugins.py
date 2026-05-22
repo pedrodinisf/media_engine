@@ -22,13 +22,14 @@ from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from media_engine.api._state import AppState
 from media_engine.api.routes import get_state, require_token
 from media_engine.artifacts import Kind
 from media_engine.backends import BackendRegistry
 from media_engine.ops import OpRegistry
-from media_engine.runtime.cache import ApiTokenInfo, Cache, CachedArtifact
+from media_engine.runtime.cache import ApiTokenInfo, CachedArtifact
 from media_engine.runtime.disk_guard import free_gb
 from media_engine.runtime.eviction import EvictionPolicy, evict_lru
 from media_engine.runtime.gc import sweep_workdirs
@@ -158,20 +159,23 @@ def _all_backend_keys() -> list[str]:
     return sorted(set(keys))
 
 
+def _catalog_response(state: AppState) -> CatalogResponse:
+    """Shared body for GET + PUT — universe + current hidden state."""
+    catalog = load_catalog(state.engine.config.config_dir)
+    return CatalogResponse(
+        ops=sorted(op.name for op in OpRegistry.list_all()),
+        backends=_all_backend_keys(),
+        hidden_ops=sorted(catalog.hidden_ops),
+        hidden_backends=sorted(catalog.hidden_backends),
+    )
+
+
 @router.get("/plugins/catalog", response_model=CatalogResponse)
 def get_plugins_catalog(
     state: Annotated[AppState, Depends(get_state)],
     _token: Annotated[ApiTokenInfo, Depends(require_token)],
 ) -> CatalogResponse:
-    catalog = load_catalog(state.engine.config.config_dir)
-    ops = sorted(op.name for op in OpRegistry.list_all())
-    backends = _all_backend_keys()
-    return CatalogResponse(
-        ops=ops,
-        backends=backends,
-        hidden_ops=sorted(catalog.hidden_ops),
-        hidden_backends=sorted(catalog.hidden_backends),
-    )
+    return _catalog_response(state)
 
 
 @router.put("/plugins/catalog", response_model=CatalogResponse)
@@ -192,7 +196,7 @@ def put_plugins_catalog(
     save_catalog(state.engine.config.config_dir, next_state)
     # Echo the new state alongside the (recomputed) universe so the UI
     # gets one round-trip per save.
-    return get_plugins_catalog(state, _token)  # type: ignore[arg-type]
+    return _catalog_response(state)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -221,34 +225,32 @@ def get_storage_stats(
     every file (the same pattern the CLI uses); for a million-row
     cache this is seconds-not-milliseconds, so the UI surfaces a
     "Refresh" button rather than polling on a timer.
+
+    Reuses ``state.engine.cache`` (a long-lived SQLAlchemy session
+    factory) — opening a fresh ``Cache(...)`` per request would burn
+    a connection-pool spin-up on every Settings tab activation.
     """
     cfg = state.engine.config
     per_kind: dict[str, dict[str, int]] = {
         k.value: {"count": 0, "bytes": 0} for k in Kind
     }
     total = 0
-    cache = Cache(cfg.resolve_cache_db_url())
-    try:
-        from sqlalchemy import select
-
-        with cache.session() as s:
-            for row in s.scalars(
-                select(CachedArtifact).where(
-                    CachedArtifact.namespace == token.namespace
-                )
-            ).all():
-                try:
-                    size = Path(row.path).stat().st_size
-                except OSError:
-                    size = 0
-                total += size
-                slot = per_kind.setdefault(
-                    row.kind, {"count": 0, "bytes": 0}
-                )
-                slot["count"] += 1
-                slot["bytes"] += size
-    finally:
-        cache.close()
+    with state.engine.cache.session() as s:
+        for row in s.scalars(
+            select(CachedArtifact).where(
+                CachedArtifact.namespace == token.namespace
+            )
+        ).all():
+            try:
+                size = Path(row.path).stat().st_size
+            except OSError:
+                size = 0
+            total += size
+            slot = per_kind.setdefault(
+                row.kind, {"count": 0, "bytes": 0}
+            )
+            slot["count"] += 1
+            slot["bytes"] += size
     return StorageStats(
         permanent_store=str(cfg.permanent_store),
         workdir=str(cfg.workdir),
@@ -322,30 +324,29 @@ def post_storage_gc(
     evicted_ids: list[str] = []
     eviction_enabled = cfg.eviction_enabled and body.evict
     if eviction_enabled:
-        cache = Cache(cfg.resolve_cache_db_url())
         try:
-            try:
-                protected = tuple(
-                    Kind(k.lower()) for k in cfg.eviction_protected_kinds
-                )
-            except ValueError as e:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"bad eviction_protected_kinds: {e}",
-                ) from None
-            policy = EvictionPolicy(
-                enabled=True,
-                max_gb=cfg.eviction_max_gb,
-                protected_kinds=protected,
+            protected = tuple(
+                Kind(k.lower()) for k in cfg.eviction_protected_kinds
             )
-            result = evict_lru(
-                cache,
-                policy,
-                namespace=token.namespace,
-                dry_run=not body.apply,
-            )
-        finally:
-            cache.close()
+        except ValueError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"bad eviction_protected_kinds: {e}",
+            ) from None
+        policy = EvictionPolicy(
+            enabled=True,
+            max_gb=cfg.eviction_max_gb,
+            protected_kinds=protected,
+        )
+        # Reuse the engine's long-lived cache (Phase 6 post-49 audit) —
+        # opening a fresh Cache(...) per GC click cost a connection-pool
+        # spin-up on every Settings → Storage button press.
+        result = evict_lru(
+            state.engine.cache,
+            policy,
+            namespace=token.namespace,
+            dry_run=not body.apply,
+        )
         bytes_before = result.bytes_before
         bytes_after = result.bytes_after
         evicted_ids = list(result.evicted_ids)

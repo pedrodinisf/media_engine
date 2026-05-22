@@ -135,6 +135,25 @@ def test_list_operations(client: TestClient, auth: dict[str, str]) -> None:
     assert "audio.transcribe" in names
 
 
+def test_list_operations_includes_declared_resources(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """Post-commit-49 audit: `declared_resources` lifted onto the
+    summary so the Web UI's Settings → Config tab can render the
+    per-op resource allocation in a single HTTP request instead of
+    N+1 detail fetches."""
+    r = client.get("/operations", headers=auth)
+    assert r.status_code == 200
+    payload = r.json()
+    for item in payload:
+        assert "declared_resources" in item
+        assert isinstance(item["declared_resources"], list)
+    # `embed.text` declares `apple_gpu` per the op module — a concrete
+    # value to assert the field is actually populated, not just present.
+    embed_row = next(i for i in payload if i["name"] == "embed.text")
+    assert "apple_gpu" in embed_row["declared_resources"]
+
+
 def test_get_operation_detail(client: TestClient, auth: dict[str, str]) -> None:
     r = client.get("/operations/acquire.upload", headers=auth)
     assert r.status_code == 200

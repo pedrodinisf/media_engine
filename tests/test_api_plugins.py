@@ -48,18 +48,41 @@ def auth(api_engine: Engine) -> dict[str, str]:
 def test_extras_lists_every_pyproject_extra(
     client: TestClient, auth: dict[str, str]
 ) -> None:
+    """The hard-coded `_EXTRAS_CATALOG` must stay in sync with
+    `pyproject.toml`'s [project.optional-dependencies] section.
+
+    Auto-parsing pyproject at request time would let the wheel
+    install go without it; instead we keep the catalog inline + use
+    this test as the drift guard. Adding a new extra to pyproject
+    without updating `media_engine/api/plugins.py:_EXTRAS_CATALOG`
+    fails this test on the next CI run.
+    """
+    import tomllib
+    from pathlib import Path
+
+    pyproject_path = (
+        Path(__file__).resolve().parents[1] / "pyproject.toml"
+    )
+    with pyproject_path.open("rb") as f:
+        pyproject = tomllib.load(f)
+    pyproject_extras = set(
+        pyproject["project"]["optional-dependencies"].keys()
+    )
+
     r = client.get("/plugins/extras", headers=auth)
     assert r.status_code == 200
-    items = r.json()["items"]
-    names = {row["name"] for row in items}
-    # Mirror pyproject.toml's [project.optional-dependencies]. Drift
-    # here means the UI will silently miss a newly-added extra.
-    expected = {
-        "transcribe-mlx", "diarize", "embed", "chunk", "vlm-cloud",
-        "vlm-local", "llm-mlx", "ocr", "classify", "acquire-url",
-        "live", "document", "search", "api", "mcp", "postgres",
-    }
-    assert expected.issubset(names)
+    route_names = {row["name"] for row in r.json()["items"]}
+
+    missing_from_route = pyproject_extras - route_names
+    assert not missing_from_route, (
+        f"_EXTRAS_CATALOG is missing pyproject extras: "
+        f"{sorted(missing_from_route)}"
+    )
+    stale_in_route = route_names - pyproject_extras
+    assert not stale_in_route, (
+        f"_EXTRAS_CATALOG references extras not in pyproject: "
+        f"{sorted(stale_in_route)}"
+    )
 
 
 def test_extras_install_command_uses_uv_sync_form(

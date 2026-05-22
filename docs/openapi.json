@@ -1412,6 +1412,138 @@
           }
         }
       }
+    },
+    "/plugins/extras": {
+      "get": {
+        "summary": "Get Plugins Extras",
+        "description": "List the pyproject extras the Web UI's plugin catalog surfaces.\n\nEach row's ``installed`` field is freshly probed via\n``importlib.util.find_spec`` on every call — cheap (a dict lookup\nplus a stat on a sys.path entry) and avoids a stale cache after\nthe operator runs ``uv sync --extra X`` in another shell.\n\nThe Web UI displays ``install_command`` next to a \"copy\" button.\nThere is no POST endpoint for installation: auto-running\n``uv sync`` inside the live web process risks corrupting the\nrunning venv and can take 10+ minutes for ``torch``/``pyannote``;\nplan §13 risk #3 documents the tradeoff + the v1.x hardening path\n(out-of-process installer daemon).",
+        "operationId": "get_plugins_extras_plugins_extras_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtrasResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plugins/catalog": {
+      "get": {
+        "summary": "Get Plugins Catalog",
+        "operationId": "get_plugins_catalog_plugins_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Plugins Catalog",
+        "description": "Replace the catalog gate. Unknown op / backend keys are ignored\nsilently — the operator might be hiding entries from an extra\nthey're about to install, and writing those keys would surprise\nthem with a 400. The runtime filter just doesn't fire on unknown\nkeys.",
+        "operationId": "put_plugins_catalog_plugins_catalog_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/storage/stats": {
+      "get": {
+        "summary": "Get Storage Stats",
+        "description": "Bytes-by-kind + free space rollup.\n\nMirrors what ``med storage stats --json`` prints, scoped to the\ntoken's namespace. Walks ``cached_artifacts`` once + stat-checks\nevery file (the same pattern the CLI uses); for a million-row\ncache this is seconds-not-milliseconds, so the UI surfaces a\n\"Refresh\" button rather than polling on a timer.\n\nReuses ``state.engine.cache`` (a long-lived SQLAlchemy session\nfactory) — opening a fresh ``Cache(...)`` per request would burn\na connection-pool spin-up on every Settings tab activation.",
+        "operationId": "get_storage_stats_storage_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageStats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/storage/gc": {
+      "post": {
+        "summary": "Post Storage Gc",
+        "description": "Workdir sweep + (optional) LRU eviction.\n\nMirror of ``med storage gc``. When ``apply=False`` the route\nreports what would happen without writing — workdir candidates are\nlisted but not deleted, and eviction runs in ``dry_run=True``\nmode. ``eviction_enabled=False`` in engine config disables the\neviction pass regardless of the ``evict`` flag (the CLI honours\nthe same gate).",
+        "operationId": "post_storage_gc_storage_gc_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GCRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GCResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1750,6 +1882,67 @@
           "file"
         ],
         "title": "Body_post_acquire_upload_acquire_upload_post"
+      },
+      "CatalogResponse": {
+        "properties": {
+          "ops": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ops"
+          },
+          "backends": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Backends"
+          },
+          "hidden_ops": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hidden Ops"
+          },
+          "hidden_backends": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hidden Backends"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ops",
+          "backends",
+          "hidden_ops",
+          "hidden_backends"
+        ],
+        "title": "CatalogResponse",
+        "description": "Visibility state + the universe of toggleable entries.\n\n``ops`` is every registered op name; ``backends`` is every\n``op.name__backend.name`` key. ``hidden_ops`` / ``hidden_backends``\nare the currently-hidden subsets (from ``plugins.toml``). The Web\nUI renders one checkbox per entry and POSTs back the inverted\nstate via PUT /plugins/catalog."
+      },
+      "CatalogUpdate": {
+        "properties": {
+          "hidden_ops": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hidden Ops"
+          },
+          "hidden_backends": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hidden Backends"
+          }
+        },
+        "type": "object",
+        "title": "CatalogUpdate"
       },
       "Chunks": {
         "properties": {
@@ -2234,6 +2427,53 @@
         ],
         "title": "Embedding"
       },
+      "ExtraRow": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "packages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Packages"
+          },
+          "installed": {
+            "type": "boolean",
+            "title": "Installed"
+          },
+          "install_command": {
+            "type": "string",
+            "title": "Install Command"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "packages",
+          "installed",
+          "install_command"
+        ],
+        "title": "ExtraRow"
+      },
+      "ExtrasResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExtraRow"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "ExtrasResponse"
+      },
       "FrameSet": {
         "properties": {
           "id": {
@@ -2294,6 +2534,76 @@
           "created_at"
         ],
         "title": "FrameSet"
+      },
+      "GCRequest": {
+        "properties": {
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": false
+          },
+          "sweep_workdirs": {
+            "type": "boolean",
+            "title": "Sweep Workdirs",
+            "default": true
+          },
+          "evict": {
+            "type": "boolean",
+            "title": "Evict",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "GCRequest",
+        "description": "``apply=False`` is the default — preview what *would* happen."
+      },
+      "GCResponse": {
+        "properties": {
+          "applied": {
+            "type": "boolean",
+            "title": "Applied"
+          },
+          "workdirs_swept": {
+            "type": "integer",
+            "title": "Workdirs Swept"
+          },
+          "workdir_candidates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Workdir Candidates"
+          },
+          "eviction_enabled": {
+            "type": "boolean",
+            "title": "Eviction Enabled"
+          },
+          "bytes_before": {
+            "type": "integer",
+            "title": "Bytes Before",
+            "default": 0
+          },
+          "bytes_after": {
+            "type": "integer",
+            "title": "Bytes After",
+            "default": 0
+          },
+          "evicted_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evicted Artifact Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "applied",
+          "workdirs_swept",
+          "workdir_candidates",
+          "eviction_enabled"
+        ],
+        "title": "GCResponse"
       },
       "GraphNodeSpec": {
         "properties": {
@@ -2733,6 +3043,13 @@
             "type": "boolean",
             "title": "Variadic Inputs"
           },
+          "declared_resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Declared Resources"
+          },
           "description": {
             "type": "string",
             "title": "Description"
@@ -2741,13 +3058,6 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Params Schema"
-          },
-          "declared_resources": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Declared Resources"
           },
           "backends": {
             "items": {
@@ -2767,7 +3077,6 @@
           "variadic_inputs",
           "description",
           "params_schema",
-          "declared_resources",
           "backends"
         ],
         "title": "OperationDetail"
@@ -2885,6 +3194,13 @@
           "variadic_inputs": {
             "type": "boolean",
             "title": "Variadic Inputs"
+          },
+          "declared_resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Declared Resources"
           }
         },
         "type": "object",
@@ -3369,6 +3685,50 @@
           "created_at"
         ],
         "title": "SessionAnalysis"
+      },
+      "StorageStats": {
+        "properties": {
+          "permanent_store": {
+            "type": "string",
+            "title": "Permanent Store"
+          },
+          "workdir": {
+            "type": "string",
+            "title": "Workdir"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "free_gb": {
+            "type": "number",
+            "title": "Free Gb"
+          },
+          "by_kind": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "By Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "permanent_store",
+          "workdir",
+          "namespace",
+          "total_bytes",
+          "free_gb",
+          "by_kind"
+        ],
+        "title": "StorageStats"
       },
       "TokenCreateRequest": {
         "properties": {

@@ -245,18 +245,14 @@
   async function refreshConfig(): Promise<void> {
     opsLoading = true;
     try {
-      const ops = await api.get<Array<{ name: string }>>('/operations');
-      // Pull declared_resources per op so the Resources subsection
-      // shows the effective resource semaphore allocation.
-      const details = await Promise.all(
-        ops.map(async (op) => {
-          const detail = await api.get<OpDetail>(
-            `/operations/${encodeURIComponent(op.name)}`,
-          );
-          return { name: detail.name, declared_resources: detail.declared_resources };
-        }),
-      );
-      opDetails = details;
+      // `/operations` carries `declared_resources` on every row
+      // (post-commit-49 audit lift from the detail endpoint) — one
+      // HTTP request instead of N+1 detail fetches.
+      const ops = await api.get<OpDetail[]>('/operations');
+      opDetails = ops.map((op) => ({
+        name: op.name,
+        declared_resources: op.declared_resources ?? [],
+      }));
     } catch (e) {
       error = e instanceof ApiError ? e.detail : String(e);
     } finally {

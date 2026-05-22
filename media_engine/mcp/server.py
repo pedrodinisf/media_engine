@@ -34,6 +34,7 @@ from media_engine.backends import BackendRegistry
 from media_engine.mcp.exporter import export_op_as_mcp_tool
 from media_engine.ops import OpRegistry
 from media_engine.runtime.engine import Engine
+from media_engine.runtime.plugins import load_catalog
 
 # The ``mcp`` SDK is an optional install (``[mcp]`` extra). We never
 # import it at module load — every entry point lazy-imports inside the
@@ -96,13 +97,7 @@ def _filtered_op_names(
     leaves the catalog gate in its empty (everything visible) state —
     handy for tests that don't care about plugin filtering.
     """
-    from media_engine.runtime.plugins import load_catalog
-
-    catalog = (
-        load_catalog(config_dir)
-        if config_dir is not None
-        else None
-    )
+    catalog = load_catalog(config_dir) if config_dir is not None else None
     return [
         op.name
         for op in OpRegistry.list_all()
