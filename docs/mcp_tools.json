@@ -1,0 +1,1799 @@
+[
+  {
+    "name": "acquire__livestream",
+    "description": "Record a live HLS stream into one or more segment Video artifacts.\n\nOp name: acquire.livestream (version 1.0.0)\nInputs: none\nOutputs: video",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "quality": {
+          "default": "best",
+          "title": "Quality",
+          "type": "string"
+        },
+        "max_duration_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Duration Sec"
+        },
+        "segment_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Segment Seconds"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "ffmpeg-recorder"
+          ],
+          "description": "Backend selector. Default: 'ffmpeg-recorder'."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "acquire__upload",
+    "description": "Ingest a local file into the content-addressed store.\n\nOp name: acquire.upload (version 1.0.0)\nInputs: none\nOutputs: video, audio, image",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "source_path": {
+          "format": "path",
+          "title": "Source Path",
+          "type": "string"
+        },
+        "original_filename": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original Filename"
+        },
+        "link_mode": {
+          "default": "copy",
+          "enum": [
+            "copy",
+            "hardlink"
+          ],
+          "title": "Link Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_path"
+      ]
+    }
+  },
+  {
+    "name": "acquire__url",
+    "description": "Download a remote video by URL into the content-addressed store.\n\nOp name: acquire.url (version 1.0.0)\nInputs: none\nOutputs: video",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "quality": {
+          "default": "best",
+          "title": "Quality",
+          "type": "string"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "playwright-hls",
+            "yt-dlp"
+          ],
+          "description": "Backend selector. Default: 'yt-dlp'."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "audio__detect_language",
+    "description": "Detect the spoken language of an Audio artifact (cheap, no decode).\n\nOp name: audio.detect_language (version 1.0.0)\nInputs: audio\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "mlx-community/whisper-large-v3-mlx",
+          "title": "Model",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['audio']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "mlx-whisper"
+          ],
+          "description": "Backend selector. Default: 'mlx-whisper'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "audio__diarize",
+    "description": "Identify who spoke when in an Audio artifact.\n\nOp name: audio.diarize (version 1.0.0)\nInputs: audio\nOutputs: diarization",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "num_speakers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Speakers"
+        },
+        "min_speakers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Speakers"
+        },
+        "max_speakers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Speakers"
+        },
+        "model": {
+          "default": "pyannote/speaker-diarization-3.1",
+          "title": "Model",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['audio']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "pyannote"
+          ],
+          "description": "Backend selector. Default: 'pyannote'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "audio__transcribe",
+    "description": "Transcribe an Audio artifact into a typed Transcript with timestamps.\n\nOp name: audio.transcribe (version 1.0.0)\nInputs: audio\nOutputs: transcript",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "mlx-community/whisper-large-v3-mlx",
+          "title": "Model",
+          "type": "string"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "temperature": {
+          "default": 0.0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "word_timestamps": {
+          "default": true,
+          "title": "Word Timestamps",
+          "type": "boolean"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['audio']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "mlx-whisper"
+          ],
+          "description": "Backend selector. Default: 'mlx-whisper'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "audio__transcribe_diarized",
+    "description": "Run audio.transcribe + audio.diarize and align speakers per segment.\n\nOp name: audio.transcribe_diarized (version 1.0.0)\nInputs: audio\nOutputs: transcript",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "transcribe_model": {
+          "default": "mlx-community/whisper-large-v3-mlx",
+          "title": "Transcribe Model",
+          "type": "string"
+        },
+        "diarize_model": {
+          "default": "pyannote/speaker-diarization-3.1",
+          "title": "Diarize Model",
+          "type": "string"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "num_speakers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Speakers"
+        },
+        "transcribe_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transcribe Backend"
+        },
+        "diarize_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diarize Backend"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['audio']"
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "chunk__semantic",
+    "description": "Split a text-bearing artifact into overlapping semantic chunks.\n\nOp name: chunk.semantic (version 1.0.0)\nInputs: transcript, markdown\nOutputs: chunks",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "max_chars": {
+          "default": 2000,
+          "title": "Max Chars",
+          "type": "integer"
+        },
+        "overlap_chars": {
+          "default": 200,
+          "title": "Overlap Chars",
+          "type": "integer"
+        },
+        "strategy": {
+          "default": "sentence",
+          "enum": [
+            "sentence",
+            "paragraph"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['transcript', 'markdown']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "default"
+          ],
+          "description": "Backend selector. Default: 'default'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "document__parse",
+    "description": "Extract text (and optionally structure) from a document file.\n\nOp name: document.parse (version 1.0.0)\nInputs: none\nOutputs: document",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "source_path": {
+          "format": "path",
+          "title": "Source Path",
+          "type": "string"
+        },
+        "mode": {
+          "default": "text",
+          "enum": [
+            "text",
+            "structured"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "pymupdf"
+          ],
+          "description": "Backend selector. Default: 'pymupdf'."
+        }
+      },
+      "required": [
+        "source_path"
+      ]
+    }
+  },
+  {
+    "name": "embed__text",
+    "description": "Embed text-bearing artifacts into vector(s).\n\nOp name: embed.text (version 1.0.0)\nInputs: transcript, markdown, chunks\nOutputs: embedding",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "sentence-transformers/all-MiniLM-L6-v2",
+          "title": "Model",
+          "type": "string"
+        },
+        "normalize": {
+          "default": true,
+          "title": "Normalize",
+          "type": "boolean"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['transcript', 'markdown', 'chunks']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "sentence-transformers"
+          ],
+          "description": "Backend selector. Default: 'sentence-transformers'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "frames__analyze",
+    "description": "Analyze a pre-extracted FrameSet with a vision-language model.\n\nOp name: frames.analyze (version 1.0.0)\nInputs: frameset\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Prompt"
+        },
+        "model": {
+          "default": "gemini-2.5-pro",
+          "title": "Model",
+          "type": "string"
+        },
+        "temperature": {
+          "default": 0.2,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_tokens": {
+          "default": 4096,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "media_resolution": {
+          "default": "medium",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Media Resolution",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['frameset']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "gemini",
+            "vllm-mlx"
+          ],
+          "description": "Backend selector. Default: 'gemini'."
+        }
+      },
+      "required": [
+        "prompt",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "frames__compare",
+    "description": "Compare two or more FrameSets / Images with a VLM.\n\nOp name: frames.compare (version 1.0.0)\nInputs: frameset, image\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "default": "Describe the differences and similarities between these inputs.",
+          "title": "Prompt",
+          "type": "string"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Prompt"
+        },
+        "model": {
+          "default": "gemini-2.5-pro",
+          "title": "Model",
+          "type": "string"
+        },
+        "temperature": {
+          "default": 0.2,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_tokens": {
+          "default": 4096,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['frameset', 'image']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "gemini"
+          ],
+          "description": "Backend selector. Default: 'gemini'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "frames__subsample",
+    "description": "Reduce a FrameSet to ≤ max_n frames via uniform stride.\n\nOp name: frames.subsample (version 1.0.0)\nInputs: frameset\nOutputs: frameset",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "max_n": {
+          "default": 30,
+          "title": "Max N",
+          "type": "integer"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['frameset']"
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "image__classify",
+    "description": "Zero-shot tag an image against caller-supplied labels.\n\nOp name: image.classify (version 1.0.0)\nInputs: image\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Labels",
+          "type": "array"
+        },
+        "model": {
+          "default": "ViT-B-32",
+          "title": "Model",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['image']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "gemini",
+            "open-clip"
+          ],
+          "description": "Backend selector. Default: 'open-clip'."
+        }
+      },
+      "required": [
+        "labels",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "image__describe",
+    "description": "Describe a single image with a vision-language model.\n\nOp name: image.describe (version 1.0.0)\nInputs: image\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "default": "Describe this image in detail.",
+          "title": "Prompt",
+          "type": "string"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Prompt"
+        },
+        "model": {
+          "default": "gemini-2.5-flash",
+          "title": "Model",
+          "type": "string"
+        },
+        "temperature": {
+          "default": 0.2,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_tokens": {
+          "default": 2048,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['image']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "gemini"
+          ],
+          "description": "Backend selector. Default: 'gemini'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "image__ocr",
+    "description": "Extract text (with bounding boxes) from an image.\n\nOp name: image.ocr (version 1.0.0)\nInputs: image\nOutputs: ocrtext",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "gemini-2.5-flash",
+          "title": "Model",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['image']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "gemini-vision",
+            "rapidocr"
+          ],
+          "description": "Backend selector. Default: 'rapidocr'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "intelligence__analyze",
+    "description": "Per-segment structured analysis of a Transcript → SessionAnalysis.\n\nOp name: intelligence.analyze (version 1.0.0)\nInputs: transcript\nOutputs: session_analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "default": "",
+          "title": "Prompt",
+          "type": "string"
+        },
+        "schema_def": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Schema Def"
+        },
+        "model": {
+          "default": "gemini-2.5-flash",
+          "title": "Model",
+          "type": "string"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Prompt"
+        },
+        "temperature": {
+          "default": 0.2,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_tokens": {
+          "default": 2048,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "window": {
+          "default": 1,
+          "title": "Window",
+          "type": "integer"
+        },
+        "classify_labels": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Classify Labels"
+        },
+        "classify_multi_label": {
+          "default": false,
+          "title": "Classify Multi Label",
+          "type": "boolean"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['transcript']"
+        }
+      },
+      "required": [
+        "schema_def",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "intelligence__classify",
+    "description": "Classify a text artifact against a caller-supplied taxonomy.\n\nOp name: intelligence.classify (version 1.0.0)\nInputs: transcript, markdown, analysis\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Labels",
+          "type": "array"
+        },
+        "multi_label": {
+          "default": false,
+          "title": "Multi Label",
+          "type": "boolean"
+        },
+        "model": {
+          "default": "gemini-2.5-flash",
+          "title": "Model",
+          "type": "string"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Prompt"
+        },
+        "temperature": {
+          "default": 0.0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_tokens": {
+          "default": 1024,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['transcript', 'markdown', 'analysis']"
+        }
+      },
+      "required": [
+        "labels",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "intelligence__extract",
+    "description": "Extract a profile-defined JSON object from a text artifact.\n\nOp name: intelligence.extract (version 1.0.0)\nInputs: transcript, markdown, analysis\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "schema_def": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Schema Def"
+        },
+        "model": {
+          "default": "gemini-2.5-flash",
+          "title": "Model",
+          "type": "string"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Prompt"
+        },
+        "temperature": {
+          "default": 0.2,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_tokens": {
+          "default": 4096,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['transcript', 'markdown', 'analysis']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "gemini",
+            "mlx-lm"
+          ],
+          "description": "Backend selector. Default: 'gemini'."
+        }
+      },
+      "required": [
+        "prompt",
+        "schema_def",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "intelligence__summarize",
+    "description": "Summarize a text artifact into {summary, key_points}.\n\nOp name: intelligence.summarize (version 1.0.0)\nInputs: transcript, markdown, analysis\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "gemini-2.5-flash",
+          "title": "Model",
+          "type": "string"
+        },
+        "focus": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Focus"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Prompt"
+        },
+        "temperature": {
+          "default": 0.2,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_tokens": {
+          "default": 2048,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['transcript', 'markdown', 'analysis']"
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "metadata__scrape_page",
+    "description": "Scrape an event/web page into a typed Analysis (title, speakers, …).\n\nOp name: metadata.scrape_page (version 1.0.0)\nInputs: none\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "report__session",
+    "description": "Render a SessionAnalysis through a Jinja2 markdown template.\n\nOp name: report.session (version 1.0.0)\nInputs: session_analysis\nOutputs: markdown",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "format": "path",
+          "title": "Template",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "extra_context": {
+          "additionalProperties": true,
+          "title": "Extra Context",
+          "type": "object"
+        },
+        "template_sha": {
+          "default": "",
+          "title": "Template Sha",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['session_analysis']"
+        }
+      },
+      "required": [
+        "template",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "report__zeitgeist",
+    "description": "Render an aggregate across multiple SessionAnalysis artifacts.\n\nOp name: report.zeitgeist (version 1.0.0)\nInputs: session_analysis\nOutputs: markdown",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "format": "path",
+          "title": "Template",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "extra_context": {
+          "additionalProperties": true,
+          "title": "Extra Context",
+          "type": "object"
+        },
+        "top_n_topics": {
+          "default": 20,
+          "title": "Top N Topics",
+          "type": "integer"
+        },
+        "top_n_entities": {
+          "default": 30,
+          "title": "Top N Entities",
+          "type": "integer"
+        },
+        "top_n_claims": {
+          "default": 20,
+          "title": "Top N Claims",
+          "type": "integer"
+        },
+        "top_n_speakers": {
+          "default": 20,
+          "title": "Top N Speakers",
+          "type": "integer"
+        },
+        "template_sha": {
+          "default": "",
+          "title": "Template Sha",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['session_analysis']"
+        }
+      },
+      "required": [
+        "template",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "search__fulltext",
+    "description": "Rank text-bearing artifacts by BM25 against a keyword query.\n\nOp name: search.fulltext (version 1.0.0)\nInputs: none\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "top_k": {
+          "default": 10,
+          "title": "Top K",
+          "type": "integer"
+        },
+        "kind_filter": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Kind"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind Filter"
+        },
+        "refresh_nonce": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refresh Nonce"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "postgres-tsvector",
+            "sqlite-fts5"
+          ],
+          "description": "Backend selector. Default: 'sqlite-fts5'."
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "$defs": {
+        "Kind": {
+          "enum": [
+            "video",
+            "audio",
+            "image",
+            "frameset",
+            "transcript",
+            "diarization",
+            "ocrtext",
+            "chunks",
+            "embedding",
+            "analysis",
+            "session_analysis",
+            "markdown",
+            "document",
+            "webpage"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "search__hybrid",
+    "description": "RRF-fuse a semantic query Embedding and a keyword query string.\n\nOp name: search.hybrid (version 1.0.0)\nInputs: embedding\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "top_k": {
+          "default": 10,
+          "title": "Top K",
+          "type": "integer"
+        },
+        "kind_filter": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Kind"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind Filter"
+        },
+        "rrf_k": {
+          "default": 60,
+          "title": "Rrf K",
+          "type": "integer"
+        },
+        "refresh_nonce": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refresh Nonce"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['embedding']"
+        }
+      },
+      "required": [
+        "query",
+        "input_artifact_ids"
+      ],
+      "$defs": {
+        "Kind": {
+          "enum": [
+            "video",
+            "audio",
+            "image",
+            "frameset",
+            "transcript",
+            "diarization",
+            "ocrtext",
+            "chunks",
+            "embedding",
+            "analysis",
+            "session_analysis",
+            "markdown",
+            "document",
+            "webpage"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "search__semantic",
+    "description": "Rank artifacts by cosine similarity to the query Embedding.\n\nOp name: search.semantic (version 1.0.0)\nInputs: embedding\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "top_k": {
+          "default": 10,
+          "title": "Top K",
+          "type": "integer"
+        },
+        "kind_filter": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Kind"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind Filter"
+        },
+        "refresh_nonce": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refresh Nonce"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Sha256 ids of one or more input artifacts, each one of: ['embedding']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "pgvector",
+            "sqlite"
+          ],
+          "description": "Backend selector. Default: 'sqlite'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ],
+      "$defs": {
+        "Kind": {
+          "enum": [
+            "video",
+            "audio",
+            "image",
+            "frameset",
+            "transcript",
+            "diarization",
+            "ocrtext",
+            "chunks",
+            "embedding",
+            "analysis",
+            "session_analysis",
+            "markdown",
+            "document",
+            "webpage"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "speakers__identify",
+    "description": "Resolve ``speaker_id`` clusters in a Transcript to names from a CSV.\n\nOp name: speakers.identify (version 1.0.0)\nInputs: transcript\nOutputs: transcript",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "speaker_db": {
+          "format": "path",
+          "title": "Speaker Db",
+          "type": "string"
+        },
+        "min_confidence": {
+          "default": 0.7,
+          "title": "Min Confidence",
+          "type": "number"
+        },
+        "name_field": {
+          "default": "name",
+          "title": "Name Field",
+          "type": "string"
+        },
+        "alias_field": {
+          "default": "aliases",
+          "title": "Alias Field",
+          "type": "string"
+        },
+        "intro_window_seconds": {
+          "default": 30.0,
+          "title": "Intro Window Seconds",
+          "type": "number"
+        },
+        "speaker_db_sha": {
+          "default": "",
+          "title": "Speaker Db Sha",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['transcript']"
+        }
+      },
+      "required": [
+        "speaker_db",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "transcript__merge",
+    "description": "Merge adjacent same-speaker transcript segments by gap + char cap.\n\nOp name: transcript.merge (version 1.0.0)\nInputs: transcript\nOutputs: transcript",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "gap_threshold_sec": {
+          "default": 2.0,
+          "title": "Gap Threshold Sec",
+          "type": "number"
+        },
+        "max_chars": {
+          "default": 2000,
+          "title": "Max Chars",
+          "type": "integer"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['transcript']"
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "transcript__parse",
+    "description": "Ingest a transcript file (srt/speakered_txt/vtt) into a Transcript.\n\nOp name: transcript.parse (version 1.0.0)\nInputs: none\nOutputs: transcript",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "source_path": {
+          "format": "path",
+          "title": "Source Path",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "srt",
+            "speakered_txt",
+            "vtt"
+          ],
+          "title": "Format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_path",
+        "format"
+      ]
+    }
+  },
+  {
+    "name": "video__extract_audio",
+    "description": "Extract the audio track from a Video as a typed Audio artifact.\n\nOp name: video.extract_audio (version 1.0.0)\nInputs: video\nOutputs: audio",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sample_rate": {
+          "default": 16000,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "channels": {
+          "default": 1,
+          "enum": [
+            1,
+            2
+          ],
+          "title": "Channels",
+          "type": "integer"
+        },
+        "codec": {
+          "default": "pcm_s16le",
+          "enum": [
+            "pcm_s16le",
+            "aac",
+            "flac"
+          ],
+          "title": "Codec",
+          "type": "string"
+        },
+        "container": {
+          "default": "wav",
+          "enum": [
+            "wav",
+            "m4a",
+            "flac"
+          ],
+          "title": "Container",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['video']"
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "video__multimodal",
+    "description": "Understand a whole video (visual + audio) with one model call.\n\nOp name: video.multimodal (version 1.0.0)\nInputs: video\nOutputs: analysis",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System Prompt"
+        },
+        "model": {
+          "default": "gemini-2.5-pro",
+          "title": "Model",
+          "type": "string"
+        },
+        "media_resolution": {
+          "default": "medium",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Media Resolution",
+          "type": "string"
+        },
+        "temperature": {
+          "default": 0.7,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_tokens": {
+          "default": 8192,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "additional_instructions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Additional Instructions"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['video']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "gemini",
+            "vllm-mlx"
+          ],
+          "description": "Backend selector. Default: 'gemini'."
+        }
+      },
+      "required": [
+        "prompt",
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "video__sample_frames",
+    "description": "Extract frames from a Video into a typed FrameSet artifact.\n\nOp name: video.sample_frames (version 1.0.0)\nInputs: video\nOutputs: frameset",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "strategy": {
+          "default": "uniform",
+          "enum": [
+            "uniform",
+            "scene_change"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        },
+        "fps": {
+          "default": 1.0,
+          "title": "Fps",
+          "type": "number"
+        },
+        "max_width": {
+          "default": 480,
+          "title": "Max Width",
+          "type": "integer"
+        },
+        "max_height": {
+          "default": 360,
+          "title": "Max Height",
+          "type": "integer"
+        },
+        "quality": {
+          "default": 2,
+          "title": "Quality",
+          "type": "integer"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['video']"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "ffmpeg-uniform",
+            "pyscenedetect"
+          ],
+          "description": "Backend selector. Default: 'ffmpeg-uniform'."
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "video__trim",
+    "description": "Trim a Video to a [start, end) window via ffmpeg -c copy.\n\nOp name: video.trim (version 1.0.0)\nInputs: video\nOutputs: video",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start_sec": {
+          "default": 0.0,
+          "title": "Start Sec",
+          "type": "number"
+        },
+        "end_sec": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Sec"
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1,
+          "description": "Sha256 ids of input artifacts in declared order: ['video']"
+        }
+      },
+      "required": [
+        "input_artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "web__fetch",
+    "description": "Fetch a URL into a typed WebPage (title + plaintext + status).\n\nOp name: web.fetch (version 1.0.0)\nInputs: none\nOutputs: webpage",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "render_js": {
+          "default": false,
+          "title": "Render Js",
+          "type": "boolean"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "httpx",
+            "playwright"
+          ],
+          "description": "Backend selector. Default: 'httpx'."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  }
+]

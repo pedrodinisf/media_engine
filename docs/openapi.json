@@ -1,0 +1,2706 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "media_engine",
+    "description": "Universal media-processing engine — typed artifacts, composable operations, pluggable backends.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Get Health",
+        "operationId": "get_health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Get Ready",
+        "operationId": "get_ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/run": {
+      "post": {
+        "summary": "Post Run",
+        "operationId": "post_run_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pipelines": {
+      "post": {
+        "summary": "Post Pipeline",
+        "operationId": "post_pipeline_pipelines_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs": {
+      "get": {
+        "summary": "List Jobs Endpoint",
+        "operationId": "list_jobs_endpoint_jobs_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(pending|running|completed|failed|cancelled)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  },
+                  "title": "Response List Jobs Endpoint Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{job_id}": {
+      "get": {
+        "summary": "Get Job Endpoint",
+        "operationId": "get_job_endpoint_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Job Endpoint",
+        "operationId": "delete_job_endpoint_jobs__job_id__delete",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{job_id}/events": {
+      "get": {
+        "summary": "Get Job Events",
+        "operationId": "get_job_events_jobs__job_id__events_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/artifacts": {
+      "get": {
+        "summary": "List Artifacts Endpoint",
+        "description": "Paginated artifact list, newest first.\n\nOffset-based pagination: pass ``?offset=<n>&limit=<m>`` to walk a\nlarge cache page by page. We over-fetch by one row to detect\nwhether there's a next page without a separate COUNT query — if\nwe get back ``limit + 1`` rows, the surplus is dropped from the\nresponse and the client knows to call again with\n``offset = current_offset + limit``.",
+        "operationId": "list_artifacts_endpoint_artifacts_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/artifacts/{artifact_id}": {
+      "get": {
+        "summary": "Get Artifact Endpoint",
+        "operationId": "get_artifact_endpoint_artifacts__artifact_id__get",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Video"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Audio"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Image"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FrameSet"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Transcript"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Diarization"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OCRText"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Chunks"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Embedding"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Analysis"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionAnalysis"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MarkdownArtifact"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Document"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WebPage"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "kind",
+                    "mapping": {
+                      "video": "#/components/schemas/Video",
+                      "audio": "#/components/schemas/Audio",
+                      "image": "#/components/schemas/Image",
+                      "frameset": "#/components/schemas/FrameSet",
+                      "transcript": "#/components/schemas/Transcript",
+                      "diarization": "#/components/schemas/Diarization",
+                      "ocrtext": "#/components/schemas/OCRText",
+                      "chunks": "#/components/schemas/Chunks",
+                      "embedding": "#/components/schemas/Embedding",
+                      "analysis": "#/components/schemas/Analysis",
+                      "session_analysis": "#/components/schemas/SessionAnalysis",
+                      "markdown": "#/components/schemas/MarkdownArtifact",
+                      "document": "#/components/schemas/Document",
+                      "webpage": "#/components/schemas/WebPage"
+                    }
+                  },
+                  "title": "Response Get Artifact Endpoint Artifacts  Artifact Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/artifacts/{artifact_id}/file": {
+      "get": {
+        "summary": "Get Artifact File",
+        "operationId": "get_artifact_file_artifacts__artifact_id__file_get",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/artifacts/{artifact_id}/lineage": {
+      "get": {
+        "summary": "Get Artifact Lineage",
+        "operationId": "get_artifact_lineage_artifacts__artifact_id__lineage_get",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 0,
+              "default": 10,
+              "title": "Depth"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Artifact Lineage Artifacts  Artifact Id  Lineage Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/profiles": {
+      "get": {
+        "summary": "List Profiles Endpoint",
+        "operationId": "list_profiles_endpoint_profiles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProfileSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Profiles Endpoint Profiles Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Upload Profile Endpoint",
+        "description": "Persist a user-supplied profile under ``{config_dir}/profiles/``.\n\nThe accepted body is a validated profile model — invalid YAML never\nreaches the disk. The profile name is restricted to kebab-case\n(lowercase, digits, ``-``, ``_``; 1–64 chars) so it can't escape\nthe profiles directory through path-traversal segments like\n``../../etc/passwd``.",
+        "operationId": "upload_profile_endpoint_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PromptProfile"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/profiles/{name}": {
+      "get": {
+        "summary": "Get Profile Endpoint",
+        "operationId": "get_profile_endpoint_profiles__name__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Profile Endpoint Profiles  Name  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/operations": {
+      "get": {
+        "summary": "List Operations Endpoint",
+        "operationId": "list_operations_endpoint_operations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OperationSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Operations Endpoint Operations Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/operations/{name}": {
+      "get": {
+        "summary": "Get Operation Endpoint",
+        "operationId": "get_operation_endpoint_operations__name__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backends": {
+      "get": {
+        "summary": "List Backends Endpoint",
+        "operationId": "list_backends_endpoint_backends_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BackendSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Backends Endpoint Backends Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backends/{name}": {
+      "get": {
+        "summary": "Get Backend Endpoint",
+        "operationId": "get_backend_endpoint_backends__name__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "op",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Op"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tokens": {
+      "post": {
+        "summary": "Post Token Endpoint",
+        "operationId": "post_token_endpoint_tokens_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Tokens Endpoint",
+        "operationId": "list_tokens_endpoint_tokens_get",
+        "parameters": [
+          {
+            "name": "include_revoked",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Revoked"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiTokenInfo"
+                  },
+                  "title": "Response List Tokens Endpoint Tokens Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tokens/{token_id}": {
+      "delete": {
+        "summary": "Revoke Token Endpoint",
+        "operationId": "revoke_token_endpoint_tokens__token_id__delete",
+        "parameters": [
+          {
+            "name": "token_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Analysis": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "analysis",
+            "title": "Kind",
+            "default": "analysis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Analysis"
+      },
+      "ApiTokenInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "namespace",
+          "created_at"
+        ],
+        "title": "ApiTokenInfo",
+        "description": "Public projection of an API token row (no hash, no secret)."
+      },
+      "ArtifactPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Video"
+                },
+                {
+                  "$ref": "#/components/schemas/Audio"
+                },
+                {
+                  "$ref": "#/components/schemas/Image"
+                },
+                {
+                  "$ref": "#/components/schemas/FrameSet"
+                },
+                {
+                  "$ref": "#/components/schemas/Transcript"
+                },
+                {
+                  "$ref": "#/components/schemas/Diarization"
+                },
+                {
+                  "$ref": "#/components/schemas/OCRText"
+                },
+                {
+                  "$ref": "#/components/schemas/Chunks"
+                },
+                {
+                  "$ref": "#/components/schemas/Embedding"
+                },
+                {
+                  "$ref": "#/components/schemas/Analysis"
+                },
+                {
+                  "$ref": "#/components/schemas/SessionAnalysis"
+                },
+                {
+                  "$ref": "#/components/schemas/MarkdownArtifact"
+                },
+                {
+                  "$ref": "#/components/schemas/Document"
+                },
+                {
+                  "$ref": "#/components/schemas/WebPage"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "analysis": "#/components/schemas/Analysis",
+                  "audio": "#/components/schemas/Audio",
+                  "chunks": "#/components/schemas/Chunks",
+                  "diarization": "#/components/schemas/Diarization",
+                  "document": "#/components/schemas/Document",
+                  "embedding": "#/components/schemas/Embedding",
+                  "frameset": "#/components/schemas/FrameSet",
+                  "image": "#/components/schemas/Image",
+                  "markdown": "#/components/schemas/MarkdownArtifact",
+                  "ocrtext": "#/components/schemas/OCRText",
+                  "session_analysis": "#/components/schemas/SessionAnalysis",
+                  "transcript": "#/components/schemas/Transcript",
+                  "video": "#/components/schemas/Video",
+                  "webpage": "#/components/schemas/WebPage"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "limit"
+        ],
+        "title": "ArtifactPage"
+      },
+      "Audio": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "audio",
+            "title": "Kind",
+            "default": "audio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Audio"
+      },
+      "BackendDetail": {
+        "properties": {
+          "op_name": {
+            "type": "string",
+            "title": "Op Name"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "requires": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Requires"
+          },
+          "health": {
+            "type": "string",
+            "title": "Health"
+          }
+        },
+        "type": "object",
+        "required": [
+          "op_name",
+          "name",
+          "version",
+          "requires",
+          "health"
+        ],
+        "title": "BackendDetail"
+      },
+      "BackendSummary": {
+        "properties": {
+          "op_name": {
+            "type": "string",
+            "title": "Op Name"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "op_name",
+          "name",
+          "version"
+        ],
+        "title": "BackendSummary"
+      },
+      "Chunks": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "chunks",
+            "title": "Kind",
+            "default": "chunks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Chunks"
+      },
+      "Diarization": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "diarization",
+            "title": "Kind",
+            "default": "diarization"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Diarization"
+      },
+      "Document": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "document",
+            "title": "Kind",
+            "default": "document"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Document"
+      },
+      "Embedding": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "embedding",
+            "title": "Kind",
+            "default": "embedding"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Embedding"
+      },
+      "FrameSet": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "frameset",
+            "title": "Kind",
+            "default": "frameset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "FrameSet"
+      },
+      "GraphNodeSpec": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "op": {
+            "type": "string",
+            "title": "Op"
+          },
+          "inputs": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Inputs"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Depends On"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "op"
+        ],
+        "title": "GraphNodeSpec",
+        "description": "One op invocation in a pipeline-profile graph."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Image": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "image",
+            "title": "Kind",
+            "default": "image"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Image"
+      },
+      "InputSpec": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "title": "InputSpec",
+        "description": "A named source artifact this profile expects at run time."
+      },
+      "Job": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "pipeline_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "op_run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Op Run Ids",
+            "default": []
+          },
+          "output_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Output Artifact Ids",
+            "default": []
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitted At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "submitted_at"
+        ],
+        "title": "Job",
+        "description": "REST job — one async unit of work submitted via the API.\n\nA job wraps either a single op (``POST /run``) or a compiled pipeline\n(``POST /pipelines``). The row is created in ``pending`` immediately on\nsubmission so the client always has an id to poll; the background\nrunner flips it to ``running`` and finally to ``completed`` /\n``failed`` / ``cancelled``."
+      },
+      "JobAck": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "JobAck"
+      },
+      "JobDetail": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          },
+          "op_runs": {
+            "items": {
+              "$ref": "#/components/schemas/OperationRunRef"
+            },
+            "type": "array",
+            "title": "Op Runs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job"
+        ],
+        "title": "JobDetail"
+      },
+      "MarkdownArtifact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "markdown",
+            "title": "Kind",
+            "default": "markdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "MarkdownArtifact"
+      },
+      "OCRText": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "ocrtext",
+            "title": "Kind",
+            "default": "ocrtext"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "OCRText"
+      },
+      "OperationDetail": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "input_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Input Kinds"
+          },
+          "output_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Output Kinds"
+          },
+          "default_backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Backend"
+          },
+          "variadic_inputs": {
+            "type": "boolean",
+            "title": "Variadic Inputs"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "params_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params Schema"
+          },
+          "declared_resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Declared Resources"
+          },
+          "backends": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Backends"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "input_kinds",
+          "output_kinds",
+          "default_backend",
+          "variadic_inputs",
+          "description",
+          "params_schema",
+          "declared_resources",
+          "backends"
+        ],
+        "title": "OperationDetail"
+      },
+      "OperationRunRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "op_name": {
+            "type": "string",
+            "title": "Op Name"
+          },
+          "op_version": {
+            "type": "string",
+            "title": "Op Version"
+          },
+          "backend_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Name"
+          },
+          "backend_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Version"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "op_name",
+          "op_version",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "OperationRunRef",
+        "description": "Sliver of a recorded operation run; what produced an artifact."
+      },
+      "OperationSummary": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "input_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Input Kinds"
+          },
+          "output_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Output Kinds"
+          },
+          "default_backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Backend"
+          },
+          "variadic_inputs": {
+            "type": "boolean",
+            "title": "Variadic Inputs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "input_kinds",
+          "output_kinds",
+          "default_backend",
+          "variadic_inputs"
+        ],
+        "title": "OperationSummary"
+      },
+      "PipelineProfile": {
+        "properties": {
+          "profile_schema_version": {
+            "type": "string",
+            "title": "Profile Schema Version",
+            "default": "1.0"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "const": "pipeline",
+            "title": "Kind",
+            "default": "pipeline"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/InputSpec"
+            },
+            "type": "array",
+            "title": "Inputs"
+          },
+          "graph": {
+            "items": {
+              "$ref": "#/components/schemas/GraphNodeSpec"
+            },
+            "type": "array",
+            "title": "Graph"
+          },
+          "outputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Outputs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "graph"
+        ],
+        "title": "PipelineProfile",
+        "description": "``kind: pipeline`` — explicit DAG of op invocations."
+      },
+      "PipelineRequest": {
+        "properties": {
+          "profile_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Name"
+          },
+          "pipeline_yaml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Yaml"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineSourceSpec"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "title": "PipelineRequest",
+        "description": "Submit a pipeline by name (server-known profile) OR by inline YAML.\n\nExactly one of ``profile_name`` / ``pipeline_yaml`` must be supplied;\n``sources`` maps the profile's declared input names to artifact ids\nalready in the cache."
+      },
+      "PipelineSourceSpec": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "artifact_id": {
+            "type": "string",
+            "title": "Artifact Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "artifact_id"
+        ],
+        "title": "PipelineSourceSpec"
+      },
+      "ProfileSummary": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pipeline",
+              "prompt"
+            ],
+            "title": "Kind"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "path"
+        ],
+        "title": "ProfileSummary"
+      },
+      "PromptProfile": {
+        "properties": {
+          "profile_schema_version": {
+            "type": "string",
+            "title": "Profile Schema Version",
+            "default": "1.0"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "const": "prompt",
+            "title": "Kind",
+            "default": "prompt"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "default_op": {
+            "type": "string",
+            "title": "Default Op",
+            "default": "video.multimodal"
+          },
+          "default_backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Backend"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "PromptProfile",
+        "description": "``kind: prompt`` — markdown frontmatter shorthand for a single VLM/LLM\nop call. The op-call body comes from the markdown body of the file.\n\nThe full op + backend choice still live in the Engine; the prompt profile\njust supplies the system prompt + default op + default backend + optional\noutput schema."
+      },
+      "RunRequest": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "title": "Op"
+          },
+          "inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Inputs"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "op"
+        ],
+        "title": "RunRequest"
+      },
+      "SessionAnalysis": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "session_analysis",
+            "title": "Kind",
+            "default": "session_analysis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "SessionAnalysis"
+      },
+      "TokenCreateRequest": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          }
+        },
+        "type": "object",
+        "title": "TokenCreateRequest"
+      },
+      "TokenCreateResponse": {
+        "properties": {
+          "token_id": {
+            "type": "string",
+            "title": "Token Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token_id",
+          "label",
+          "namespace",
+          "secret"
+        ],
+        "title": "TokenCreateResponse"
+      },
+      "Transcript": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "transcript",
+            "title": "Kind",
+            "default": "transcript"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Transcript"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "Video": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "video",
+            "title": "Kind",
+            "default": "video"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "Video"
+      },
+      "WebPage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "format": "path",
+            "title": "Path"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "default"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "kind": {
+            "type": "string",
+            "const": "webpage",
+            "title": "Kind",
+            "default": "webpage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "created_at"
+        ],
+        "title": "WebPage"
+      }
+    }
+  }
+}

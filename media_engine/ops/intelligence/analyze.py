@@ -119,7 +119,11 @@ class IntelligenceAnalyze(Operation):
     """Per-segment structured analysis of a Transcript → SessionAnalysis."""
 
     name = "intelligence.analyze"
-    version = "1.0.0"
+    # 1.1.0 — propagates `speaker_names` from the input Transcript and
+    # records `speaker` per window using speaker_name > speaker_id >
+    # speaker (in that order), so report templates and cross-session
+    # aggregates see human-readable names when speakers.identify has run.
+    version = "1.1.0"
     input_kinds = (Kind.Transcript,)
     output_kinds = (Kind.SessionAnalysis,)
     params_model = AnalyzeParams
@@ -194,7 +198,14 @@ class IntelligenceAnalyze(Operation):
                 "text": wt.metadata["text"],
                 "analysis": finalize_extract_data(raw, extract_params),
             }
-            speaker = win[0].get("speaker")
+            # Prefer the resolved human name (from speakers.identify), fall
+            # back to the diarization cluster id, then to a legacy `speaker`
+            # field (kept for back-compat with hand-built transcripts).
+            speaker = (
+                win[0].get("speaker_name")
+                or win[0].get("speaker_id")
+                or win[0].get("speaker")
+            )
             if speaker is not None:
                 seg["speaker"] = speaker
             _accumulate(agg, usage)
@@ -226,6 +237,13 @@ class IntelligenceAnalyze(Operation):
             "window": params.window,
             "segment_count": len(segments),
             "usage": agg,
+            # Pass-through speaker resolution from the input Transcript so
+            # downstream report templates (report.session,
+            # report.zeitgeist) can render human names without re-reading
+            # the source artifact.
+            "speaker_names": dict(
+                transcript.metadata.get("speaker_names") or {}
+            ),
         }
         tmp = ctx.workdir / f"session-analysis-{derived_id[:12]}.json"
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
