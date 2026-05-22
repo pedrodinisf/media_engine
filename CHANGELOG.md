@@ -6,12 +6,12 @@ once we ship v1.0 (after Phase 6 — the REST surface needs to freeze
 first). Until then expect 0.x to bump frequently and best-effort
 backwards compatibility.
 
-## [0.6.0-dev] — Unreleased (Phase 6, commits 39–46 of 50 + audit)
+## [0.6.0-dev] — Unreleased (Phase 6, commits 39–48 of 50 + 2 audits)
 
-Phase 6 (local-first Web UI, plan §12.5) is mid-flight. Commits 39–46
-have landed plus a post-46 audit-fix pass; commits 47–50 ship the
-profile workspace, examples library, plugin catalog / settings panel,
-and the docs + v0.6.0 release cut.
+Phase 6 (local-first Web UI, plan §12.5) is mid-flight. Commits 39–48
+have landed plus post-46 and post-48 audit-fix passes; commits 49–50
+ship the plugin catalog + settings panel, the `+ui` multi-stage
+Dockerfile, and the docs + v0.6.0 release cut.
 
 ### Added
 
@@ -72,9 +72,48 @@ and the docs + v0.6.0 release cut.
   --frozen-lockfile && pnpm -C web build` for CI / wheel-build
   use.
 - **Frontend test infra** — Vitest unit suite + Playwright e2e
-  scaffold under `web/tests/`. 27 unit tests today (schema-form
+  scaffold under `web/tests/`. 47 unit tests today (schema-form
   renderer, lineage layout, artifact REST helpers, token store,
-  cost / search format helpers, datetime-local local↔UTC bridge).
+  cost / search format helpers, datetime-local local↔UTC bridge,
+  YAML↔graph round-trip, profile-name validator + fork payload).
+- **Profile workspace** (commit 47) — split-view route at
+  `/ui/profiles/[name]` combining a visual DAG composer (Svelte
+  Flow + dagre) with a CodeMirror 6 YAML editor (YAML mode +
+  history + op-name autocomplete from `GET /operations`) + live
+  compile via `POST /profiles/validate` (650 ms total debounce —
+  150 ms parse + 500 ms validate). YAML is the canonical source
+  of truth; edits round-trip through the `yaml` JS lib's
+  `Document` model so comments + key order on the rest of the
+  file survive byte-identical. Sources picker modal lets the user
+  bind declared inputs to in-namespace artifacts before
+  submitting a run via `POST /pipelines` (with `pipeline_yaml`
+  inline so unsaved drafts execute).
+- **Profile examples library + fork-this** (commit 48) — the
+  `/ui/profiles` index now shows the 8 bundled profiles + every
+  user profile as a card grid, each with a lazy body excerpt and
+  (for bundled profiles) a one-click **fork** modal that
+  validates a kebab-case name client-side, then POSTs the
+  renamed copy to `{config_dir}/profiles/` and opens it in the
+  workspace.
+- **REST: `POST /profiles/validate`** (commit 47) — compile-checks
+  a YAML body without persisting. Always 200; `ok` boolean +
+  typed error envelope (`error_class`, `message`, 1-based `line`).
+  Backs the workspace's live-compile indicator.
+- **REST: `DELETE /profiles/{name}`** (commit 47) — removes a
+  user-overrideable profile from `{config_dir}/profiles/`. Bundled
+  profiles in `<repo>/profiles/` are never touched (the resolver
+  scopes itself to the user dir).
+- **REST: `ProfileSummary.source`** (post-commit-48 audit) —
+  server-supplied `"bundled" | "user"` discriminator on every
+  `GET /profiles` row so the Web UI doesn't need a path heuristic
+  to tell read-only bundled profiles from editable user ones.
+  `POST /profiles` always returns `source: "user"`.
+- **New helper: `profiles.loader.load_profile_from_string`**
+  (post-commit-48 audit) — parses a YAML string straight to a
+  typed `Profile` without writing to disk. `POST /profiles/validate`
+  uses it on the hot path.
+- **CodeMirror 6 + `yaml` JS lib + `@xyflow/svelte` deps** — added
+  for the profile workspace.
 
 ### Changed
 
@@ -124,6 +163,53 @@ and the docs + v0.6.0 release cut.
   namespace to equal the engine's; the actual scope is the
   engine's). `monthlyBurnProjection` comment now matches
   implementation ($0 spend → $0, not null).
+
+### Fixed (post-commit-48 audit, same release window)
+
+- **`POST /profiles/validate` did synchronous tmp-file disk I/O
+  on every keystroke** — the pre-audit path created a workdir,
+  wrote the YAML, called the path-based loader, then unlinked +
+  rmdir'd. With the workspace firing validate every 500 ms of
+  idle, the per-request syscall cost (5 calls: mkdir + write +
+  read + unlink + rmdir) became a measurable hotspot. Added
+  `profiles.loader.load_profile_from_string` and rewired the
+  route to parse YAML straight from memory. Regression test
+  asserts the workdir tree is unchanged after a validate call.
+- **Profile workspace did a full `parseProfileText` + dagre
+  re-layout on every keystroke** — the YAML editor pushed an
+  update to `yamlText` on every change, all `$derived`
+  consumers (parsed graph, composer layout, per-node editor)
+  re-ran synchronously, and dagre layout for a 20-node pipeline
+  is non-trivial (~5–50 ms). Added a 150 ms debounce: heavy
+  consumers now read `yamlForLayout` (a debounced view) while
+  the editor itself still binds `yamlText` 1:1. Single repaint
+  per typing pause instead of per keystroke; validate's outer
+  debounce continues from there (650 ms total before a network
+  call).
+- **YAML-driven rename was a silent footgun** — editing the
+  top-level `name:` key in the YAML pane and hitting Save
+  created a NEW profile at `{newName}.yaml` while leaving the
+  original file in place. Added an explicit guard: Save refuses
+  when `parsed.name !== route name`, with a hint pointing at
+  the fork-then-delete workflow.
+- **`ProfileSummary.source` field replaces the FE
+  `/config/`-substring heuristic** for bundled vs user. The
+  pre-audit heuristic was wrong for non-default config dirs;
+  the server now stamps `source: "bundled" | "user"` on every
+  `GET /profiles` row. Three regression tests cover user, bundled,
+  and POST-returns-user.
+- **Vestigial `untrack(() => {})` block in `appendNodeFromPalette`**
+  removed (read no state, did nothing).
+- **`loadProfileBody` errors now surface in their own UI slot**
+  (previously stuffed into `saveError`).
+- **`/ui/profiles/[name]` dropped its dynamic `import('yaml')`**
+  — the editor already pulls yaml in, so a top-level
+  `import { stringify as yamlStringify } from 'yaml'` removes
+  a microtask delay per workspace mount.
+- **Stale "lands in commit 48" comment** in the per-node card
+  rewritten — commit 48 shipped the examples library, not the
+  per-node SchemaForm; that's a smaller follow-up tracked in
+  `web_ui.md` §10.
 
 ## [0.5.0] — 2026-05-22
 

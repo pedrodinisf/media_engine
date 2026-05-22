@@ -12,11 +12,11 @@ the architectural rationale (mount model, paste-token bootstrap, SSE
 auth) see [`architecture.md`](architecture.md) §11 + §12; for items
 explicitly deferred to v1.x see [`web_ui_deferred.md`](web_ui_deferred.md).
 
-> **Status (2026-05-22).** Phase 6 commits 39–46 + post-46 audit have
-> landed. Ingest, Run, Jobs, Catalog, Search, Cost, and Lineage panels
-> are live. Profile workspace (commit 47), profile examples library
-> (commit 48), plugin catalog + settings (commit 49) are queued. The
-> `+ui` multi-stage Dockerfile lands in commit 50.
+> **Status (2026-05-22).** Phase 6 commits 39–48 + the post-46 audit +
+> post-48 audit have landed. Ingest, Run, Jobs, Catalog, Search, Cost,
+> Lineage, **and Profile workspace + examples library** are live.
+> Plugin catalog + settings (commit 49) are queued. The `+ui`
+> multi-stage Dockerfile lands in commit 50.
 
 ---
 
@@ -96,7 +96,7 @@ flat nav strip:
 | **Catalog** | Paginated artifact list with kind filter + per-kind preview affordances + lineage graph. |
 | **Search** | Sync fulltext / semantic / hybrid query with type-as-you-go feedback. |
 | **Cost** | Per-op (or per-backend / per-namespace) rollup bars + drill-down ledger + monthly burn projection. |
-| **Profiles** | (queued for commits 47–48 — visual DAG composer + YAML editor + examples library) |
+| **Profiles** | Discovery card grid → fork-this for bundled profiles → split-view workspace (visual DAG composer + CodeMirror YAML editor + live compile). |
 | **Settings** | (queued for commit 49 — token CRUD, plugin catalog, storage stats) |
 
 ---
@@ -284,13 +284,62 @@ depth-truncation affordance renders the `truncated_reason` ("max
 depth", "cycle reserved for future") inline so you know *why* the
 walk stopped.
 
+### 4.8 Profiles (`/ui/profiles` + `/ui/profiles/[name]`)
+
+**Index page** (`/ui/profiles`). Card grid over `GET /profiles`,
+one card per discovered profile. Each card carries name + kind chip
+(`pipeline` / `prompt`), description, source badge (🔒 bundled vs
+✎ user — sourced from the server's `ProfileSummary.source` field,
+not a path heuristic), a lazy "body" button that fetches
+`GET /profiles/{name}` once and shows the first ~30 lines of the
+body / graph, and a **"fork"** button for bundled profiles. Fork
+opens a modal asking for a kebab-case name (validated client-side
+against the same regex the server enforces), then re-`POST`s the
+profile under the new name and navigates straight into the
+workspace.
+
+**Workspace** (`/ui/profiles/[name]`). The heart of Phase 6's
+"data, not code" promise. Split view, **YAML is canonical**:
+
+- **Left** — visual DAG composer (Svelte Flow + dagre auto-layout).
+  Op palette down the side; click an op to append a new node to
+  the YAML AST (round-trips through the `yaml` JS lib's `Document`
+  model so comments + key order on the rest of the file survive
+  byte-identically). Per-node card surfaces id rename + backend
+  override; full per-node schema-driven param editor is deferred —
+  for now, params are edited directly in the YAML pane.
+- **Right** — CodeMirror 6 editor with YAML mode, history, fold
+  gutters, indent-on-input, and op-name autocomplete fed by
+  `GET /operations`.
+- **Footer** — live validation panel. Every 650 ms of idle (a
+  150 ms parse-debounce + a 500 ms validate-debounce) fires
+  `POST /profiles/validate`, which compile-checks the YAML in
+  memory (no tmp file). Errors render with a typed error class +
+  message + 1-based line hint; invalid graph nodes get a red
+  border on the canvas.
+- **Header actions** — `Save` (POST /profiles, refuses
+  YAML-driven renames with a hint to fork-then-delete), `Run`
+  (opens the Sources modal then POST /pipelines with the inline
+  `pipeline_yaml` so unsaved drafts run), `Delete` (user profiles
+  only — bundled profiles hide the button).
+
+**Sources modal.** Profile inputs are declared by name + kind
+(`{ name: source, kind: video }`); the modal queries
+`/artifacts?kind=...` per declared input and lets the user pick
+which artifact each one binds to. Disabled until every input is
+bound.
+
+The whole flow is "fork → edit → save → run", same as the CLI
+loop (`med profile ls` → edit the YAML → `med profile run`); the
+UI is just the path of least resistance.
+
 ---
 
 ## 5. CLI ↔ UI parity matrix
 
 Every read-side CLI verb has a UI surface today; every write-side
 verb except `daemon`, `db migrate`, and `storage migrate` either
-already has one or is queued for commits 47–49.
+already has one or is queued for commit 49.
 
 | CLI | UI surface | Commit |
 |---|---|---|
@@ -302,7 +351,7 @@ already has one or is queued for commits 47–49.
 | `med acquire / -url / -live` | Ingest panel (four tabs) | 41 |
 | `med run <op>` | Run panel | 42 |
 | `med batch` | Ingest → Batch URLs tab | 41 |
-| `med profile ls / show / run` | Future Profile workspace + examples library | 47–48 (queued) |
+| `med profile ls / show / run` | Profile index + workspace (visual composer + YAML editor + live compile) + examples library w/ fork-this | 47–48 |
 | `med search` | Search surface | 46 |
 | `med cost ls / summary` | Cost ledger | 46 |
 | `med events tail / history` | Job detail Events tab + global `/events/stream` | 43 |
@@ -405,16 +454,17 @@ pnpm -C web exec playwright test    # gated by CI=1
 These are explicitly Phase 6 v1 scope but ship in later commits in
 the same release window:
 
-- **Profile workspace** (commit 47) — visual DAG composer (Svelte
-  Flow) + CodeMirror 6 YAML editor + live `POST /profiles/validate`.
-- **Profile examples library + fork-this** (commit 48) — cards for
-  every bundled profile + a one-click "fork to my config dir".
 - **Settings** (commit 49) — token CRUD UI, backends health board,
   plugin extras catalog (show-don't-install), plugin op / backend
   visibility toggles, storage stats + GC preview.
 - **`+ui` multi-stage Dockerfile** (commit 50) — final image with
   no Node runtime; today's compose stack still requires a host-side
   `pnpm -C web build`.
+- **Per-node schema-driven param editor in the profile workspace.**
+  The split-view ships today; the right pane's "Node …" card only
+  exposes id + backend. Params are edited directly in the YAML
+  pane (round-tripped through the AST so comments survive). The
+  full `SchemaForm`-driven param editor is a small follow-up.
 
 Items deferred *past* Phase 6 v1 (v1.x backlog) are catalogued in
 [`web_ui_deferred.md`](web_ui_deferred.md).

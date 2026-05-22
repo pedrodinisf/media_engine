@@ -788,7 +788,7 @@ roadmap; this section is the reconciliation):
     `med profile run analysis-full` from the repo root for now. A
     profile-dir-relative resolver is a small Phase 6 enhancement
     (the Web UI will need it for non-CWD workflows anyway).
-- Phase-6 ratified deviations (commits 39–46 + post-46 audit):
+- Phase-6 ratified deviations (commits 39–48 + post-46 + post-48 audits):
   - **Framework choice: SvelteKit, not Next.js.** Plan §12.5 said
     "SvelteKit/Next.js"; the smaller bundle + `adapter-static`'s
     "no Node in production" model decided it. Build emits to
@@ -851,6 +851,45 @@ roadmap; this section is the reconciliation):
     bare ranked list — the Web UI never has to know that
     `search.semantic` emits an Analysis artifact, only that
     the endpoint returns ranked rows. CLI behaviour unchanged.
+  - **YAML is the canonical source of truth in the profile
+    workspace.** Commits 47+48 give the composer a parsed view of
+    the YAML for visual rendering, but every edit mutates the
+    `yaml.Document` AST and re-serializes — comments + key order
+    on the rest of the file survive byte-identical. The composer
+    is a *view*; the YAML pane is the *model*.
+  - **`POST /profiles/validate` parses YAML in memory** (post-
+    commit-48 audit) via the new `load_profile_from_string`
+    helper. The first cut wrote a tmp file per request to reuse
+    the path-based loader's error messages, but with the
+    workspace firing validate every 500 ms idle that became a
+    measurable hotspot (5 syscalls/call: mkdir + write + read +
+    unlink + rmdir). The string loader feeds errors the same
+    way using a `source` label argument in place of the path.
+  - **Per-node SchemaForm editing in the workspace is deferred.**
+    Commit 47 ships the split-view with id + backend editing per
+    selected node; the full schema-driven param form (already
+    in production at `/ui/run`) is queued as a small follow-up.
+    For v1, users edit params directly in the YAML pane —
+    every save round-trips through the `Document` AST so
+    comments + key order survive.
+  - **`ProfileSummary.source` field** (post-commit-48 audit)
+    replaces the FE `/config/`-substring heuristic with a
+    server-supplied `"bundled" | "user"` discriminator. The
+    pre-audit heuristic was wrong for non-default config dirs;
+    the field is computed via `resolved.is_relative_to(user_dir)`
+    inside `list_profiles_endpoint`.
+  - **YAML-driven rename is rejected at save time** (post-
+    commit-48 audit). Editing the top-level `name:` key and
+    saving would have created a NEW profile file alongside the
+    original. The workspace's `save()` now compares
+    `parsed.name` against the route name and refuses divergence,
+    pointing the user at the explicit fork-then-delete path.
+  - **Composer layout debounced 150 ms** (post-commit-48 audit).
+    The YAML editor pushes `yamlText` updates on every keystroke;
+    the parsed graph + dagre layout consume a separate
+    `yamlForLayout` $state that lags by 150 ms. Single canvas
+    repaint per typing pause instead of per keystroke. Validate
+    debounces a further 500 ms on top of that.
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit
@@ -858,7 +897,9 @@ findings`, `fix(phase-2): close pre-Phase-3 audit findings`,
 `fix(phase-3): close pre-Phase-4 audit findings`, `fix(phase-4): close
 pre-Phase-5 audit findings`, `fix(phase-5): close pre-Phase-6 audit
 findings`, `fix(phase-6): post-commit-46 audit — until-pagination,
-datetime-local tz, cost-page race`.
+datetime-local tz, cost-page race`, `fix(phase-6): post-commit-48
+audit — validate string-loader, composer debounce, source field,
+rename guard`.
 
 Phases 0–5 are complete; v0.5.0 is the current release. Phase 6
 (local-first Web UI) is mid-flight: commits 39–46 + the post-46

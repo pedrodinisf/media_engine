@@ -812,6 +812,76 @@
             }
           }
         }
+      },
+      "delete": {
+        "summary": "Delete Profile Endpoint",
+        "description": "Remove a user-overrideable profile from ``{config_dir}/profiles/``.\n\nRefuses to delete bundled profiles (``<repo>/profiles/``) — the\nbundled set is shipped with the package and overwriting it from a\nrunning process would surprise the next user who upgrades. Returns\n404 when no profile by that name exists in the user's directory\n(even if a bundled profile with the same name exists — the user\ncan't delete what they don't own).",
+        "operationId": "delete_profile_endpoint_profiles__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/profiles/validate": {
+      "post": {
+        "summary": "Post Profiles Validate",
+        "description": "Compile-check a profile YAML without persisting it.\n\nThe Web UI's profile workspace calls this every 500 ms of idle to\nsurface op typos / unwired refs / cycles to the user before they\nsave or run. Parses the YAML straight from memory (no tmp file +\nno workdir creation per call) so per-keystroke validation stays\nsub-millisecond on the I/O side.",
+        "operationId": "post_profiles_validate_profiles_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/operations": {
@@ -1741,6 +1811,42 @@
           "created_at"
         ],
         "title": "Chunks"
+      },
+      "CompiledNodeRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "op": {
+            "type": "string",
+            "title": "Op"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Inputs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "op"
+        ],
+        "title": "CompiledNodeRef"
       },
       "CostLogItem": {
         "properties": {
@@ -2920,15 +3026,25 @@
           "path": {
             "type": "string",
             "title": "Path"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "bundled",
+              "user"
+            ],
+            "title": "Source"
           }
         },
         "type": "object",
         "required": [
           "name",
           "kind",
-          "path"
+          "path",
+          "source"
         ],
-        "title": "ProfileSummary"
+        "title": "ProfileSummary",
+        "description": "Discovery row for a profile.\n\n``source`` lets the Web UI distinguish bundled (read-only) from\nuser-editable profiles without parsing the path heuristically.\nBundled profiles live in ``<repo>/profiles/``; user profiles in\n``{config_dir}/profiles/``."
       },
       "PromptProfile": {
         "properties": {
@@ -3516,6 +3632,73 @@
         ],
         "title": "UploadPreview",
         "description": "Pre-commit summary returned when ``commit=False`` on /acquire/upload."
+      },
+      "ValidateProfileRequest": {
+        "properties": {
+          "pipeline_yaml": {
+            "type": "string",
+            "title": "Pipeline Yaml"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pipeline_yaml"
+        ],
+        "title": "ValidateProfileRequest"
+      },
+      "ValidateProfileResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "compiled_nodes": {
+            "items": {
+              "$ref": "#/components/schemas/CompiledNodeRef"
+            },
+            "type": "array",
+            "title": "Compiled Nodes"
+          },
+          "error_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Class"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "ValidateProfileResponse",
+        "description": "Shape of ``POST /profiles/validate``.\n\nSuccess: ``ok=True`` + ``compiled_nodes``. Failure: ``ok=False`` +\ntyped error envelope. The endpoint returns ``200`` for both shapes\nso the Web UI's live-compile indicator doesn't have to special-case\nexpected-failure responses — it just reads ``body.ok``."
       },
       "ValidationError": {
         "properties": {

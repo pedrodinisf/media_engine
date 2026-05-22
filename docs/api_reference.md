@@ -45,7 +45,7 @@ routes should keep using the `Authorization` header.
 | Search      | `POST /search`                                                                                          |
 | Cost        | `GET /cost/summary` · `GET /cost/log`                                                                   |
 | Artifacts   | `GET /artifacts` · `GET /artifacts/{id}` · `GET /artifacts/{id}/file` · `GET /artifacts/{id}/lineage`   |
-| Profiles    | `GET /profiles` · `GET /profiles/{name}` · `POST /profiles`                                             |
+| Profiles    | `GET /profiles` · `GET /profiles/{name}` · `POST /profiles` · `POST /profiles/validate` · `DELETE /profiles/{name}` |
 | Operations  | `GET /operations` · `GET /operations/{name}`                                                            |
 | Backends    | `GET /backends` · `GET /backends/{name}`                                                                |
 | Tokens      | `POST /tokens` · `GET /tokens` · `DELETE /tokens/{id}`                                                  |
@@ -127,6 +127,50 @@ Runs `yt-dlp --dump-single-json` (no bytes downloaded) and returns:
 ```
 `resolvable=false` + `reason="<hint>"` when `yt-dlp` is not on PATH
 or the URL doesn't resolve.
+
+#### `POST /profiles/validate` (Phase 6 commit 47)
+Compile-check a profile YAML body without persisting it. Always
+returns `200`; the body's `ok` boolean carries the verdict so the
+Web UI's live-compile indicator never has to special-case
+expected-failure responses.
+```json
+{ "pipeline_yaml": "name: my-pipeline\nkind: pipeline\ngraph: ..." }
+```
+Success response:
+```json
+{
+  "ok": true,
+  "compiled_nodes": [
+    {"id": "audio", "op": "video.extract_audio", "backend": null, "inputs": ["source"]}
+  ],
+  "error_class": null, "message": null, "line": null
+}
+```
+Failure response:
+```json
+{
+  "ok": false, "compiled_nodes": [],
+  "error_class": "ProfileCompileError",
+  "message": "node 'x' references unregistered op 'no.such.op'",
+  "line": null
+}
+```
+Parses the YAML in memory via
+`load_profile_from_string` — no tmp file, no workdir creation per
+call (post-commit-48 audit fix). A 1-based `line` hint is included
+for PyYAML parse errors. Same `load_profile` + `validate_profile_
+structure` pipeline a real submission goes through.
+
+#### `DELETE /profiles/{name}` (Phase 6 commit 47)
+Removes a user-overrideable profile from `{config_dir}/profiles/`.
+Bundled profiles in `<repo>/profiles/` are read-only — the route
+scopes deletion to the user dir only; a same-name bundled profile
+is never touched. Returns:
+- `204 No Content` on success.
+- `404 Not Found` when no profile by that name exists in the user dir.
+- `400 Bad Request` when the name violates the kebab regex
+  `^[a-z0-9][a-z0-9_-]{0,63}$` (defense-in-depth on top of the URL
+  router's path normalisation).
 
 #### `POST /search` (Phase 6 commit 46)
 Synchronous catalog query — wraps `Engine.run("search.<mode>")` inline
@@ -217,6 +261,26 @@ BaseModel.model_json_schema()`) — the Web UI uses this to
 auto-render parameter forms. Auto-derived `*_sha` fields are marked
 `readOnly: true` so form generators (and MCP-driven LLMs) hide or
 disable them.
+
+### Profile discovery
+
+`GET /profiles` returns one `ProfileSummary` per discovered profile:
+
+```json
+{
+  "name": "analysis-full",
+  "kind": "pipeline",
+  "description": "...",
+  "path": "/path/to/profiles/analysis-full/analysis-full.yaml",
+  "source": "bundled"
+}
+```
+
+The `source` field (`"bundled" | "user"`) is server-supplied so the
+Web UI can distinguish read-only bundled profiles from user-editable
+ones without parsing the path. `POST /profiles` always writes to
+`{config_dir}/profiles/`, so the returned `ProfileSummary` always
+has `source: "user"`.
 
 ### Errors
 

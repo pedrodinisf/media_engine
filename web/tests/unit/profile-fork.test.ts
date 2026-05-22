@@ -44,6 +44,26 @@ describe('profile name validator', () => {
   });
 });
 
+describe('ProfileSummary shape', () => {
+  it('mirrors the server source field literal', () => {
+    // Mirror media_engine/api/routes.py:ProfileSummary.source ∈
+    // Literal["bundled", "user"] — drift means the index card UI
+    // would silently miscategorise.
+    const sample: import('$lib/profile/types').ProfileSummary = {
+      name: 'x',
+      kind: 'pipeline',
+      description: '',
+      path: '/some/path',
+      source: 'user',
+    };
+    expect(sample.source).toBe('user');
+    // Type-level: assigning anything outside {bundled, user} would
+    // fail svelte-check; this is the runtime smoke test.
+    const sources: Array<'bundled' | 'user'> = ['bundled', 'user'];
+    expect(sources).toContain(sample.source);
+  });
+});
+
 describe('forkPayload', () => {
   const pipeline: PipelineProfile = {
     profile_schema_version: '1.0',

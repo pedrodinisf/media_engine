@@ -46,6 +46,7 @@ from media_engine.profiles.loader import (
     ProfileLoadError,
     discover_profiles,
     load_profile,
+    load_profile_from_string,
 )
 from media_engine.profiles.pipeline import (
     ProfileCompileError,
@@ -245,10 +246,19 @@ class TokenCreateResponse(BaseModel):
 
 
 class ProfileSummary(BaseModel):
+    """Discovery row for a profile.
+
+    ``source`` lets the Web UI distinguish bundled (read-only) from
+    user-editable profiles without parsing the path heuristically.
+    Bundled profiles live in ``<repo>/profiles/``; user profiles in
+    ``{config_dir}/profiles/``.
+    """
+
     name: str
     kind: Literal["pipeline", "prompt"]
     description: str = ""
     path: str
+    source: Literal["bundled", "user"]
 
 
 class OperationSummary(BaseModel):
@@ -782,17 +792,23 @@ def list_profiles_endpoint(
     state: Annotated[AppState, Depends(get_state)],
     _: Annotated[ApiTokenInfo, Depends(require_token)],
 ) -> list[ProfileSummary]:
+    user_dir = (state.engine.config.config_dir / "profiles").resolve()
     out: list[ProfileSummary] = []
     for name, (path, profile) in discover_profiles(
         config_dir=state.engine.config.config_dir / "profiles",
         repo_dir=Path(__file__).resolve().parents[2] / "profiles",
     ).items():
+        resolved = path.resolve()
+        is_user = (
+            user_dir.exists() and resolved.is_relative_to(user_dir)
+        )
         out.append(
             ProfileSummary(
                 name=name,
                 kind=profile.kind,
                 description=profile.description,
                 path=str(path),
+                source="user" if is_user else "bundled",
             )
         )
     return out
@@ -866,6 +882,7 @@ def upload_profile_endpoint(
         kind=body.kind,
         description=body.description,
         path=str(target),
+        source="user",  # POST always writes to {config_dir}/profiles
     )
 
 
@@ -915,53 +932,35 @@ def _extract_yaml_line(err: BaseException | None) -> int | None:
 @router.post("/profiles/validate", response_model=ValidateProfileResponse)
 def post_profiles_validate(
     body: ValidateProfileRequest,
-    state: Annotated[AppState, Depends(get_state)],
+    _state: Annotated[AppState, Depends(get_state)],
     token: Annotated[ApiTokenInfo, Depends(require_token)],
 ) -> ValidateProfileResponse:
     """Compile-check a profile YAML without persisting it.
 
     The Web UI's profile workspace calls this every 500 ms of idle to
     surface op typos / unwired refs / cycles to the user before they
-    save or run. Same `load_profile` + `validate_profile_structure`
-    pipeline a real submission goes through; never writes to disk.
+    save or run. Parses the YAML straight from memory (no tmp file +
+    no workdir creation per call) so per-keystroke validation stays
+    sub-millisecond on the I/O side.
     """
     del token  # auth-only; validation is namespace-agnostic
-    # Write to a tmp file so the loader's path-based error messages
-    # come back useful, and so the inline pipeline_yaml path in
-    # POST /pipelines stays the single load-from-disk seam.
-    from uuid import uuid4
-
-    tmp = state.engine.storage.ensure_workdir(
-        f"validate-{uuid4().hex[:8]}"
-    )
-    tmp_path = tmp / "profile.yaml"
-    tmp_path.write_text(body.pipeline_yaml or "", encoding="utf-8")
     try:
-        try:
-            profile = load_profile(tmp_path)
-        except ProfileLoadError as e:
-            return ValidateProfileResponse(
-                ok=False,
-                error_class="ProfileLoadError",
-                message=str(e),
-                line=_extract_yaml_line(e.__cause__),
-            )
-        try:
-            compiled = validate_profile_structure(profile)
-        except ProfileCompileError as e:
-            return ValidateProfileResponse(
-                ok=False,
-                error_class="ProfileCompileError",
-                message=str(e),
-            )
-    finally:
-        import contextlib as _ctx
-
-        with _ctx.suppress(Exception):
-            tmp_path.unlink()
-        with _ctx.suppress(Exception):
-            tmp.rmdir()
-
+        profile = load_profile_from_string(body.pipeline_yaml or "")
+    except ProfileLoadError as e:
+        return ValidateProfileResponse(
+            ok=False,
+            error_class="ProfileLoadError",
+            message=str(e),
+            line=_extract_yaml_line(e.__cause__),
+        )
+    try:
+        compiled = validate_profile_structure(profile)
+    except ProfileCompileError as e:
+        return ValidateProfileResponse(
+            ok=False,
+            error_class="ProfileCompileError",
+            message=str(e),
+        )
     return ValidateProfileResponse(
         ok=True,
         compiled_nodes=[CompiledNodeRef(**c) for c in compiled],

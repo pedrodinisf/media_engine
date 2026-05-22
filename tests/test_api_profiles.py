@@ -255,3 +255,91 @@ def test_delete_only_touches_user_dir_not_bundled(
     assert not by_name[name]["path"].endswith(
         f"config/profiles/{name}.yaml"
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# ProfileSummary.source field (post-commit-48 audit)
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_summary_source_field_marks_user_profiles(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    """Server stamps `source` per row so the Web UI doesn't need a
+    `/config/`-substring heuristic to tell bundled from user."""
+    # Seed a user profile whose YAML `name:` matches the filename so
+    # the discovered key is what we expect.
+    yaml = VALID_PIPELINE.replace(
+        "name: test-pipeline", "name: my-user-profile"
+    )
+    _seed_user_profile(api_engine, "my-user-profile", yaml)
+    r = client.get("/profiles", headers=auth)
+    assert r.status_code == 200
+    by_name = {p["name"]: p for p in r.json()}
+    assert "my-user-profile" in by_name
+    assert by_name["my-user-profile"]["source"] == "user"
+
+
+def test_summary_source_field_marks_bundled_profiles(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """Bundled profiles (shipped in `<repo>/profiles/`) report
+    `source: bundled` so the UI hides destructive controls."""
+    r = client.get("/profiles", headers=auth)
+    assert r.status_code == 200
+    by_name = {p["name"]: p for p in r.json()}
+    assert "analysis-full" in by_name
+    assert by_name["analysis-full"]["source"] == "bundled"
+
+
+def test_post_profile_returns_source_user(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """A profile written via POST /profiles always lands in the user
+    dir and the returned summary reflects that."""
+    r = client.post(
+        "/profiles",
+        json={
+            "profile_schema_version": "1.0",
+            "name": "post-source-test",
+            "kind": "pipeline",
+            "description": "",
+            "inputs": [{"name": "source", "kind": "video"}],
+            "graph": [
+                {"id": "audio", "op": "video.extract_audio", "inputs": {"in": "source"}}
+            ],
+            "outputs": ["audio"],
+        },
+        headers=auth,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["source"] == "user"
+
+
+# ─────────────────────────────────────────────────────────────────
+# /profiles/validate — string-loader fast path (post-commit-48 audit)
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_validate_does_not_touch_disk_workdir(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    """Post-commit-48 audit: validate parses YAML in memory and must
+    not create + clean a tmp workdir on every call. Asserts the
+    workdir tree size is unchanged across validate calls — the
+    pre-fix path created + tore down a workdir per request, the
+    new path uses load_profile_from_string."""
+    workdir_root = api_engine.config.workdir
+    before = (
+        sorted(workdir_root.iterdir()) if workdir_root.exists() else []
+    )
+    r = client.post(
+        "/profiles/validate",
+        json={"pipeline_yaml": VALID_PIPELINE},
+        headers=auth,
+    )
+    assert r.status_code == 200
+    after = (
+        sorted(workdir_root.iterdir()) if workdir_root.exists() else []
+    )
+    assert after == before

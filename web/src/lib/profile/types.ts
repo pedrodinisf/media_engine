@@ -48,6 +48,10 @@ export type ProfileSummary = {
   kind: ProfileKind;
   description: string;
   path: string;
+  /** Whether the profile ships with the engine (read-only) or lives
+   *  in the user's config dir (editable). Server-supplied — no path
+   *  heuristic needed. */
+  source: 'bundled' | 'user';
 };
 
 /** Response from `POST /profiles/validate`. Always 200 — `ok` carries

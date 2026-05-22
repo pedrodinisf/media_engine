@@ -46,12 +46,11 @@
 
   onMount(() => void load());
 
-  function isBundled(path: string): boolean {
-    // Bundled profiles live under `<repo>/profiles/`; user profiles
-    // under `{config_dir}/profiles/`. We don't know either path
-    // exactly here, but the user dir is the only one that can
-    // contain `/config/`.
-    return !path.includes('/config/');
+  function isBundled(p: ProfileSummary): boolean {
+    // Server-supplied (commit 47 audit). The pre-audit heuristic of
+    // sniffing `/config/` out of the path was wrong for non-default
+    // config dirs; the route now stamps a `source` field per row.
+    return p.source === 'bundled';
   }
 
   function bodyExcerpt(body: PipelineProfile | PromptProfile): string {
@@ -141,7 +140,7 @@
   }
 
   const existingUserNames = $derived(
-    profiles.filter((p) => !isBundled(p.path)).map((p) => p.name),
+    profiles.filter((p) => !isBundled(p)).map((p) => p.name),
   );
 </script>
 
@@ -184,7 +183,7 @@
 {:else}
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
     {#each profiles as p (p.name)}
-      {@const bundled = isBundled(p.path)}
+      {@const bundled = isBundled(p)}
       {@const preview = bodyPreviews[p.name]}
       {@const isPreviewLoading = bodyLoading[p.name] === true}
       <article

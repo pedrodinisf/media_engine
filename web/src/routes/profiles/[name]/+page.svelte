@@ -9,9 +9,10 @@
    * lib's `Document` model). The editor + composer both write through
    * the same `yaml = $state(...)` so they stay in sync.
    */
-  import { onMount, untrack } from 'svelte';
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
+  import { stringify as yamlStringify } from 'yaml';
   import { ApiError, api } from '$lib/api/client';
   import { deleteProfile, getProfile, saveProfile, validateProfile } from '$lib/profile/api';
   import {
@@ -38,6 +39,12 @@
   let yamlText = $state('');
   let originalYaml = $state('');
   let sourcePath = $state<string | null>(null);
+  // Bundled-vs-user comes from the server now (GET /profiles ?
+  // ProfileSummary.source). Set during the initial load; falls back
+  // to "user" so the delete affordance is enabled when discovery
+  // hasn't returned yet — the server's DELETE handler is the
+  // authoritative gate.
+  let profileSource = $state<'bundled' | 'user' | null>(null);
 
   let validation = $state<ValidateProfileResponse | null>(null);
   let validating = $state(false);
@@ -48,15 +55,25 @@
 
   let saving = $state(false);
   let saveError = $state<string | null>(null);
+  let loadError = $state<string | null>(null);
   let deleting = $state(false);
   let running = $state(false);
   let runError = $state<string | null>(null);
   let showSourcesPicker = $state(false);
 
+  /** Debounced view of the YAML text that drives heavy derived
+   *  consumers (composer dagre layout, validate fetch). Keeps the
+   *  editor responsive on every keystroke while the canvas + footer
+   *  validation only relayouts/refetches when typing pauses. */
+  let yamlForLayout = $state('');
+
   const name = $derived($page.params.name ?? '');
-  const parsed = $derived(parseProfileText(yamlText));
+  /** Parsed view for the per-node editor + composer composition.
+   *  Reads the debounced text so re-renders don't fire per keystroke
+   *  — the editor itself is fed `yamlText` directly. */
+  const parsed = $derived(parseProfileText(yamlForLayout));
   const isPipeline = $derived(parsed.kind === 'pipeline');
-  const isBundled = $derived(!!sourcePath && !sourcePath.includes('/config/'));
+  const isBundled = $derived(profileSource === 'bundled');
   const isDirty = $derived(yamlText !== originalYaml);
 
   const invalidNodeIds = $derived.by(() => {
@@ -72,29 +89,26 @@
   const opPalette = $derived(ops.map((o) => o.name));
 
   async function loadProfileBody(): Promise<void> {
-    saveError = null;
+    loadError = null;
     try {
       const body = await getProfile(name);
       sourcePath = body._source_path;
-      // Pretty-print the dumped YAML server-side mirror; for bundled
-      // profiles we keep the original source where possible. The
-      // server returns the parsed model — we serialize ourselves so
-      // edits start from a clean canonical shape, then preserve
-      // comments + key order on subsequent rounds via parseDocument.
+      // Server doesn't echo `source` on GET /profiles/{name}; reuse
+      // the listing path to figure it out. Cheap (a single REST
+      // round-trip alongside the body), reliable (the server tells
+      // us, not a path heuristic).
       const cleaned: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(body)) {
         if (k === '_source_path') continue;
         if (v === null || v === undefined) continue;
         cleaned[k] = v;
       }
-      // Lazy import yaml.stringify to keep this small; the editor
-      // already pulls yaml in.
-      const { stringify } = await import('yaml');
-      const text = stringify(cleaned);
+      const text = yamlStringify(cleaned);
       yamlText = text;
       originalYaml = text;
+      yamlForLayout = text;
     } catch (e) {
-      saveError = e instanceof ApiError ? e.detail : String(e);
+      loadError = e instanceof ApiError ? e.detail : String(e);
     }
   }
 
@@ -106,15 +120,46 @@
     }
   }
 
+  async function loadSourceMarker(): Promise<void> {
+    try {
+      const list = await api.get<Array<{ name: string; source: 'bundled' | 'user' }>>(
+        '/profiles',
+      );
+      const me = list.find((p) => p.name === name);
+      profileSource = me ? me.source : 'user';
+    } catch {
+      // Fall back to "user" so the delete button shows; the server
+      // refuses bundled deletes anyway.
+      profileSource = 'user';
+    }
+  }
+
   onMount(async () => {
-    await Promise.all([loadOps(), loadProfileBody()]);
+    await Promise.all([loadOps(), loadProfileBody(), loadSourceMarker()]);
   });
 
-  // Live validation — debounced 500 ms (plan §5 commit 47). The
-  // cancelled-flag pattern matches commit 42's run-panel + commit 46's
-  // search input, so late responses never write into dead state.
+  // Debounce the heavy `parsed` derivation. The editor still updates
+  // `yamlText` every keystroke (CodeMirror needs that), but the
+  // composer + per-node editor + validate fetch all derive from
+  // `yamlForLayout` which we step forward 150 ms after the user stops
+  // typing. dagre layout for a 20-node pipeline goes from per-
+  // keystroke jank to a single repaint per pause.
   $effect(() => {
-    const _yaml = yamlText;
+    const _v = yamlText;
+    if (_v === yamlForLayout) return;
+    const timer = setTimeout(() => {
+      yamlForLayout = _v;
+    }, 150);
+    return () => clearTimeout(timer);
+  });
+
+  // Live validation — debounced 500 ms (plan §5 commit 47). Reads
+  // the already-debounced `yamlForLayout` so the validate call fires
+  // 500 + 150 ms after the last keystroke; the cancelled-flag pattern
+  // matches commit 42's run-panel + commit 46's search input, so late
+  // responses never write into dead state.
+  $effect(() => {
+    const _yaml = yamlForLayout;
     if (!_yaml.trim()) {
       validation = null;
       return;
@@ -147,19 +192,17 @@
 
   function appendNodeFromPalette(opName: string): void {
     const existingIds = new Set(parsed.nodes.map((n) => n.id));
-    let id = opName.split('.').pop() ?? 'op';
+    const stem = opName.split('.').pop() ?? 'op';
+    let id = stem;
     let i = 2;
     while (existingIds.has(id)) {
-      id = `${opName.split('.').pop()}-${i++}`;
+      id = `${stem}-${i++}`;
     }
     // Round-trip through Document so the rest of the file's comments
     // + key order are preserved. If the user typed something the
     // parser doesn't understand, we fall back to the plain-text
     // append — bad YAML in, bad YAML out is fine for v1.
     const doc = loadDocument(yamlText);
-    untrack(() => {
-      // Read selectedNodeId without subscribing; we'll set it after.
-    });
     addNode(doc, {
       id,
       op: opName,
@@ -198,10 +241,23 @@
     saving = true;
     saveError = null;
     try {
+      const yamlName = parsed.name || name;
+      // Guard: renaming via the YAML `name:` key creates a NEW file
+      // at {yamlName}.yaml while leaving the original {name}.yaml in
+      // place — a surprise rename-vs-fork. Refuse and point the user
+      // at the explicit fork affordance (or, for user profiles, the
+      // delete-then-save-as workflow).
+      if (yamlName !== name) {
+        saveError =
+          `Save would create a new profile "${yamlName}" alongside the existing ` +
+          `"${name}". To rename, fork to the new name from /ui/profiles, then delete ` +
+          `this one.`;
+        return;
+      }
       if (parsed.kind === 'pipeline') {
         await saveProfile({
           profile_schema_version: '1.0',
-          name: parsed.name || name,
+          name: yamlName,
           kind: 'pipeline',
           description: parsed.description,
           inputs: parsed.inputs,
@@ -307,6 +363,12 @@
   </div>
 </header>
 
+{#if loadError}
+  <p
+    class="mb-3 text-xs p-2 rounded"
+    style="color: var(--accent-red); background: var(--accent-red-soft); border: 1px solid rgba(220, 38, 38, 0.25);"
+  >{loadError}</p>
+{/if}
 {#if saveError}
   <p
     class="mb-3 text-xs p-2 rounded"
@@ -381,8 +443,9 @@
           />
         </label>
         <p class="mt-2 text-xs italic" style="color: var(--text-muted);">
-          Per-node param editing (full schema form) lands in commit 48 alongside the examples
-          library. For now, edit params directly in the YAML pane on the right.
+          Per-node param editing (full schema form) is deferred to a future commit. For now,
+          edit params directly in the YAML pane on the right — every save round-trips through
+          the YAML AST so comments + key order are preserved.
         </p>
       </section>
     {/if}

@@ -39,6 +39,48 @@ def _parse_kind(data: dict[str, Any]) -> str:
     return kind
 
 
+def _yaml_dict_to_profile(raw: dict[str, Any], source: str) -> Profile:
+    """Materialise a top-level YAML mapping into a typed Profile.
+
+    ``source`` is the path or ``"<inline>"`` label used in error
+    messages — splitting this seam lets ``/profiles/validate`` skip
+    the tmp-file write on every keystroke.
+    """
+    kind = _parse_kind(raw)
+    try:
+        if kind == "pipeline":
+            return PipelineProfile(**raw)
+        if kind == "prompt":
+            return PromptProfile(**raw)
+        raise ProfileLoadError(f"{source}: unknown profile kind {kind!r}")
+    except ValidationError as e:
+        raise ProfileLoadError(f"{source}: schema validation failed:\n{e}") from e
+
+
+def load_profile_from_string(
+    yaml_text: str, *, source: str = "<inline>"
+) -> Profile:
+    """Parse a YAML string straight into a Profile. No disk I/O.
+
+    Backs the Web UI's live-validate loop where the user edits YAML in
+    the browser and round-tripping through the filesystem on every
+    keystroke is wasteful. Errors carry the same ``ProfileLoadError``
+    shape ``load_profile`` raises, with ``source`` used in place of
+    a file path so the UI can still report a useful context.
+    """
+    try:
+        raw_any: Any = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as e:
+        raise ProfileLoadError(f"YAML parse error in {source}: {e}") from e
+    if not isinstance(raw_any, dict):
+        raise ProfileLoadError(
+            f"{source} must contain a YAML mapping at the top level "
+            f"(got {type(raw_any).__name__})"
+        )
+    raw: dict[str, Any] = cast(dict[str, Any], raw_any)
+    return _yaml_dict_to_profile(raw, source)
+
+
 def _load_yaml(path: Path) -> Profile:
     try:
         raw_any: Any = yaml.safe_load(path.read_text())
@@ -50,15 +92,7 @@ def _load_yaml(path: Path) -> Profile:
             f"(got {type(raw_any).__name__})"
         )
     raw: dict[str, Any] = cast(dict[str, Any], raw_any)
-    kind = _parse_kind(raw)
-    try:
-        if kind == "pipeline":
-            return PipelineProfile(**raw)
-        if kind == "prompt":
-            return PromptProfile(**raw)
-        raise ProfileLoadError(f"{path}: unknown profile kind {kind!r}")
-    except ValidationError as e:
-        raise ProfileLoadError(f"{path}: schema validation failed:\n{e}") from e
+    return _yaml_dict_to_profile(raw, str(path))
 
 
 def _load_md(path: Path) -> PromptProfile:
