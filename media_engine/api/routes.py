@@ -78,10 +78,16 @@ def get_state(request: Request) -> AppState:
 def require_token(
     request: Request, state: Annotated[AppState, Depends(get_state)]
 ) -> ApiTokenInfo:
-    """Verify the ``Authorization: Bearer <token>`` header.
+    """Verify the ``Authorization: Bearer <token>`` header (or ``?token=`` query param).
 
     Returns the token row (id + namespace) so route handlers can scope
     their reads/writes to that namespace.
+
+    The ``?token=`` fallback is a Phase 6 concession: browser
+    ``EventSource`` cannot send custom headers, so SSE routes need to
+    accept the secret in the URL. Plan §13.1 documents the hardening
+    path (short-lived job-scoped nonce). The fallback applies to every
+    route — non-SSE callers should keep using the header.
 
     **Namespace contract** (Phase 4): the engine is single-namespace
     per process — every op runs against ``state.engine.config.namespace``.
@@ -98,6 +104,9 @@ def require_token(
     # into the lookup, silently 401-ing valid tokens.
     raw_token = raw_token.strip()
     if scheme.lower() != "bearer" or not raw_token:
+        # Fall back to ?token= query param for EventSource compatibility.
+        raw_token = (request.query_params.get("token") or "").strip()
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="missing bearer token",
@@ -456,6 +465,54 @@ async def get_job_events(
     return EventSourceResponse(
         job_event_stream(state.engine.event_bus, job_id)
     )
+
+
+@router.get("/events/stream")
+async def get_events_stream(
+    state: Annotated[AppState, Depends(get_state)],
+    _token: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> EventSourceResponse:
+    """Phase 6 commit 43 — global SSE stream (every job).
+
+    The UI's job dashboard uses this for a cross-job activity tail.
+    Per-job consumers should still hit ``GET /jobs/{id}/events``
+    (cheaper subscriber on the EventBus side).
+
+    Accepts the ``?token=`` query param (EventSource can't set headers);
+    require_token handles both Authorization and the query fallback.
+    """
+    return EventSourceResponse(job_event_stream(state.engine.event_bus, None))
+
+
+@router.get("/events/history")
+def get_events_history(
+    state: Annotated[AppState, Depends(get_state)],
+    _token: Annotated[ApiTokenInfo, Depends(require_token)],
+    since: Annotated[str | None, Query(description="ISO-8601 timestamp")] = None,
+    limit: Annotated[int, Query(ge=1, le=2000)] = 200,
+) -> dict[str, Any]:
+    """Persisted event tail — backs the job-dashboard event history pane."""
+    from datetime import datetime
+    parsed_since: datetime | None = None
+    if since is not None:
+        try:
+            parsed_since = datetime.fromisoformat(since)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"bad ISO timestamp: {e}") from None
+    entries = state.engine.event_log_entries(since=parsed_since, limit=limit)
+    items: list[dict[str, Any]] = [
+        {
+            "id": e.id,
+            "ts": e.ts.isoformat(),
+            "type": e.type,
+            "op_run_id": e.op_run_id,
+            "op_name": e.op_name,
+            "namespace": e.namespace,
+            "payload_json": e.payload_json,
+        }
+        for e in entries
+    ]
+    return {"items": items, "limit": limit}
 
 
 @router.delete("/jobs/{job_id}")

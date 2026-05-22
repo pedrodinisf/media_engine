@@ -23,12 +23,17 @@ from media_engine.runtime.events import EventBus
 
 async def job_event_stream(
     bus: EventBus,
-    job_id: str,
+    job_id: str | None,
     *,
     keepalive_seconds: float = 15.0,
     queue_size: int = 256,
 ) -> AsyncIterator[dict[str, str]]:
     """Yield SSE-shaped dicts for events belonging to ``job_id``.
+
+    Phase 6 commit 43: passing ``job_id=None`` opens a *global* stream
+    (every event regardless of job). The UI's job dashboard uses this
+    for the "global tail" mode where it surfaces activity across all
+    in-flight jobs.
 
     Closes when the consumer disconnects (``sse-starlette`` raises
     ``CancelledError`` on disconnect, which we let propagate so the
@@ -46,7 +51,7 @@ async def job_event_stream(
 
     async def _pump() -> None:
         async for event in bus.subscribe():
-            if event.job_id != job_id:
+            if job_id is not None and event.job_id != job_id:
                 continue
             frame = {
                 "event": event.type,
