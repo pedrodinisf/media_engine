@@ -76,6 +76,84 @@
         }
       }
     },
+    "/run/preview": {
+      "post": {
+        "summary": "Post Run Preview",
+        "description": "Predict the cost of a ``POST /run`` without submitting it.\n\nThe UI's run panel debounces this to ~250 ms so the cost preview\nupdates as the user tweaks params. Uses ``Engine.estimate_op_cost``\nwhich validates the param model + resolves the backend by the same\nprecedence the real submission would (explicit > select_backend >\ndefault), so a mismatched form errors here rather than at run time.",
+        "operationId": "post_run_preview_run_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "post": {
+        "summary": "Post Search",
+        "description": "Run ``search.{fulltext,semantic,hybrid}`` synchronously.\n\nUnlike ``POST /run`` (which wraps the call in a job + SSE), this\nendpoint awaits the engine inline so the UI's type-as-you-go\nsearch box gets sub-second feedback. Semantic + hybrid embed the\nquery string upstream via ``embed_query_string`` (sentence-\ntransformers) before dispatching, mirroring the ``med search``\nCLI flow. A 30 s timeout guards against runaway corpora; long\nqueries should use ``POST /run`` for the async/SSE path instead.",
+        "operationId": "post_search_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/pipelines": {
       "post": {
         "summary": "Post Pipeline",
@@ -270,6 +348,86 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/stream": {
+      "get": {
+        "summary": "Get Events Stream",
+        "description": "Phase 6 commit 43 — global SSE stream (every job).\n\nThe UI's job dashboard uses this for a cross-job activity tail.\nPer-job consumers should still hit ``GET /jobs/{id}/events``\n(cheaper subscriber on the EventBus side).\n\nAccepts the ``?token=`` query param (EventSource can't set headers);\nrequire_token handles both Authorization and the query fallback.",
+        "operationId": "get_events_stream_events_stream_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/history": {
+      "get": {
+        "summary": "Get Events History",
+        "description": "Persisted event tail — backs the job-dashboard event history pane.",
+        "operationId": "get_events_history_events_history_get",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO-8601 timestamp",
+              "title": "Since"
+            },
+            "description": "ISO-8601 timestamp"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Events History Events History Get"
+                }
               }
             }
           },
@@ -910,6 +1068,280 @@
           }
         }
       }
+    },
+    "/acquire/upload": {
+      "post": {
+        "summary": "Post Acquire Upload",
+        "description": "Stream a local file in, optionally submitting an ``acquire.upload`` job.\n\nTwo modes:\n\n- ``commit=False`` → returns ``UploadPreview`` (kind + ffprobe summary +\n  sha-prefix). UI uses this to show the user what they're about to\n  ingest before they say go.\n- ``commit=True`` → also submits an ``acquire.upload`` job and returns\n  ``JobAck { job_id }``; the file is moved into the workdir the op\n  will read from, then deleted by the op's idempotent store_file.",
+        "operationId": "post_acquire_upload_acquire_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_post_acquire_upload_acquire_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UploadPreview"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JobAck"
+                    }
+                  ],
+                  "title": "Response Post Acquire Upload Acquire Upload Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/acquire/url/probe": {
+      "post": {
+        "summary": "Post Acquire Url Probe",
+        "description": "Resolve a URL via yt-dlp's metadata-only probe.\n\nNo bytes hit the disk. Returns title + duration + uploader so the\nUI can confirm \"yes, this is the right thing\" before committing\nvia ``POST /run op=acquire.url``.",
+        "operationId": "post_acquire_url_probe_acquire_url_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/URLProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/URLProbeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cost/summary": {
+      "get": {
+        "summary": "Get Cost Summary",
+        "description": "Per-key spend rollup over the cost ledger.\n\n``group_by=op`` is what ``med cost summary`` shows; the UI also\nsurfaces ``backend`` and ``namespace`` for cross-cut views. The\nengine's ``CostTracker.summary`` only groups by op, so we fetch\nrows once and aggregate in-route for the other keys — keeping the\nengine contract narrow per plan §3.5.",
+        "operationId": "get_cost_summary_cost_summary_get",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO-8601 lower bound",
+              "title": "Since"
+            },
+            "description": "ISO-8601 lower bound"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO-8601 upper bound",
+              "title": "Until"
+            },
+            "description": "ISO-8601 upper bound"
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "op",
+                "backend",
+                "namespace"
+              ],
+              "type": "string",
+              "default": "op",
+              "title": "Group By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostSummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cost/log": {
+      "get": {
+        "summary": "Get Cost Log",
+        "description": "Paginated cost-log rows, newest first.\n\nOffset-based pagination so the UI's drill-down table can walk a\nlong ledger. We over-fetch by one row to detect a next page\nwithout a separate COUNT query.",
+        "operationId": "get_cost_log_cost_log_get",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO-8601 lower bound",
+              "title": "Since"
+            },
+            "description": "ISO-8601 lower bound"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO-8601 upper bound",
+              "title": "Until"
+            },
+            "description": "ISO-8601 upper bound"
+          },
+          {
+            "name": "op",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Op"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostLogResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1229,6 +1661,26 @@
         ],
         "title": "BackendSummary"
       },
+      "Body_post_acquire_upload_acquire_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "The local file to ingest"
+          },
+          "commit": {
+            "type": "boolean",
+            "title": "Commit",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_post_acquire_upload_acquire_upload_post"
+      },
       "Chunks": {
         "properties": {
           "id": {
@@ -1289,6 +1741,209 @@
           "created_at"
         ],
         "title": "Chunks"
+      },
+      "CostLogItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "op_name": {
+            "type": "string",
+            "title": "Op Name"
+          },
+          "backend_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Name"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "estimated_cents": {
+            "type": "number",
+            "title": "Estimated Cents"
+          },
+          "actual_cents": {
+            "type": "number",
+            "title": "Actual Cents"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ts",
+          "op_name",
+          "backend_name",
+          "namespace",
+          "estimated_cents",
+          "actual_cents",
+          "tokens_in",
+          "tokens_out",
+          "duration_seconds"
+        ],
+        "title": "CostLogItem",
+        "description": "Plain-dict mirror of ``CostLogEntry`` for over-the-wire."
+      },
+      "CostLogResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CostLogItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "limit",
+          "offset"
+        ],
+        "title": "CostLogResponse"
+      },
+      "CostRollupRow": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "total_cents": {
+            "type": "number",
+            "title": "Total Cents"
+          },
+          "total_usd": {
+            "type": "number",
+            "title": "Total Usd"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "count",
+          "total_cents",
+          "total_usd",
+          "tokens_in",
+          "tokens_out"
+        ],
+        "title": "CostRollupRow"
+      },
+      "CostSummaryResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CostRollupRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total_cents": {
+            "type": "number",
+            "title": "Total Cents"
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "op",
+              "backend",
+              "namespace"
+            ],
+            "title": "Group By"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows",
+          "total_cents",
+          "group_by",
+          "since",
+          "until"
+        ],
+        "title": "CostSummaryResponse"
       },
       "Diarization": {
         "properties": {
@@ -2337,6 +2992,52 @@
         "title": "PromptProfile",
         "description": "``kind: prompt`` — markdown frontmatter shorthand for a single VLM/LLM\nop call. The op-call body comes from the markdown body of the file.\n\nThe full op + backend choice still live in the Engine; the prompt profile\njust supplies the system prompt + default op + default backend + optional\noutput schema."
       },
+      "RunPreviewResponse": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "title": "Op"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "estimate_seconds_local": {
+            "type": "number",
+            "title": "Estimate Seconds Local"
+          },
+          "estimate_cost_cents": {
+            "type": "number",
+            "title": "Estimate Cost Cents"
+          },
+          "estimate_tokens_in": {
+            "type": "integer",
+            "title": "Estimate Tokens In"
+          },
+          "estimate_tokens_out": {
+            "type": "integer",
+            "title": "Estimate Tokens Out"
+          }
+        },
+        "type": "object",
+        "required": [
+          "op",
+          "backend",
+          "estimate_seconds_local",
+          "estimate_cost_cents",
+          "estimate_tokens_in",
+          "estimate_tokens_out"
+        ],
+        "title": "RunPreviewResponse",
+        "description": "Cost preview shape returned by ``POST /run/preview``.\n\nMirrors ``CostEstimate`` plus a ``backend`` field so the Web UI run\npanel can display the resolved backend alongside the estimate. The\n``estimate_seconds_local`` field is the wall-clock proxy for local\nops; ``estimate_cost_cents`` is non-null only for cloud-billable\nbackends."
+      },
       "RunRequest": {
         "properties": {
           "op": {
@@ -2372,6 +3073,125 @@
           "op"
         ],
         "title": "RunRequest"
+      },
+      "SearchRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "fulltext",
+              "semantic",
+              "hybrid"
+            ],
+            "title": "Mode"
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Query"
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "default": 10
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "refresh": {
+            "type": "boolean",
+            "title": "Refresh",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "query"
+        ],
+        "title": "SearchRequest",
+        "description": "``POST /search`` body — sync catalog query.\n\n``top_k`` is bounded at 200 to keep the synchronous handler from\nstarving the event loop (plan §13 risk #6); ``query`` is required\nfor every mode (semantic queries the string after embedding it,\nfulltext consumes the string directly, hybrid uses both)."
+      },
+      "SearchResponse": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "top_k": {
+            "type": "integer",
+            "title": "Top K"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResultItem"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "query",
+          "top_k",
+          "results"
+        ],
+        "title": "SearchResponse"
+      },
+      "SearchResultItem": {
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "title": "Artifact Id"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "score"
+        ],
+        "title": "SearchResultItem"
       },
       "SessionAnalysis": {
         "properties": {
@@ -2538,6 +3358,164 @@
           "created_at"
         ],
         "title": "Transcript"
+      },
+      "URLProbeRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2083,
+            "minLength": 1,
+            "format": "uri",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "URLProbeRequest"
+      },
+      "URLProbeResponse": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "uploader": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploader"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
+          "formats_available": {
+            "type": "integer",
+            "title": "Formats Available",
+            "default": 0
+          },
+          "resolvable": {
+            "type": "boolean",
+            "title": "Resolvable",
+            "default": true
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "When resolvable=False, a human-readable hint."
+          }
+        },
+        "type": "object",
+        "title": "URLProbeResponse"
+      },
+      "UploadPreview": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "Resolved artifact kind (video/audio/image)"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codec"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "sha256_prefix": {
+            "type": "string",
+            "title": "Sha256 Prefix",
+            "description": "First 16 hex chars of the file sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "size_bytes",
+          "sha256_prefix"
+        ],
+        "title": "UploadPreview",
+        "description": "Pre-commit summary returned when ``commit=False`` on /acquire/upload."
       },
       "ValidationError": {
         "properties": {

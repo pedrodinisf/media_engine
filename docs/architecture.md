@@ -349,17 +349,28 @@ the executor consumes.
   `EventNotification` frames. Pipelines run client-side dispatching each
   node's op through the daemon (warm models, no `RunPipeline` RPC
   needed — both sides share one `cache.db` + store).
-- **REST (`api/`)** — FastAPI app (Phase 4 commit 29). Endpoints:
-  `POST /run`, `POST /pipelines` (both return 202 + `job_id`),
-  `GET/DELETE /jobs[/id]`, `GET /jobs/{id}/events` (SSE through
-  `sse-starlette`), `GET /artifacts[/id][/file][/lineage]`,
+- **REST (`api/`)** — FastAPI app (Phase 4 commit 29; Phase 6 commits
+  39–46 widen the surface). Endpoints:
+  `POST /run`, `POST /run/preview`, `POST /pipelines` (the first two
+  return Pydantic responses; `/pipelines` + `/run` return 202 +
+  `job_id`), `GET/DELETE /jobs[/id]`, `GET /jobs/{id}/events` (SSE
+  through `sse-starlette`), `GET /events/stream` (global SSE) +
+  `GET /events/history` (persisted tail),
+  `POST /acquire/upload` (multipart, ffprobe preview + commit) +
+  `POST /acquire/url/probe` (yt-dlp `--dump-single-json`),
+  `POST /search` (sync wrapper around `search.*` ops with a 30 s
+  timeout), `GET /cost/summary` + `GET /cost/log` (read-side views
+  over the `cost_log` table),
+  `GET /artifacts[/id][/file][/lineage]`,
   `GET/POST /profiles`, `GET /operations[/name]`,
   `GET /backends[/name]`, `POST/GET/DELETE /tokens`, plus
   un-authenticated `/health` + `/ready` probes. Bearer-token auth
   (32-byte secrets hashed at rest in `api_tokens`); the token's
-  namespace scopes every read/write. `med api start` boots uvicorn
-  against `build_app()`; `med api token create` mints the first
-  bootstrap token directly against the cache (no chicken-and-egg).
+  namespace scopes every read/write. The SSE routes accept
+  `?token=...` as a fallback because `EventSource` cannot set
+  custom headers. `med api start` boots uvicorn against
+  `build_app()`; `med api token create` mints the first bootstrap
+  token directly against the cache (no chicken-and-egg).
 - **MCP (`mcp/`)** — `exporter.py` turns every registered op into an MCP
   tool (`.`->`__`, params schema + `input_artifact_ids` + `backend`
   enum; variadic ops get an unbounded `minItems:1` array).
@@ -369,6 +380,23 @@ the executor consumes.
   `resources/read` surface artifacts as `media://<kind>/<id>`. `med
   mcp serve [--allow OP] [--deny OP]` is what
   `claude mcp add media-engine "med mcp serve"` invokes.
+- **Web UI (`web/` source; `media_engine/web/dist/` built)** —
+  SvelteKit 2 / Svelte 5 SPA bundled into the engine container at
+  `/ui`, served by the same FastAPI process as REST (Phase 6
+  commits 39–50). Static-only `adapter-static` build (no Node in
+  production), Tailwind v4 design tokens lifted from
+  `docs/quickstart.html` (Clean-NASA palette), TypeScript strict
+  + `exactOptionalPropertyTypes` + `noUncheckedIndexedAccess`,
+  `EventSource` + TanStack-Query-style fetch helpers, schema-driven
+  form renderer over `params_schema`, Svelte Flow + dagre for the
+  lineage graph. The build output is force-included in the wheel
+  via `hatch.build.targets.wheel.force-include`, so `pip install
+  media_engine[api]` from PyPI ships the UI without a Node
+  toolchain. `med web start` is a thin wrapper over `med api start`
+  that validates the dist tree is present and (optionally) opens
+  a browser at `/ui/setup`. CSP scoped to `/ui/*` via
+  `media_engine/api/middleware.py`. See
+  [`web_ui.md`](web_ui.md) for the panel-by-panel tour.
 
 ---
 
@@ -760,16 +788,81 @@ roadmap; this section is the reconciliation):
     `med profile run analysis-full` from the repo root for now. A
     profile-dir-relative resolver is a small Phase 6 enhancement
     (the Web UI will need it for non-CWD workflows anyway).
+- Phase-6 ratified deviations (commits 39–46 + post-46 audit):
+  - **Framework choice: SvelteKit, not Next.js.** Plan §12.5 said
+    "SvelteKit/Next.js"; the smaller bundle + `adapter-static`'s
+    "no Node in production" model decided it. Build emits to
+    `media_engine/web/dist/` and FastAPI mounts it as
+    `StaticFiles(html=True)` at `/ui`. Per `web_ui.md` §7.
+  - **Paste-token bootstrap, not a login UI.** Plan §12.5 lists
+    "auth bootstrap" without prescribing a form. The engine is
+    local-first + single-namespace-per-process — bearer tokens
+    minted via `med api token create` already are the user
+    identity. The UI's `/ui/setup` route just persists the
+    pasted secret; zero new endpoints, zero chicken-and-egg.
+  - **SSE auth rides on `?token=...`** for `EventSource` clients
+    (`GET /jobs/{id}/events` + `GET /events/stream`). Plan §13.1
+    pre-registered the tradeoff: tokens in URL query strings
+    leak via browser history and access logs, but the v1 target
+    is loopback / private networks. Hardening path (job-scoped
+    short-lived nonce) catalogued in `web_ui_deferred.md`.
+  - **`POST /search` is sync, not a job.** Search ops are pure
+    reads and finish in 100–500 ms on sub-1k corpora; wrapping
+    them in `POST /run` would add 1–2 s of job-lifecycle latency
+    and break the type-as-you-go UX. The endpoint calls
+    `Engine.run("search.<mode>")` inline under a 30 s timeout.
+    `top_k` bounded at 200 to keep the synchronous handler from
+    starving the event loop (plan §13 risk #6).
+  - **Layer Chart used for d3-scale-driven HTML bars** rather
+    than full SVG `Chart` components. The `CostBars.svelte`
+    rollup is a sequence of `<div>` percentage bars sized via
+    `d3-scale`'s `scaleLinear`. The chart library is in place
+    for richer visuals in commits 47–49; the simpler HTML
+    rendering compiles cleanly under Svelte 5 strict mode and
+    needs no SVG layer manipulation for the bar use case.
+  - **Datetime windows use the `datetime-local` input with a
+    local↔UTC bridge.** `<input type="datetime-local">` rejects
+    `Z`-suffixed ISO values and emits local-time-without-tz on
+    edit. `web/src/lib/api/cost.ts` exports
+    `isoToLocalInputValue` + `localInputValueToIso` so state is
+    canonical UTC ISO over the wire while the input displays
+    the user's wall-clock time. Labels marked "(local)" to set
+    expectations. Three Vitest unit tests cover the round-trip.
+  - **`/cost/log` until-filter applied in-route, not in cache.**
+    `Engine.cost_log_entries` has no upper bound. When `until`
+    is set, the route fetches *unbounded* rows (since the
+    bounded fetch would shrink the candidate set before the
+    filter ran), filters in Python, then paginates. Acceptable
+    at local scale; if cost-log size becomes a bottleneck, push
+    `until` into `Cache.cost_log`. Regression covered.
+  - **Query-side embedding lives in `runtime/search_query.py`.**
+    `search.semantic` and `search.hybrid` accept only an
+    `Embedding` artifact as input — both `med search` and
+    `POST /search` need the same upstream "encode query, persist
+    as Embedding, return its id" step. Centralising avoided the
+    two transports drifting on model choice. The op_name passed
+    into `compute_derived_artifact_id` stays `_cli.search.query`
+    verbatim so the refactor doesn't invalidate any cached
+    query-embedding rows; the leading `_cli.` reads odd outside
+    the CLI but is now an opaque cache-key seed.
+  - **Search results FE shape.** The endpoint flattens the
+    `Analysis` wrapper (charter §11 deviation note about search
+    ops emitting an Analysis wrapping `results: [...]`) into a
+    bare ranked list — the Web UI never has to know that
+    `search.semantic` emits an Analysis artifact, only that
+    the endpoint returns ranked rows. CLI behaviour unchanged.
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit
 findings`, `fix(phase-2): close pre-Phase-3 audit findings`,
 `fix(phase-3): close pre-Phase-4 audit findings`, `fix(phase-4): close
 pre-Phase-5 audit findings`, `fix(phase-5): close pre-Phase-6 audit
-findings`.
+findings`, `fix(phase-6): post-commit-46 audit — until-pagination,
+datetime-local tz, cost-page race`.
 
 Phases 0–5 are complete; v0.5.0 is the current release. Phase 6
-(local-first Web UI) is the next work.
+(local-first Web UI) is mid-flight: commits 39–46 + the post-46
+audit have landed. Commits 47–50 are queued.
 
 After Phase 5, two further phases are formalised in plan §12.5 +
 §12.6 and queued post-v0.5.0:

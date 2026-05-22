@@ -120,7 +120,7 @@ milliseconds and reuses warm ML models.
 
 | Command  | Purpose                                                |
 | -------- | ------------------------------------------------------ |
-| `med api start [--host] [--port] [--reload]` | Boot the FastAPI app on `http://host:port`. |
+| `med api start [--host] [--port] [--reload]` | Boot the FastAPI app on `http://host:port` (headless — no `/ui` mount). |
 | `med api token create [--name N] [--scopes ...]` | Mint a bearer token.       |
 | `med api token ls`                  | List active tokens (id, name, last-used).   |
 | `med api token revoke <id>`         | Invalidate a token.                         |
@@ -131,6 +131,26 @@ See [`docs/api_reference.md`](api_reference.md) for the endpoint surface.
 uv run med api token create --name laptop
 uv run med api start --host 0.0.0.0 --port 8000
 ```
+
+## Web UI (Phase 6)
+
+| Command  | Purpose                                                |
+| -------- | ------------------------------------------------------ |
+| `med web start [--host] [--port] [--open/--no-open]` | Boot the FastAPI app *with* the SvelteKit SPA mounted at `/ui`. Same uvicorn under the hood as `med api start`; the difference is the validated dist tree + the optional browser auto-open. |
+
+`--open` auto-detects a display (`DISPLAY` / `WAYLAND_DISPLAY` on
+Linux; default-true on macOS/Windows; `MEDIA_ENGINE_NO_BROWSER=1`
+forces off). The SPA's built `media_engine/web/dist/` tree is shipped
+inside the wheel (`hatch force-include`) — a `pip install
+media_engine[api]` ships the UI for free. Developers from source
+need a one-time `pnpm -C web install && pnpm -C web build`.
+
+```bash
+uv run med api token create --label web-ui   # paste into /ui/setup
+uv run med web start --open                  # opens browser at /ui/setup
+```
+
+See [`docs/web_ui.md`](web_ui.md) for the panel-by-panel tour.
 
 ## MCP (LLM client integration)
 

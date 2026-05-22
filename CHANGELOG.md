@@ -6,6 +6,125 @@ once we ship v1.0 (after Phase 6 — the REST surface needs to freeze
 first). Until then expect 0.x to bump frequently and best-effort
 backwards compatibility.
 
+## [0.6.0-dev] — Unreleased (Phase 6, commits 39–46 of 50 + audit)
+
+Phase 6 (local-first Web UI, plan §12.5) is mid-flight. Commits 39–46
+have landed plus a post-46 audit-fix pass; commits 47–50 ship the
+profile workspace, examples library, plugin catalog / settings panel,
+and the docs + v0.6.0 release cut.
+
+### Added
+
+- **Web UI (`web/` source, built into `media_engine/web/dist/`)** —
+  SvelteKit 2 / Svelte 5 SPA bundled at `/ui`, served by the same
+  FastAPI process as REST. Panels live today: Ingest (upload / URL
+  probe / livestream / batch), Run (op picker + schema-driven form
+  + backend health badges + live 250 ms cost preview), Jobs (live
+  table + per-job detail with SSE events / op runs / outputs /
+  failure envelope + cancel), Catalog (paginated list + kind chip
+  filter + per-kind preview affordances), Catalog detail (Preview /
+  Metadata / Lineage tabs with Svelte Flow + dagre graph viewer),
+  Search (debounced live query, fulltext / semantic / hybrid, top-k
+  slider, kind filter), Cost (per-{op,backend,namespace} rollup
+  bars + monthly burn projection + paginated drill-down ledger).
+  Tailwind v4 Clean-NASA tokens lifted from `docs/quickstart.html`;
+  TypeScript strict + `exactOptionalPropertyTypes`. See
+  [`docs/web_ui.md`](docs/web_ui.md) for the panel-by-panel tour.
+- **`med web start [--host] [--port] [--open/--no-open]`** — CLI
+  launcher. Validates `media_engine/web/dist/` is present; same
+  uvicorn boot as `med api start` plus the `/ui` static mount and
+  an optional browser auto-open.
+- **REST surface widened** (additive — no Phase-4 endpoints
+  changed):
+  - `POST /run/preview` — cost-only `Engine.estimate_op_cost`
+    without submitting a job. Web UI run panel debounces it
+    (250 ms).
+  - `POST /acquire/upload` — multipart upload with ffprobe preview
+    (`commit=false`) + commit (`commit=true → acquire.upload`
+    job). Honors `MEDIA_ENGINE_MAX_UPLOAD_MB` (default 2048).
+  - `POST /acquire/url/probe` — yt-dlp `--dump-single-json`
+    metadata-only resolve.
+  - `POST /search` — sync wrapper around `search.{fulltext,semantic,
+    hybrid}` with a 30 s timeout and `top_k` bounded at 200.
+    Unwraps the Analysis output's `results: [...]` into a bare
+    ranked list. Semantic + hybrid embed the query string via
+    `runtime/search_query.py` (shared with `med search`).
+  - `GET /cost/summary?group_by=op|backend|namespace` — per-key
+    spend rollup over the `cost_log` table.
+  - `GET /cost/log` — paginated newest-first ledger with
+    since/until/op filters + offset+limit pagination.
+  - `GET /events/stream` — global SSE tail across every job.
+  - `GET /events/history` — durable event tail.
+  - `?token=...` shim on SSE routes (`/jobs/{id}/events`,
+    `/events/stream`) for `EventSource` clients.
+- **Static mount + middleware** —
+  `media_engine/api/middleware.py::UISecurityHeadersMiddleware`
+  adds CSP (with `wasm-unsafe-eval` for `pdf.js` and
+  `style-src 'unsafe-inline'` for Svelte scoped styles) +
+  `X-Content-Type-Options: nosniff` + `Referrer-Policy:
+  same-origin` to `/ui/*` responses only. Defaults to same-origin
+  CORS; opt in via `MEDIA_ENGINE_CORS_ORIGINS`.
+- **Wheel packaging** — `[tool.hatch.build.targets.wheel.force-include]`
+  ships the built `media_engine/web/dist/` tree with every wheel.
+  `pip install media_engine[api]` gets the UI for free; no Node
+  toolchain needed on production hosts.
+- **`scripts/build_web.sh`** — wraps `pnpm -C web install
+  --frozen-lockfile && pnpm -C web build` for CI / wheel-build
+  use.
+- **Frontend test infra** — Vitest unit suite + Playwright e2e
+  scaffold under `web/tests/`. 27 unit tests today (schema-form
+  renderer, lineage layout, artifact REST helpers, token store,
+  cost / search format helpers, datetime-local local↔UTC bridge).
+
+### Changed
+
+- `MEDIA_ENGINE_MAX_UPLOAD_MB` env var added (default 2048;
+  applies to `POST /acquire/upload`).
+- `MEDIA_ENGINE_CORS_ORIGINS` env var added (empty default =
+  same-origin only).
+- `MEDIA_ENGINE_NO_BROWSER` env var added (forces
+  `med web start` to skip the browser auto-launch).
+- `_cli.search.query` op_name in `runtime/search_query.py` is
+  preserved verbatim across the CLI-to-shared-runtime extraction
+  so existing cached query-embedding rows still hit. The leading
+  `_cli.` reads odd outside the CLI now but is an opaque cache-key
+  seed; renaming would silently invalidate every prior search
+  cache row. Documented in `architecture.md` §11.
+
+### Fixed (post-commit-46 audit, same release window)
+
+- **`/cost/log` `until` filter applied AFTER engine `limit`**
+  shrank the candidate set, so far-back matching rows were
+  invisible whenever `until` was in the past. Branched on
+  `until is None` — keep the bounded fetch in the common path,
+  drop to unbounded fetch + Python filter when `until` is set.
+  Regression test seeds 100 newer-than-cutoff + 5 older rows
+  and asserts the older 5 show through `limit=50`.
+- **`/ui/cost` datetime-local inputs were broken end-to-end.**
+  The HTML datetime-local spec requires `YYYY-MM-DDTHH:mm` (no
+  Z, no sub-second precision); the initial state passed
+  `toISOString()` output so inputs rendered blank. Worse,
+  user-typed values were sent raw — local-time semantics on
+  the client, naive-UTC on the server, off by the user's tz
+  offset. Added `isoToLocalInputValue` + `localInputValueToIso`
+  helpers in `$lib/api/cost.ts`, route user edits through
+  commit helpers that update both the local-string and the
+  canonical UTC-ISO state in lockstep, labels marked "(local)"
+  to set expectations.
+- **Burn-rate projection used live `since`/`until` state** instead
+  of the summary's echoed window, so editing the inputs without
+  Refresh drifted the projection from the displayed rollup.
+  Anchored to `summary.since` / `summary.until` fallbacks.
+- **Initial `/ui/cost` load race** — the `$effect` gate
+  (`summary !== null`) raced with `onMount`. Restructured to
+  let the `$effect` drive both initial + group-by re-fetch;
+  drop the redundant `onMount` summary call.
+- **`cost_routes` docstring polish** — no longer claims "scopes
+  to `token.namespace`" (`require_token` forces the token's
+  namespace to equal the engine's; the actual scope is the
+  engine's). `monthlyBurnProjection` comment now matches
+  implementation ($0 spend → $0, not null).
+
 ## [0.5.0] — 2026-05-22
 
 Phase 5 closes the v0.5.0 release: a working starter analysis flow on

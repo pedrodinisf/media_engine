@@ -2,14 +2,18 @@
 
 Universal media-processing engine. Typed artifacts, capability-named
 operations, pluggable backends, content-addressed caching, async DAG
-execution. Ships as a Python package + CLI (`med`) + daemon + REST + MCP
-stdio server.
+execution. Ships as a Python package + CLI (`med`) + daemon + REST +
+MCP stdio server + local-first Web UI.
 
 ```bash
 uv sync
 uv run med ops                                    # 34 ops registered
 uv run med profile ls                             # 8+ bundled profiles
 uv run med profile run analysis-full --input <video-id>
+
+# Prefer a GUI?  (one-time: pnpm -C web install && pnpm -C web build)
+uv run med api token create --label web-ui
+uv run med web start --open                       # opens /ui/setup
 ```
 
 ## What you get out of the box
@@ -26,9 +30,9 @@ uv run med profile run analysis-full --input <video-id>
   pipeline plus five `kind: prompt` lenses
   (`video-knowledge`, `technical-academic`, `diy-electronics`,
   `cooking-recipes`, `general-custom`) and two minimal examples.
-- **Five transports** for every op: CLI, daemon, REST + SSE, MCP stdio,
-  Python API. Adding an op or backend lights it up across all five
-  automatically.
+- **Six transports** for every op: CLI, daemon, REST + SSE, MCP stdio,
+  Python API, and a SvelteKit Web UI bundled at `/ui`. Adding an op or
+  backend lights it up across all six automatically.
 
 ## Install
 
@@ -67,12 +71,36 @@ uv run med lineage <artifact-id>     # upstream tree
 
 # Operate
 uv run med daemon start              # warm engine for fast reuse
-uv run med api start                 # REST + SSE on :8000
+uv run med api start                 # REST + SSE on :8000 (headless)
+uv run med web start --open          # REST + SSE + /ui SPA, opens browser
 uv run med mcp serve                 # MCP stdio for LLM clients
 ```
 
 Use `--help` on any subcommand for the full flag set, or see
 [`docs/cli_reference.md`](docs/cli_reference.md).
+
+## Web UI
+
+A SvelteKit single-page app is bundled at `/ui` and served by the same
+FastAPI process as the REST API. Full feature parity with the CLI:
+ingest (upload / URL / livestream / batch), schema-driven run forms
+with live cost preview, job dashboard with SSE updates, catalog browser
+with per-kind preview affordances, lineage graph viewer, sync search,
+cost ledger with rollup bars + monthly burn projection. New panels
+(profile workspace, plugin catalog, settings) land in the rest of
+Phase 6.
+
+```bash
+pnpm -C web install --frozen-lockfile   # one-time
+pnpm -C web build                       # populates media_engine/web/dist/
+uv run med api token create --label web-ui
+uv run med web start --open
+```
+
+See [`docs/web_ui.md`](docs/web_ui.md) for the panel-by-panel tour,
+security posture, and the CLI ↔ UI parity matrix. A wheel install
+from PyPI ships the built dist tree by default — no Node toolchain
+needed on the host.
 
 ## Adding your own
 
@@ -89,6 +117,8 @@ add it to `media_engine/bootstrap.py::_op_classes()` /
 - **Architecture (as-built):** [`docs/architecture.md`](docs/architecture.md)
 - **CLI reference:** [`docs/cli_reference.md`](docs/cli_reference.md)
 - **REST + MCP API reference:** [`docs/api_reference.md`](docs/api_reference.md)
+- **Web UI guide:** [`docs/web_ui.md`](docs/web_ui.md) · v1.x backlog:
+  [`docs/web_ui_deferred.md`](docs/web_ui_deferred.md)
 - **Deployment (Docker / Helm / Terraform):** [`docs/deployment.md`](docs/deployment.md)
 - **Bundled profile guide:** [`docs/profile_analysis_full.md`](docs/profile_analysis_full.md)
 - **Contributor orientation:** [`CLAUDE.md`](CLAUDE.md)
@@ -96,15 +126,21 @@ add it to `media_engine/bootstrap.py::_op_classes()` /
 
 ## Status
 
-**v0.5.0 — Phases 0–5 complete.** Suite 773 passed / 29 skipped (dep- and
-API-key-gated). Ruff + pyright strict clean. 34 ops, 30+ backends, 14
-artifact kinds, 53 commits across phases 0–5.
+**v0.5.0 shipped; v0.6.0 in flight.** Phases 0–5 are complete (49
+commits). Phase 6 (local-first Web UI, plan §12.5) is mid-flight:
+commits 39–46 + the post-46 audit have landed — Ingest / Run / Jobs /
+Catalog / Search / Cost / Lineage panels are live. Profile workspace
+(commit 47), examples library (commit 48), plugin catalog + settings
+(commit 49), and the `+ui` Docker stage + v0.6.0 cut (commit 50) are
+the remaining work.
 
-**Roadmap.** Phase 6 — local-first Web UI (SvelteKit SPA served by
-`med web start`, full GUI parity with the CLI). Phase 7 — acoustic speaker
-identity (`speakers.embed_voice` + `speakers.cluster` + `speakers.match`,
-voice-fingerprint DB reusing the pgvector backend). Both are spec'd in
-plan §12.5 / §12.6.
+Suite: 843 passed / 29 skipped (dep- and API-key-gated). Ruff +
+strict pyright clean. Frontend: 27 Vitest unit tests, svelte-check
+0/0 on 500 files. 34 ops, 30+ backends, 14 artifact kinds.
+
+**Phase 7 — acoustic speaker identity** (`speakers.embed_voice` +
+`speakers.cluster` + `speakers.match`, voice-fingerprint DB reusing
+the pgvector backend) is queued post-v0.6.0 per plan §12.6.
 
 v1.0 lands when the REST surface freezes (after Phase 6). Before then
 semver stays 0.x; backwards compatibility is best-effort but not

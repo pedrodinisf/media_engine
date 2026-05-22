@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="light" />
-<meta name="description" content="framepulse — the media engine. Typed artifacts, capability-named operations, swappable backends, content-addressed caching, async DAG execution. One substrate, five transports, 34 operations." />
+<meta name="description" content="framepulse — the media engine. Typed artifacts, capability-named operations, swappable backends, content-addressed caching, async DAG execution. One substrate, six transports, 34 operations." />
 <title>framepulse · the media engine · Quick Start &amp; Operations Manual</title>
 
 <!-- Mermaid for diagrams -->
@@ -2003,15 +2003,16 @@ flowchart TD
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="operations">
   <div class="eyebrow">OPERATIONS MANUAL <span class="id">007 · TRANSPORTS</span></div>
-  <h2 class="section-title">Five ways to talk to the same engine.</h2>
+  <h2 class="section-title">Six ways to talk to the same engine.</h2>
   <p class="section-lede">
-    Pick whichever transport fits the task. They share one cache.db and one permanent_store &mdash; an artifact created on the shell shows up immediately in REST, MCP, the daemon, and the Python API. No cross-transport sync to think about.
+    Pick whichever transport fits the task. They share one cache.db and one permanent_store &mdash; an artifact created on the shell shows up immediately in REST, MCP, the daemon, the Python API, and the Web UI. No cross-transport sync to think about.
   </p>
 
   <div class="decision">
     <div class="decision-cell"><div class="dc-label">▸ shell</div><div class="dc-title">CLI (cold)</div><div class="dc-when">One-shot scripting, CI jobs, ad-hoc reprocessing.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ shell</div><div class="dc-title">CLI + daemon</div><div class="dc-when">Local dev with hot models. CLI auto-routes via 50&thinsp;ms ping.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ http</div><div class="dc-title">REST + SSE</div><div class="dc-when">Service integration, web frontends, async job pattern.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ browser</div><div class="dc-title">Web UI <span style="font-size:10px;color:var(--accent-amber);">PH 6 MID</span></div><div class="dc-when">Local-first SvelteKit SPA at <code class="inline">/ui</code>. Full GUI parity with the CLI.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ stdio</div><div class="dc-title">MCP</div><div class="dc-when">AI agents (Claude Code &amp; friends). Allow-listed tool surface.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ in-proc</div><div class="dc-title">Python API</div><div class="dc-when">Embedded use. <code class="inline">from media_engine import Engine</code>.</div></div>
   </div>
@@ -2022,6 +2023,7 @@ flowchart TD
       <button class="tab"        role="tab" data-target="t-profile" aria-selected="false"><span class="glyph">⚙</span>PROFILES</button>
       <button class="tab"        role="tab" data-target="t-daemon"  aria-selected="false"><span class="glyph">◷</span>DAEMON</button>
       <button class="tab"        role="tab" data-target="t-rest"    aria-selected="false"><span class="glyph">⌗</span>REST</button>
+      <button class="tab"        role="tab" data-target="t-web"     aria-selected="false"><span class="glyph">◐</span>WEB UI</button>
       <button class="tab"        role="tab" data-target="t-mcp"     aria-selected="false"><span class="glyph">⚡</span>MCP</button>
       <button class="tab"        role="tab" data-target="t-python"  aria-selected="false"><span class="glyph">π</span>PYTHON</button>
     </div>
@@ -2116,6 +2118,27 @@ flowchart TD
 <span class="fn">curl</span> <span class="flag">-N</span> <span class="flag">-H</span> <span class="str">"Authorization: Bearer $TOKEN"</span> \
      http://localhost:8000/jobs/<span class="str">$JOB</span>/events   <span class="cmt"># SSE stream</span></pre>
       </div>
+    </div>
+
+    <div class="tab-panel" id="t-web" role="tabpanel">
+      <h4>Web UI &mdash; local-first browser surface</h4>
+      <p>A SvelteKit single-page app is bundled inside the engine container at <code class="inline">/ui</code> and served by the same FastAPI process that powers the REST API. <strong>Full GUI parity with the CLI:</strong> anything you can do with <code class="inline">med &lt;verb&gt;</code> you can do from the browser. The path of least resistance for users who don't want a shell &mdash; while the CLI stays first-class for power users + CI.</p>
+      <p><strong>Panels live today (commits 39&ndash;46 + post-46 audit):</strong> Ingest (upload / URL probe / livestream / batch), Run (op picker + schema-driven form + live cost preview), Jobs (live SSE-driven table + per-job detail with events / op runs / outputs / failure envelope + cancel), Catalog (paginated list + kind chip filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go feedback), Cost (per-{op,backend,namespace} rollup bars + monthly burn projection + paginated drill-down ledger). <strong>Pending</strong> (commits 47&ndash;49): Profile workspace (visual DAG composer + YAML editor), Profile examples library, Plugin catalog + Settings.</p>
+      <p><strong>Bootstrap:</strong> mint a bearer token via the CLI, then paste it into the browser at <code class="inline">/ui/setup</code>. Zero new endpoints, zero chicken-and-egg. Persists to <code class="inline">localStorage</code> (or <code class="inline">sessionStorage</code> via the session-only toggle).</p>
+      <p><strong>Security:</strong> CSP scoped to <code class="inline">/ui/*</code> (<code class="inline">default-src 'self'</code> with <code class="inline">'wasm-unsafe-eval'</code> for pdf.js + <code class="inline">'unsafe-inline'</code> styles for Svelte's scoped CSS); same-origin only by default (<code class="inline">MEDIA_ENGINE_CORS_ORIGINS</code> opens dev origins); SSE routes accept <code class="inline">?token=&hellip;</code> since <code class="inline">EventSource</code> can't set headers (loopback-target, v1.x nonce hardening path queued).</p>
+      <div class="code-block">
+        <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; boot the UI</span></div>
+<pre><span class="cmt"># One-time: build the SPA dist tree</span>
+<span class="fn">pnpm</span> <span class="flag">-C</span> web install <span class="flag">--frozen-lockfile</span>
+<span class="fn">pnpm</span> <span class="flag">-C</span> web build           <span class="cmt"># &rarr; media_engine/web/dist/</span>
+
+<span class="cmt"># Mint a token (talks to the cache, no running API needed)</span>
+<span class="fn">med</span> api token create <span class="flag">--label</span> web-ui
+
+<span class="cmt"># Boot uvicorn + mount /ui + (optionally) open the browser</span>
+<span class="fn">med</span> web start <span class="flag">--open</span></pre>
+      </div>
+      <p>Wheel installs from PyPI ship the prebuilt dist tree via <code class="inline">hatch force-include</code> &mdash; <code class="inline">pip install media_engine[api]</code> gets the UI for free with no Node toolchain on the host. See <a href="web_ui.md">docs/web_ui.md</a> for the panel-by-panel tour.</p>
     </div>
 
     <div class="tab-panel" id="t-mcp" role="tabpanel">
@@ -2230,16 +2253,16 @@ asyncio.run(<span class="fn">go</span>())</pre>
      010 — CHRONOLOGY
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="chronology">
-  <div class="eyebrow">CHRONOLOGY <span class="id">010 · 9 DAYS · 49 COMMITS</span></div>
-  <h2 class="section-title">From scaffold to v0.5.0 in nine days.</h2>
+  <div class="eyebrow">CHRONOLOGY <span class="id">010 · 9 DAYS · 57+ COMMITS</span></div>
+  <h2 class="section-title">v0.5.0 shipped; Phase 6 in flight on the Web UI.</h2>
   <p class="section-lede">
-    Phases 0&ndash;5 shipped between <strong>2026-05-14</strong> and <strong>2026-05-22</strong>: forty-nine commits, six audit-fix waves, thirty-four operations, thirty-plus backends, five transports. v0.5.0 is the current release. Phase 6 (local-first Web UI) and Phase 7 (acoustic speaker identity) queue next.
+    Phases 0&ndash;5 shipped between <strong>2026-05-14</strong> and <strong>2026-05-22</strong>. v0.5.0 is the current release: forty-nine commits, six audit-fix waves, thirty-four operations, thirty-plus backends, five transports. Phase 6 (local-first Web UI, plan &sect;12.5) is now mid-flight: commits 39&ndash;46 + a post-46 audit landed since. Phase 7 (acoustic speaker identity, plan &sect;12.6) queues after.
   </p>
 
   <div class="diagram">
     <div class="diagram-head">
       <h4>Implementation timeline</h4>
-      <span class="label"><span class="status-dot amber live"></span>FIG 10.1 · 9 DAYS · 6 PHASES · 45 COMMITS</span>
+      <span class="label"><span class="status-dot amber live"></span>FIG 10.1 · 9 DAYS · 7 PHASES TOTAL · 57+ COMMITS LANDED</span>
     </div>
     <div class="itl" role="img" aria-label="Implementation timeline showing six phases between May 14 and May 24, 2026">
 
@@ -2301,21 +2324,29 @@ asyncio.run(<span class="fn">go</span>())</pre>
           </div>
         </div>
 
-        <!-- Phase 5 — scheduled, future -->
-        <div class="itl-row future">
+        <!-- Phase 5 — shipped, May 22 -->
+        <div class="itl-row">
           <div class="itl-row-label"><span class="itl-id">P5</span><span class="itl-name">Domain profiles + polish</span></div>
           <div class="itl-track">
-            <div class="itl-bar future" style="left: 90%; width: 10%"><span class="itl-bar-text">scheduled · speakers · reports · reference docs</span></div>
+            <div class="itl-bar" style="left: 86.5%; width: 5%"><span class="itl-bar-text">4 commits · speakers.identify · analysis-full · reports · v0.5.0 cut</span></div>
+          </div>
+        </div>
+
+        <!-- Phase 6 — in flight, commits 39–46 + audit landed -->
+        <div class="itl-row inflight">
+          <div class="itl-row-label"><span class="itl-id">P6</span><span class="itl-name">Web UI · in flight</span></div>
+          <div class="itl-track">
+            <div class="itl-bar inflight" style="left: 91.5%; width: 4%"><span class="itl-bar-text">commits 39–46 + audit · 47–50 queued</span></div>
           </div>
         </div>
 
       </div>
 
       <div class="itl-legend">
-        <span><span class="swatch done"></span>shipped (45 commits · phases 0–4)</span>
-        <span><span class="swatch future"></span>scheduled (phase 5 · ~4 commits)</span>
+        <span><span class="swatch done"></span>shipped (49 commits · phases 0–5 · v0.5.0)</span>
+        <span><span class="swatch future"></span>in flight (phase 6 · 12 commits · 8 landed)</span>
         <span><span class="status-dot amber live"></span>TODAY · May 22</span>
-        <span style="opacity: 0.7">Phase 6 (Web UI · 12 commits) and Phase 7 (acoustic speaker identity · 4 commits) queue after Phase 5 — see cards below.</span>
+        <span style="opacity: 0.7">Phase 7 (acoustic speaker identity · 4 commits) queues after Phase 6 closes — see cards below.</span>
       </div>
     </div>
   </div>
@@ -2467,11 +2498,11 @@ asyncio.run(<span class="fn">go</span>())</pre>
       </div>
     </article>
 
-    <article class="phase-card future">
+    <article class="phase-card">
       <div class="phase-id">PHASE <b>5</b></div>
       <div class="phase-body">
-        <h4>Domain profiles &amp; final polish</h4>
-        <p>The last mile of the substrate. <code class="inline">speakers.identify</code> with rapidfuzz fuzzy match against a name-CSV speaker database; <code class="inline">report.session</code> and <code class="inline">report.zeitgeist</code> ops with jinja2 templating; bundled starter pipeline profiles ready to fork; full CLI &amp; REST &amp; MCP reference docs auto-generated from OpenAPI + tool schemas; a CHANGELOG marking the v0.5.0 release pre-1.0 stabilization.</p>
+        <h4>Domain profiles &amp; v0.5.0 release</h4>
+        <p>The last mile of the substrate. <code class="inline">speakers.identify</code> with rapidfuzz fuzzy match against a name-CSV speaker database; <code class="inline">report.session</code> and <code class="inline">report.zeitgeist</code> ops with jinja2 templating; bundled <code class="inline">analysis-full</code> pipeline plus five <code class="inline">kind:&nbsp;prompt</code> starter profiles; full CLI / REST / MCP reference docs auto-generated from OpenAPI + tool schemas; CHANGELOG marking the v0.5.0 release pre-1.0 stabilization.</p>
         <div class="phase-deliverables">
           <span class="deliverable">speakers.identify · name-DB</span>
           <span class="deliverable">report.session</span>
@@ -2482,17 +2513,17 @@ asyncio.run(<span class="fn">go</span>())</pre>
         </div>
       </div>
       <div class="phase-meta">
-        <span class="phase-status next"><span class="status-dot amber live"></span>scheduled</span>
-        <span class="phase-window">May 23 →</span>
-        <span class="phase-commits">0<span class="unit">/ 4 commits</span></span>
+        <span class="phase-status done"><span class="status-dot green"></span>shipped</span>
+        <span class="phase-window">May 22</span>
+        <span class="phase-commits">4<span class="unit">commits + audit</span></span>
       </div>
     </article>
 
-    <article class="phase-card future">
+    <article class="phase-card">
       <div class="phase-id">PHASE <b>6</b></div>
       <div class="phase-body">
         <h4>Local-first Web UI · full GUI parity with the CLI</h4>
-        <p>The graphical surface. A SvelteKit (or Next.js) single-page app bundled into the engine container under <code class="inline">/ui</code>; one-command boot via <code class="inline">med web start</code>. Anything reachable via <code class="inline">med &lt;verb&gt;</code> reachable from the UI: <strong>ingestion</strong> (drag-and-drop upload, URL paste, livestream recorder, batch URL list), <strong>run configuration</strong> (op picker filtered by input kind, schema-driven param forms from <code class="inline">params_model.model_json_schema()</code>, backend selector with health badges, live cost preview), <strong>inspect</strong> (job dashboard with SSE updates, typed catalog browser with per-kind preview affordances, lineage graph viewer, full <code class="inline">cost_log</code> ledger, hybrid search), <strong>profile workspace</strong> (visual DAG composer + Monaco YAML editor + examples library with fork-this), <strong>plugin manager</strong> (toggle optional extras, manage custom op/backend modules), and <strong>settings</strong> (config.toml, resources.yaml, namespace switcher, token CRUD).</p>
+        <p>The graphical surface. A SvelteKit single-page app bundled into the engine container at <code class="inline">/ui</code>, served by the same FastAPI process as REST; one-command boot via <code class="inline">med web start</code>. <strong>Live today (commits 39&ndash;46 + audit):</strong> Ingest panel (upload / URL probe / livestream / batch), Run panel (op picker + schema-driven form + backend health + live cost preview), Jobs dashboard (live SSE table + per-job detail + cancel), Catalog browser (paginated list + kind filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go), Cost ledger (per-{op,backend,namespace} rollup bars + monthly burn projection + drill-down). <strong>Queued (commits 47&ndash;50):</strong> Profile workspace (visual DAG composer + CodeMirror YAML editor), Profile examples library with fork-this, Plugin catalog (extras show-don't-install + per-op/backend visibility gate), Settings (tokens, backends, storage), and the <code class="inline">+ui</code> Docker stage + v0.6.0 release cut.</p>
         <div class="phase-deliverables">
           <span class="deliverable">SPA + /ui mount</span>
           <span class="deliverable">med web start</span>
@@ -2500,16 +2531,18 @@ asyncio.run(<span class="fn">go</span>())</pre>
           <span class="deliverable">run config + cost preview</span>
           <span class="deliverable">job dashboard · SSE</span>
           <span class="deliverable">lineage graph</span>
-          <span class="deliverable">profile DAG builder</span>
-          <span class="deliverable">examples library</span>
-          <span class="deliverable">plugin manager</span>
-          <span class="deliverable">settings + resources editor</span>
+          <span class="deliverable">search · sync</span>
+          <span class="deliverable">cost ledger</span>
+          <span class="deliverable">profile workspace · queued</span>
+          <span class="deliverable">examples library · queued</span>
+          <span class="deliverable">plugin manager · queued</span>
+          <span class="deliverable">settings · queued</span>
         </div>
       </div>
       <div class="phase-meta">
-        <span class="phase-status next"><span class="status-dot amber"></span>roadmap</span>
+        <span class="phase-status next"><span class="status-dot amber live"></span>in flight</span>
         <span class="phase-window">post-Phase-5</span>
-        <span class="phase-commits">0<span class="unit">/ 12 commits</span></span>
+        <span class="phase-commits">8<span class="unit">/ 12 commits</span></span>
       </div>
     </article>
 
@@ -2544,33 +2577,37 @@ asyncio.run(<span class="fn">go</span>())</pre>
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="status">
   <div class="eyebrow">MISSION STATUS <span class="id">011 · WHERE WE ARE</span></div>
-  <h2 class="section-title">Phase 5 complete &mdash; v0.5.0 shipped, one phase to v1.0.</h2>
+  <h2 class="section-title">Phase 6 mid-flight &mdash; v0.5.0 shipped, v0.6.0 in progress.</h2>
   <p class="section-lede">
-    The engine, the transports, the cache, the cost model, the deployment story, the starter profiles, the report renderers, and the reference docs are all done and audited. v1.0 lands when the REST surface freezes after Phase 6's local-first Web UI.
+    Phases 0&ndash;5 are closed (v0.5.0). Phase 6 (local-first Web UI, plan &sect;12.5) is mid-flight: commits 39&ndash;46 + a post-46 audit pass have landed &mdash; Ingest, Run, Jobs, Catalog, Search, Cost, Lineage panels are live. Profile workspace (47), examples library (48), plugin catalog + settings (49), and the docs + v0.6.0 cut (50) are the remaining work. v1.0 lands when the REST surface freezes after Phase 6 closes.
   </p>
 
   <div class="metrics">
     <div class="metric"><div class="metric-value">34<span class="unit">ops</span></div><div class="metric-label">Registered</div></div>
     <div class="metric"><div class="metric-value">30+<span class="unit">backends</span></div><div class="metric-label">Pluggable</div></div>
     <div class="metric"><div class="metric-value">14<span class="unit">kinds</span></div><div class="metric-label">Typed artifacts</div></div>
-    <div class="metric"><div class="metric-value">773<span class="unit">tests</span></div><div class="metric-label">29 gated skips</div></div>
-    <div class="metric"><div class="metric-value">49<span class="unit">commits</span></div><div class="metric-label">Phases 0–5</div></div>
-    <div class="metric"><div class="metric-value">9<span class="unit">days</span></div><div class="metric-label">To v0.5.0</div></div>
+    <div class="metric"><div class="metric-value">843<span class="unit">py</span></div><div class="metric-label">29 gated skips</div></div>
+    <div class="metric"><div class="metric-value">27<span class="unit">fe</span></div><div class="metric-label">Vitest unit</div></div>
+    <div class="metric"><div class="metric-value">57<span class="unit">commits</span></div><div class="metric-label">Phases 0&ndash;6 so far</div></div>
   </div>
 
   <div class="callout amber">
-    <strong>What's next.</strong> Phase 6 brings a SvelteKit/Next.js SPA bundled in the engine container at <code class="inline">/ui</code> &mdash; full GUI parity with the CLI, schema-driven param forms, visual DAG composer, plugin manager. Phase 7 adds acoustic speaker identity (voice fingerprints, cross-recording clustering) on top of Phase 5's name-CSV <code class="inline">speakers.identify</code>.
+    <strong>What's shipping now.</strong> The Web UI's first eight panels are live (Ingest / Run / Jobs / Catalog / Search / Cost / Catalog detail / Lineage graph) with schema-driven param forms, live SSE updates, debounced cost preview, per-kind artifact previews, and a typed REST client wrapping the new <code class="inline">POST /search</code> + <code class="inline">GET /cost/summary</code> + <code class="inline">GET /cost/log</code> + <code class="inline">POST /run/preview</code> + <code class="inline">POST /acquire/upload</code> + <code class="inline">POST /acquire/url/probe</code> + <code class="inline">GET /events/stream</code> + <code class="inline">GET /events/history</code> endpoints. See <a href="web_ui.md">docs/web_ui.md</a> for the panel-by-panel tour and <a href="web_ui_deferred.md">docs/web_ui_deferred.md</a> for the explicit v1.x backlog.
+  </div>
+
+  <div class="callout">
+    <strong>What's next.</strong> Commits 47&ndash;50 ship the profile workspace (visual DAG composer + CodeMirror YAML editor + live <code class="inline">POST /profiles/validate</code>), profile examples library with fork-this, plugin catalog (extras show-don't-install + per-op/backend visibility gate), settings panel (tokens, backends health, storage stats), and the <code class="inline">+ui</code> multi-stage Dockerfile + v0.6.0 release cut. Phase 7 (acoustic speaker identity &mdash; voice fingerprints, cross-recording clustering) lands post-v0.6.0 on top of Phase 5's name-CSV <code class="inline">speakers.identify</code>.
   </div>
 </section>
 
 </main>
 
 <footer>
-  <span class="brand">FRAMEPULSE &middot; v0.5.0</span>
+  <span class="brand">FRAMEPULSE &middot; v0.6.0-dev</span>
   <div class="build">
-    <span>BUILD <b>PHASE 5 / 7</b></span>
-    <span>COMMITS <b>49</b></span>
-    <span>TESTS <b>773 / 802</b></span>
+    <span>BUILD <b>PHASE 6 MID / 7</b></span>
+    <span>COMMITS <b>57</b></span>
+    <span>TESTS <b>843 PY &middot; 27 FE</b></span>
     <span>CACHE <b>SQLITE + POSTGRES</b></span>
     <span>ARCH <b>ARM64 + AMD64</b></span>
     <span>UPDATED <b>2026-05-22</b></span>

@@ -22,6 +22,9 @@ most in a container:
 | `MEDIA_ENGINE_GC_INTERVAL` | `3600` | Seconds between daemon GC sweeps. |
 | `MEDIA_ENGINE_SEMANTIC_DB_URL` | — | Optional override for the `pgvector` backend. |
 | `MEDIA_ENGINE_FULLTEXT_DB_URL` | — | Optional override for the `postgres-tsvector` backend. |
+| `MEDIA_ENGINE_MAX_UPLOAD_MB` | `2048` | Web UI upload size cap (`POST /acquire/upload`). Larger bodies abort with 413 before the engine sees them. |
+| `MEDIA_ENGINE_CORS_ORIGINS` | — | Comma-separated allow-list for browser dev servers. Empty = same-origin only. |
+| `MEDIA_ENGINE_NO_BROWSER` | — | Non-empty disables `med web start --open` auto-launch (Docker, CI). |
 
 The full surface lives in `media_engine.config:EngineConfig`. Anything
 on the Pydantic model is settable via env with the `MEDIA_ENGINE_`
@@ -103,6 +106,51 @@ cache's `namespace` column keeps them isolated. The CLI's
 `med --namespace` flag plus `MEDIA_ENGINE_NAMESPACE` env are
 equivalent — the env is the simpler choice for long-running
 services.
+
+---
+
+## Web UI
+
+The SvelteKit SPA at `/ui` is served by the same FastAPI process as the
+REST API. Two deployment shapes:
+
+- **`med web start`** — the local-first launcher. Same uvicorn as
+  `med api start`, plus the `/ui` static mount + an optional
+  `--open` browser launch. Use when you want one process per user.
+- **`med api start`** — headless. The mount auto-activates when
+  `media_engine/web/dist/index.html` is present; if it isn't, the
+  process logs a warning and the API keeps working without `/ui`.
+  Use for CI / production deployments that don't need a GUI.
+
+**Wheel install ships the UI for free.** `pyproject.toml`'s
+`hatch.build.targets.wheel.force-include` bundles
+`media_engine/web/dist/` into the wheel. Both the PyPI install and the
+Dockerfile (post-commit-50 `+ui` stage) ship the prebuilt assets.
+Developers from source run a one-time
+`pnpm -C web install && pnpm -C web build` after `uv sync`.
+
+**Security headers.** `media_engine/api/middleware.py` adds CSP
+(`default-src 'self'; …'wasm-unsafe-eval'; …'unsafe-inline'`, the
+last two scoped to support `pdf.js` and Svelte scoped styles
+respectively), `X-Content-Type-Options: nosniff`, and
+`Referrer-Policy: same-origin` to `/ui/*` responses only — REST
+clients see no CSP. CORS is same-origin by default; set
+`MEDIA_ENGINE_CORS_ORIGINS=https://dev.local:5173,https://…` to open
+specific origins for dev-server scenarios.
+
+**SSE auth.** `EventSource` cannot set custom headers, so
+`GET /jobs/{id}/events` and `GET /events/stream` accept
+`?token=...` as a fallback alongside `Authorization: Bearer …`.
+Acceptable on loopback / private-network deploys; production HTTPS
+exposure should keep the UI behind an authenticating reverse proxy
+or wait for the v1.x job-scoped-nonce hardening path (catalogued in
+`web_ui_deferred.md`).
+
+**Upload cap.** `POST /acquire/upload` accumulates bytes in a tmp
+file under the workdir; `MEDIA_ENGINE_MAX_UPLOAD_MB` (default 2048)
+bounds it. Bigger uploads abort with 413 mid-stream.
+
+See [`web_ui.md`](web_ui.md) for the panel-by-panel user guide.
 
 ---
 
