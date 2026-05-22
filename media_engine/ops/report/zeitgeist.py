@@ -54,7 +54,9 @@ OP_VERSION = "1.0.0"
 
 
 class ZeitgeistReportParams(BaseModel):
-    template: Path
+    # See SessionReportParams.template — ``exclude=True`` so the cache
+    # key tracks template content via ``template_sha``, not file path.
+    template: Path = Field(..., exclude=True)
     title: str | None = None
     extra_context: dict[str, Any] = Field(default_factory=lambda: {})
     top_n_topics: int = 20

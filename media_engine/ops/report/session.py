@@ -48,7 +48,11 @@ OP_VERSION = "1.0.0"
 
 
 class SessionReportParams(BaseModel):
-    template: Path
+    # ``template`` is ``exclude=True`` so the cache key tracks template
+    # *content* (via ``template_sha`` below), not its filesystem path.
+    # Same content via two paths hits the cache; same path with edited
+    # content invalidates it.
+    template: Path = Field(..., exclude=True)
     title: str | None = None
     extra_context: dict[str, Any] = Field(default_factory=lambda: {})
     # Auto-derived; participates in canonical params so editing the

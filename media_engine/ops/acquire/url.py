@@ -2,9 +2,8 @@
 
 Two backends: ``yt-dlp`` (default — handles YouTube and the long tail of
 sites yt-dlp supports) and ``playwright-hls`` (headless Chromium that
-sniffs the ``.m3u8`` a page streams, then ffmpeg stream-copies it —
-ported from davos ``grab_video.py``; use ``--backend playwright-hls`` for
-sites yt-dlp can't crack).
+sniffs the ``.m3u8`` a page streams, then ffmpeg stream-copies it; use
+``--backend playwright-hls`` for sites yt-dlp can't crack).
 
 Identity is the *derived* id over ``{url, quality}`` + backend (not the
 downloaded bytes — those aren't reproducible across yt-dlp / network /

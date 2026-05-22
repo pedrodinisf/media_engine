@@ -24,9 +24,9 @@ For explicit multi-op DAGs:
 
 ```yaml
 profile_schema_version: "1.0"
-name: davos-full
+name: analysis-full
 kind: pipeline
-description: WEF talk → speaker-diarized intelligence + report
+description: Spoken video → speaker-diarized intelligence + Markdown report
 
 inputs:
   - { name: source, kind: video }
@@ -88,7 +88,7 @@ name: technical-academic
 kind: prompt
 default_op: video.multimodal
 default_backend: gemini
-schema_path: profiles/davos/analysis_schema.json   # optional JSON schema
+schema_path: profiles/analysis-full/analysis_schema.json   # optional JSON schema
 ---
 You are an expert technical reviewer. Extract:
 - Major arguments
@@ -110,7 +110,7 @@ med acquire path/to/talk.mp4
 # → 79e6b42c2b2b...
 
 # 2. run the profile, mapping the source name to the artifact id
-med profile run davos-full --input source=79e6b42c
+med profile run analysis-full --input source=79e6b42c
 
 # Output (one line per produced artifact):
 # transcript    a1b2c3d4...
@@ -173,7 +173,7 @@ surface. Two body shapes:
 ```jsonc
 // Server-known profile (must appear in `med profile ls` on the API host):
 {
-  "profile_name": "davos-full",
+  "profile_name": "analysis-full",
   "sources": [{"name": "source", "artifact_id": "79e6b42c2b2b..."}]
 }
 

@@ -1,8 +1,8 @@
 """``frames.subsample`` — uniformly reduce a FrameSet to ≤ ``max_n`` frames.
 
-Ports framepulse's ``_subsample_frames`` (uniform stride) into the engine's
-typed-artifact world. Preserves the original frame indices in metadata so
-downstream ops can recover timestamps from the parent FrameSet's fps.
+Uniform-stride downsampling that preserves the original frame indices
+in metadata, so downstream ops can recover timestamps from the parent
+FrameSet's fps.
 """
 
 from __future__ import annotations

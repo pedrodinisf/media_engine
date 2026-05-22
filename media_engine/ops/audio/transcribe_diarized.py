@@ -4,7 +4,8 @@ Internally invokes ``audio.transcribe`` and ``audio.diarize`` through the
 engine (so each sub-result is cached independently), then aligns each
 transcript segment to the diarization segment with the largest temporal
 overlap. The result is a Transcript whose ``segments`` carry an extra
-``speaker_id`` field — what davos's ``[SPEAKER_XX]`` format encoded.
+``speaker_id`` field — the same shape the ``speakered_txt`` parser
+emits.
 """
 
 from __future__ import annotations

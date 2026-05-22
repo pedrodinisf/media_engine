@@ -1,9 +1,9 @@
 """Warm pool of in-process models.
 
-Ports the pattern from framepulse ``local/models.py``: lazy-load expensive
-ML models (mlx-whisper, pyannote, sentence-transformers) once per daemon
-session and reuse across ops. Backends call ``model_pool.get_or_load(key,
-loader)`` and get back a long-lived handle.
+Lazy-load expensive ML models (mlx-whisper, pyannote,
+sentence-transformers) once per daemon session and reuse across ops.
+Backends call ``model_pool.get_or_load(key, loader)`` and get back a
+long-lived handle.
 
 This module does NOT import any ML library — it's a generic registry. The
 loader callable encapsulates the actual import and load.

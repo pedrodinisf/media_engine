@@ -54,6 +54,26 @@ top of the primitives + transports shipped in 0.4.x.
 - `pyproject.toml::version` and `media_engine.__version__` → `0.5.0`.
 - `docs/architecture.md` §11 records Phase 5 deviations.
 
+### Fixed (post-release audit, same release window)
+
+- **FastAPI app `version` sources `media_engine.__version__`.** It was
+  hardcoded `0.1.0` since Phase 4; `docs/openapi.json` + the live
+  `/openapi.json` now correctly track 0.5.0.
+- **`speakers.identify` builds `speaker_extra` in O(N+M).** The
+  payload's `canonical → extra_columns` map used to come from a
+  quadratic nested generator (scanned the whole db per match). Now
+  goes through a single-pass `_collect_extra` helper that indexes
+  the db once.
+- **Content-addressed cache key for path fields.**
+  `IdentifyParams.speaker_db`, `SessionReportParams.template`, and
+  `ZeitgeistReportParams.template` are now `Field(exclude=True)` so
+  the cache key tracks the file's sha (via the auto-derived `*_sha`
+  fields) rather than its filesystem path. Two callers referencing
+  the same file by different paths (e.g. relative vs absolute) now
+  hit the cache. New regression tests cover both same-content-
+  different-path cache hits and same-path-different-content cache
+  misses.
+
 ### Notes
 
 - **`speakers.identify` is name-CSV only** in Phase 5. Acoustic identity

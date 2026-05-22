@@ -487,9 +487,18 @@ pipeline profile + `AnalyzeParams.prompt_path` resolution (commit 36);
 starter `kind: prompt` profiles (commit 37); and the v0.5.0 release —
 README rewrite, `cli_reference.md`, `api_reference.md`,
 `adding_a_backend.md`, committed `openapi.json` + `mcp_tools.json`, the
-e2e demo script, and `CHANGELOG.md` (commit 38). **34 ops.** Suite:
-764 passed / 29 skipped (dependency/API-key/network gated); `ruff` and
-strict `pyright` clean.
+e2e demo script, and `CHANGELOG.md` (commit 38). A second pre-Phase-6
+audit pass (post-release) tightened three suboptimal patterns: the
+FastAPI app's `version` now sources `media_engine.__version__` (was
+hardcoded `0.1.0`); the `speaker_extra` payload in `speakers.identify`
+moved out of a quadratic nested generator into an O(N+M) lookup
+helper; and `IdentifyParams.speaker_db` / `SessionReportParams.template`
+/ `ZeitgeistReportParams.template` are now `Field(exclude=True)` so the
+content-addressed cache keys depend on the file's sha (via the
+auto-derived `*_sha` fields), not on the filesystem path — two
+callers referencing the same file by different paths now hit the
+cache. **34 ops.** Suite: 768 passed / 29 skipped
+(dependency/API-key/network gated); `ruff` and strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
 > backend ``sqlite-vss`` (loadable extension). We ship a plain SQLite

@@ -1,11 +1,10 @@
 """``ffmpeg-recorder`` backend for ``acquire.livestream``.
 
-Ports davos ``grab_video.py`` live mode: a chain of ffmpeg
-stream-copy processes, one per segment. A segment boundary is hit on a
-fixed clock (``segment_seconds``), a manual request
-(``LiveSegmentController.request_split()`` — driven by ``SIGUSR1`` /
-``Cmd+Shift+J`` from ``med acquire-live``), the stream ending, or
-``max_duration_sec``.
+A chain of ffmpeg stream-copy processes, one per segment. A segment
+boundary is hit on a fixed clock (``segment_seconds``), a manual
+request (``LiveSegmentController.request_split()`` — driven by
+``SIGUSR1`` / ``Cmd+Shift+J`` from ``med acquire-live``), the stream
+ending, or ``max_duration_sec``.
 
 The stream URL is either the page's ``.m3u8`` directly, or sniffed by
 reusing the ``playwright-hls`` backend's headless-Chromium helper
@@ -54,8 +53,8 @@ _MIN_SEGMENT_BYTES = 1000
 class LiveSegmentController:
     """Thread-safe split/stop signaling for a running recording.
 
-    Ported (slimmed) from davos ``LiveSegmentController`` — the keyboard
-    listener lives in the CLI now, not here.
+    The keyboard listener lives in the CLI (``med acquire-live``); this
+    class just exposes the split/stop events it triggers.
     """
 
     def __init__(self) -> None:

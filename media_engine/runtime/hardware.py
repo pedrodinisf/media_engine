@@ -1,8 +1,7 @@
 """Hardware capability checks for backend selection.
 
-Ported pattern from framepulse ``local/hardware.py``: gate model loads on
-available memory so we fail fast (with an actionable message) instead of
-swap-thrashing.
+Gate model loads on available memory so we fail fast (with an
+actionable message) instead of swap-thrashing.
 """
 
 from __future__ import annotations

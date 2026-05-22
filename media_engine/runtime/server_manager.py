@@ -1,4 +1,4 @@
-"""Generic process-backed-backend lifecycle (ports framepulse local/server.py).
+"""Generic process-backed-backend lifecycle.
 
 Spawns long-running services (vllm-mlx, future: TGI, etc.) as background
 subprocesses with PID-file tracking, HTTP health checks, and graceful

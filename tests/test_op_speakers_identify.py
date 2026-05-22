@@ -329,3 +329,34 @@ async def test_engine_run_cache_miss_on_csv_change(
         OP_NAME, inputs=[t.id], speaker_db=db1, min_confidence=0.6
     )
     assert m1.id != m2.id
+
+
+async def test_engine_run_cache_hits_across_paths_with_same_content(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Two CSV files with identical content reached via different paths
+    (here: an absolute path and a relative one pointing to the same
+    bytes) must share the same cache key — the path is ``exclude=True``
+    on the params model, so only the content sha enters canonical params.
+    """
+    t = _build_diarized_transcript(engine)
+    body = "name,aliases\nKlaus Anybody,\nJane Example,\n"
+    db_a = tmp_path / "a.csv"
+    db_b = tmp_path / "b.csv"
+    db_a.write_text(body)
+    db_b.write_text(body)
+    [m1] = await engine.run(OP_NAME, inputs=[t.id], speaker_db=db_a)
+    [m2] = await engine.run(OP_NAME, inputs=[t.id], speaker_db=db_b)
+    # Different filesystem paths, identical content -> same artifact id.
+    assert m1.id == m2.id
+
+
+def test_speaker_db_excluded_from_canonical_params() -> None:
+    """``model_dump`` is what feeds the cache key; ``speaker_db`` should
+    not appear there, but the sha should."""
+    p = IdentifyParams(speaker_db=SPEAKERS_CSV)
+    dumped = p.model_dump()
+    assert "speaker_db" not in dumped, dumped
+    assert dumped.get("speaker_db_sha"), dumped
+    # The field is still on the model — runtime code reads it.
+    assert p.speaker_db == SPEAKERS_CSV

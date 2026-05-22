@@ -1,4 +1,4 @@
-"""Cloud-backend pricing tables (ported from framepulse ``app.py``).
+"""Cloud-backend pricing tables.
 
 Tiered per-model rates: ``(in, in_long, out, out_long)`` USD per 1M tokens,
 where the ``_long`` rate kicks in above a 200K-input-token context. Manually
@@ -34,7 +34,7 @@ MODEL_PRICING: dict[str, tuple[float, float, float, float]] = {
 }
 
 # Conservative fallback — assume an expensive model so estimates never
-# undersell. (Matches framepulse's behavior.)
+# undersell.
 _FALLBACK_PRICING: tuple[float, float, float, float] = (2.00, 4.00, 12.00, 18.00)
 
 _LONG_CONTEXT_THRESHOLD = 200_000

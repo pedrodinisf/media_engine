@@ -1,15 +1,14 @@
 """``transcript.merge`` — collapse adjacent transcript segments.
 
-Gap-based reformulation of davos ``combine_segments``. Consecutive
-segments with the **same speaker** that sit within ``gap_threshold_sec``
-of each other (and don't blow past ``max_chars``) collapse into a single
-segment carrying the earliest ``start`` and latest ``end``. Speaker
-change, an over-threshold gap, or the char cap forces a boundary —
-producing the longer-context segments downstream LLM analysis prefers.
+Gap-based merger. Consecutive segments with the **same speaker** that
+sit within ``gap_threshold_sec`` of each other (and don't blow past
+``max_chars``) collapse into a single segment carrying the earliest
+``start`` and latest ``end``. Speaker change, an over-threshold gap,
+or the char cap forces a boundary — producing the longer-context
+segments downstream LLM analysis prefers.
 
 Segments without timestamps (``speakered_txt`` parses) treat the gap as
-zero, so the merger reduces to "same-speaker run" collapsing — exactly
-what davos's char-cap variant did before timestamps existed.
+zero, so the merger reduces to "same-speaker run" collapsing.
 """
 
 from __future__ import annotations

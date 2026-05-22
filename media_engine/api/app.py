@@ -99,9 +99,11 @@ def build_app(
                 with contextlib.suppress(Exception):
                     local_engine.close()
 
+    from media_engine import __version__ as _engine_version
+
     app = FastAPI(
         title="media_engine",
-        version="0.1.0",
+        version=_engine_version,
         description=(
             "Universal media-processing engine — typed artifacts, "
             "composable operations, pluggable backends."

@@ -1,8 +1,7 @@
 """``video.sample_frames`` — Video → FrameSet via a backend-of-choice.
 
-Default backend ``ffmpeg-uniform`` extracts frames at a fixed FPS using
-the same pattern framepulse's ``local/analyze.py:extract_frames`` uses.
-The optional ``pyscenedetect`` backend (Phase 1, optional dep) cuts at
+Default backend ``ffmpeg-uniform`` extracts frames at a fixed FPS. The
+optional ``pyscenedetect`` backend (Phase 1, optional dep) cuts at
 scene boundaries instead of uniform sampling.
 """
 

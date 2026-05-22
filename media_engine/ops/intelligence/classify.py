@@ -2,7 +2,7 @@
 
 Fixed schema ``{labels: list[str], confidence: {label: float}, rationale:
 str}``. Caller supplies the candidate taxonomy (engine has no opinion on
-what the labels mean). Ported from davos impact-classify.
+what the labels mean).
 """
 
 from __future__ import annotations

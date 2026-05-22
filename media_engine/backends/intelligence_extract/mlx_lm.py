@@ -3,7 +3,6 @@
 The model+tokenizer are kept warm in ``ctx.model_pool`` (keyed by model
 id) so repeated extracts in a pipeline don't reload weights. The blocking
 ``mlx_lm.generate`` call runs in a thread so the daemon loop stays free.
-Ported from davos ``llm_analyzer``.
 """
 
 from __future__ import annotations

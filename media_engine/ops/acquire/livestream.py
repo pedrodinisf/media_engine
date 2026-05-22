@@ -1,10 +1,10 @@
 """``acquire.livestream`` — record a live HLS stream into segment Videos.
 
-Ports davos ``grab_video.py`` live mode. The page (or direct ``.m3u8``)
-is recorded by the ``ffmpeg-recorder`` backend; the recording is split
-into one or more ``Video`` artifacts on a fixed clock (``segment_seconds``),
-a manual boundary request (``Cmd+Shift+J`` / ``SIGUSR1`` via
-``med acquire-live``), stream end, or ``max_duration_sec``.
+The page (or direct ``.m3u8``) is recorded by the ``ffmpeg-recorder``
+backend; the recording is split into one or more ``Video`` artifacts on
+a fixed clock (``segment_seconds``), a manual boundary request
+(``Cmd+Shift+J`` / ``SIGUSR1`` via ``med acquire-live``), stream end,
+or ``max_duration_sec``.
 
 Identity follows the ``acquire.url`` rule: each segment's id is the
 *derived* id over ``{url, quality, max_duration_sec, segment_seconds}``

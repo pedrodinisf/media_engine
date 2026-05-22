@@ -1,4 +1,4 @@
-"""``gemini`` backend for ``video.multimodal`` (ported from framepulse cloud).
+"""``gemini`` backend for ``video.multimodal`` (cloud, Google AI).
 
 Flow: upload the file via the Gemini File API → poll until ACTIVE →
 ``generate_content_stream`` (Progress per chunk) → collect

@@ -3,11 +3,10 @@
 Three formats, one op (the plan's "one parser, one verb" shape):
 
 * ``srt`` — SubRip subtitles (``HH:MM:SS,ms --> HH:MM:SS,ms``). No
-  speakers, has timestamps. Port of davos
-  ``transcript_parser.parse_srt``.
-* ``speakered_txt`` — the ``[SPEAKER_XX]`` block format
-  ``video_transcriber_mlx`` writes. Speakers, no timestamps. Port of
-  davos ``parse_txt``.
+  speakers, has timestamps.
+* ``speakered_txt`` — ``[SPEAKER_XX]`` block format (the shape that
+  diarized-transcribe pipelines commonly emit). Speakers, no
+  timestamps.
 * ``vtt`` — WebVTT (``HH:MM:SS.ms --> HH:MM:SS.ms`` plus a ``WEBVTT``
   header). Same SRT-like shape; reuses the timestamp parser.
 

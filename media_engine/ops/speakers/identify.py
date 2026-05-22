@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -41,6 +41,8 @@ from media_engine.ops import (
 )
 
 from ._speaker_db import (
+    MatchResult,
+    SpeakerEntry,
     identify_speakers,
     load_speaker_db,
     text_per_cluster,
@@ -50,15 +52,36 @@ OP_NAME = "speakers.identify"
 OP_VERSION = "1.0.0"
 
 
+def _collect_extra(
+    matches: dict[str, MatchResult | None],
+    db: list[SpeakerEntry],
+) -> dict[str, dict[str, str]]:
+    """Map ``canonical_name -> extra_columns`` for every resolved match.
+
+    Indexes the db once (``O(N)``) then looks up by canonical, so the
+    cost is linear in #matches + #db rows instead of the quadratic
+    nested-loop construction that lived inline previously."""
+    by_canonical = {entry.canonical: entry.extra for entry in db}
+    out: dict[str, dict[str, str]] = {}
+    for m in matches.values():
+        if m is not None and m.canonical in by_canonical:
+            out[m.canonical] = by_canonical[m.canonical]
+    return out
+
+
 class IdentifyParams(BaseModel):
     """Params for ``speakers.identify``.
 
     ``speaker_db_sha`` is auto-derived (a model_validator hashes the CSV
     bytes) and participates in the cache key so editing the CSV
-    invalidates cached results. Users never set it directly.
+    invalidates cached results. The ``speaker_db`` Path itself is
+    ``exclude=True`` — it's needed at run time but not in canonical
+    params, so two callers referencing the same file by different paths
+    (one relative, one absolute) get the same cache key. Users never
+    set ``speaker_db_sha`` directly.
     """
 
-    speaker_db: Path
+    speaker_db: Path = Field(..., exclude=True)
     min_confidence: float = 0.7
     name_field: str = "name"
     alias_field: str = "aliases"
@@ -168,12 +191,7 @@ class SpeakersIdentify(Operation):
             "speaker_match_meta": match_meta,
             # Pass through extra columns from the CSV — reports can render
             # e.g. position / affiliation next to the resolved name.
-            "speaker_extra": {
-                m.canonical: db_entry.extra
-                for m in (m for m in matches.values() if m is not None)
-                for db_entry in db
-                if db_entry.canonical == m.canonical
-            },
+            "speaker_extra": _collect_extra(matches, db),
         }
         tmp = ctx.workdir / f"identified-{derived_id[:12]}.json"
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))

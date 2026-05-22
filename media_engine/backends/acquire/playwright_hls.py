@@ -1,10 +1,10 @@
 """``playwright-hls`` backend for ``acquire.url``.
 
-Ported from davos ``grab_video.py``: a headless Chromium loads the page,
-image/font requests are aborted for speed, every ``.m3u8`` response is
-captured, the best master playlist is picked, then ffmpeg stream-copies
-it to a local ``.mp4`` (no re-encode). Use this for sites yt-dlp can't
-handle (``--backend playwright-hls``).
+A headless Chromium loads the page, image/font requests are aborted
+for speed, every ``.m3u8`` response is captured, the best master
+playlist is picked, then ffmpeg stream-copies it to a local ``.mp4``
+(no re-encode). Use this for sites yt-dlp can't handle
+(``--backend playwright-hls``).
 
 Optional dep (``playwright``): the import is lazy + inside the call path
 so this module is import-clean and registered even when playwright is
@@ -38,7 +38,6 @@ from media_engine.runtime.events import Progress
 BACKEND_NAME = "playwright-hls"
 BACKEND_VERSION = "1.0.0"
 
-# Ported verbatim from davos grab_video.py.
 _PLAY_SELECTORS = (
     ".jw-icon-playback",
     ".vjs-big-play-button",
@@ -62,7 +61,7 @@ def _import_playwright() -> Any:
 
 
 def _select_best_stream(m3u8_urls: list[str]) -> str | None:
-    """Prefer master/index playlists, avoid audio-only (davos logic)."""
+    """Prefer master/index playlists, avoid audio-only."""
     if not m3u8_urls:
         return None
     seen: set[str] = set()
@@ -140,7 +139,7 @@ def sniff_m3u8(url: str, *, nav_timeout_ms: int, settle_ms: int) -> tuple[str | 
 
 
 def _stream_copy(*, ffmpeg_path: str, stream_url: str, out_path: Path) -> None:
-    """ffmpeg HLS → mp4 with no re-encode (davos invocation)."""
+    """ffmpeg HLS → mp4 with no re-encode."""
     cmd = [
         ffmpeg_path,
         "-nostdin", "-y",

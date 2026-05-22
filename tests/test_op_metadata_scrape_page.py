@@ -28,13 +28,13 @@ PLAYWRIGHT_AVAILABLE = importlib.util.find_spec("playwright") is not None
 
 _CANNED = {
     "url": "https://example.com/session",
-    "title": "Davos 2026 — A Test Session",
+    "title": "Sample Conference 2026 — A Test Session",
     "session_title": "A Test Session",
-    "event_name": "World Economic Forum Annual Meeting",
+    "event_name": "Sample Conference Annual Meeting",
     "description": "A synthetic session for tests.",
     "date": "2026-01-20",
     "time": "18:30–19:45 CET",
-    "location": "Davos-Klosters, Switzerland",
+    "location": "Sampleville, Testland",
     "speakers": ["Ada Lovelace", "Alan Turing"],
     "speaker_details": [
         {"name": "Ada Lovelace", "title": "Mathematician", "photo_url": None},
@@ -67,7 +67,7 @@ async def test_scrape_produces_analysis(
     assert isinstance(a, Analysis)
     assert a.kind is Kind.Analysis
     assert a.path.exists()
-    assert a.data["title"] == "Davos 2026 — A Test Session"
+    assert a.data["title"] == "Sample Conference 2026 — A Test Session"
     assert a.data["speakers"] == ["Ada Lovelace", "Alan Turing"]
     assert a.metadata["url"] == "https://example.com/session"
 
@@ -111,13 +111,13 @@ async def test_scrape_param_change_yields_new_id(
 # ─────────────────────────────────────────────────────────────────
 
 _HTML = """<!doctype html><html><head>
-<title>Davos 2026 — A Test Session</title>
+<title>Sample Conference 2026 — A Test Session</title>
 <meta name="description" content="A synthetic session for tests.">
 <meta name="keywords" content="ai, history">
 </head><body><main>
 <h1>A Test Session</h1>
 <time datetime="2026-01-20">20 January 2026</time>
-<div class="location">Davos-Klosters, Switzerland</div>
+<div class="location">Sampleville, Testland</div>
 </main></body></html>"""
 
 

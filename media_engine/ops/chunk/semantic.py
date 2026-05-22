@@ -1,9 +1,8 @@
 """``chunk.semantic`` — split a Transcript or MarkdownArtifact into Chunks.
 
-Sentence- or paragraph-aware splitting with size cap + overlap. Ports the
-pattern from davos's ``TextChunker``: never break mid-sentence; pack as
-many sentences as fit under ``max_chars``; carry ``overlap_chars`` of
-trailing context into each subsequent chunk.
+Sentence- or paragraph-aware splitting with size cap + overlap: never
+break mid-sentence; pack as many sentences as fit under ``max_chars``;
+carry ``overlap_chars`` of trailing context into each subsequent chunk.
 
 Default backend ``default`` uses a regex-based sentence tokenizer (no nltk
 dependency; the spec calls for nltk but a regex split is good enough for

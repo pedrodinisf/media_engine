@@ -1,7 +1,7 @@
 """``vllm-mlx`` backend for ``video.multimodal`` (local, Apple Silicon).
 
-Ported from framepulse ``local/analyze.py:run_local_analysis``, but the
-engine version reuses the *ops* rather than reimplementing frame work:
+Reuses the engine's frame-extraction ops rather than reimplementing
+them inline:
 
   video.sample_frames  →  frames.subsample  →  base64 → OpenAI chat call
 

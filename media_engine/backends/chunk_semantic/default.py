@@ -42,7 +42,7 @@ _PARAGRAPH_BOUNDARY = re.compile(r"\n\s*\n+")
 
 def _extract_text(source: AnyArtifact) -> str:
     if isinstance(source, Transcript):
-        # Prefer the segments-joined text when present (matches davos's TextChunker).
+        # Prefer segments-joined text when present (preserves sentence boundaries).
         segments = source.metadata.get("segments")
         if segments:
             return " ".join(str(s.get("text", "")).strip() for s in segments).strip()

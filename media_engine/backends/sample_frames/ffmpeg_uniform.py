@@ -1,7 +1,6 @@
 """``ffmpeg-uniform`` backend for ``video.sample_frames``.
 
-Ports the exact ffmpeg invocation framepulse uses
-(``local/analyze.py:extract_frames``):
+Uniform-fps frame extraction via ffmpeg:
 
     ffmpeg -y -i {video} -vf fps={fps},scale={w}:{h}:force_original_aspect_ratio=decrease
            -q:v {quality} {workdir}/frame_%05d.jpg

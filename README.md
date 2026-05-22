@@ -96,9 +96,9 @@ add it to `media_engine/bootstrap.py::_op_classes()` /
 
 ## Status
 
-**v0.5.0 — Phases 0–5 complete.** Suite 762 passed / 29 skipped (dep- and
+**v0.5.0 — Phases 0–5 complete.** Suite 768 passed / 29 skipped (dep- and
 API-key-gated). Ruff + pyright strict clean. 34 ops, 30+ backends, 14
-artifact kinds, 49 commits across phases 0–5.
+artifact kinds, 50 commits across phases 0–5.
 
 **Roadmap.** Phase 6 — local-first Web UI (SvelteKit SPA served by
 `med web start`, full GUI parity with the CLI). Phase 7 — acoustic speaker

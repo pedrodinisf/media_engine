@@ -1,10 +1,8 @@
 """``metadata.scrape_page`` — scrape a web page into an ``Analysis``.
 
 A headless-Chromium sidecar that pulls title / speakers / date / venue /
-description off an event page (ported from davos
-``grab_video.py:extract_metadata`` + ``extract_speaker_details``). Pair
-it with ``acquire.url`` to attach context to a downloaded video, or run
-it standalone.
+description off an event page. Pair it with ``acquire.url`` to attach
+context to a downloaded video, or run it standalone.
 
 Single implementation (playwright) → logic embedded in the op; the
 playwright import is lazy + inside ``_scrape`` so this module stays
@@ -108,7 +106,7 @@ def _extract_speaker_details(page: Any) -> list[dict[str, Any]]:
 
 
 def _scrape(url: str, *, nav_timeout_ms: int = 30000, settle_ms: int = 15000) -> dict[str, Any]:
-    """Headless-Chromium metadata scrape (davos ``extract_metadata`` port).
+    """Headless-Chromium metadata scrape.
 
     Synchronous (Playwright sync API) — callers run it in a worker thread.
     This is the seam the always-run test monkeypatches.

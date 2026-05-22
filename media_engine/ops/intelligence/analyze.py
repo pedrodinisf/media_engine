@@ -5,9 +5,10 @@ registered ``intelligence.extract`` backend on each window (optionally a
 second ``classify`` pass), assembling one ``AnalyzedSegment`` per window.
 
 The per-segment schema, prompt and (optional) classification taxonomy are
-all profile-supplied — the engine keeps zero domain opinions. Ported in
-spirit from davos ``analyze_stage`` (which baked in geopolitical sentiment
-dims; here those live in the profile's schema).
+all profile-supplied — the engine keeps zero domain opinions. The
+bundled ``analysis-full`` profile ships a generic schema (summary,
+topics, entities, claims, sentiment polarity, questions); specialize
+by cloning and editing.
 """
 
 from __future__ import annotations

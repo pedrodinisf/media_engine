@@ -56,7 +56,7 @@ YAML frontmatter) or pipeline (YAML DAG).
 
 ## Common commands
 - `uv sync` — install
-- `uv run pytest -q` — all tests (764 passing, 29 dep-gated skips)
+- `uv run pytest -q` — all tests (768 passing, 29 dep-gated skips)
 - `uv run pyright media_engine` — strict typecheck
 - `uv run ruff check` / `uv run ruff format` — lint/format
 - `uv run med ops` — list registered operations (34 as of Phase 5)
