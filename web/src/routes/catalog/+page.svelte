@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { base } from '$app/paths';
   import { api, ApiError } from '$lib/api/client';
   import { ARTIFACT_KINDS, type Artifact, type ArtifactKind, type ArtifactPage } from '$lib/api/artifacts';
 
@@ -107,7 +108,7 @@
     {#each items as art (art.id)}
       <tr style="border-bottom: 1px solid var(--border-soft);">
         <td class="px-3 py-2 font-mono text-xs">
-          <a href="/catalog/{art.id}" style="color: var(--text-primary);">{art.id.slice(0, 12)}…</a>
+          <a href="{base}/catalog/{art.id}" style="color: var(--text-primary);">{art.id.slice(0, 12)}…</a>
         </td>
         <td class="px-3 py-2 text-xs font-mono">{art.kind}</td>
         <td class="px-3 py-2 text-xs font-mono" style="color: var(--text-muted);">

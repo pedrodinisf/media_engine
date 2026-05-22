@@ -1,5 +1,6 @@
 <script lang="ts">
   import '../app.css';
+  import { base } from '$app/paths';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
@@ -7,6 +8,12 @@
 
   type NavLink = { href: string; label: string };
 
+  // Path values are stored *without* the SvelteKit ``paths.base`` ('/ui')
+  // prefix; templates compose them as ``{base}{link.href}`` so the
+  // rendered href is the full server-side URL. SvelteKit's link handler
+  // does NOT auto-prepend the base for absolute-looking hrefs — `<a
+  // href="/ingest">` is treated as truly absolute and navigates to
+  // ``/ingest`` (which the FastAPI side 404s). Be explicit.
   const links: readonly NavLink[] = [
     { href: '/ingest', label: 'Ingest' },
     { href: '/run', label: 'Run' },
@@ -26,8 +33,9 @@
   let { children } = $props();
 
   function isActive(href: string, pathname: string): boolean {
-    if (href === '/') return pathname === '/' || pathname === '';
-    return pathname.startsWith(href);
+    const full = `${base}${href}`;
+    if (href === '/') return pathname === base || pathname === `${base}/`;
+    return pathname.startsWith(full);
   }
 
   // Auth gate: send users without a token to /setup. The setup route
@@ -36,15 +44,15 @@
   onMount(() => {
     const unsub = token.subscribe((tok) => {
       const path = $page.url.pathname;
-      const onSetup = path.startsWith('/setup');
+      const onSetup = path.startsWith(`${base}/setup`);
       if (!tok && !onSetup) {
-        void goto('/setup');
+        void goto(`${base}/setup`);
       }
     });
     return unsub;
   });
 
-  let isSetupRoute = $derived($page.url.pathname.startsWith('/setup'));
+  let isSetupRoute = $derived($page.url.pathname.startsWith(`${base}/setup`));
 </script>
 
 <div class="min-h-screen flex flex-col">
@@ -52,7 +60,7 @@
     class="sticky top-0 z-50 h-12 px-5 flex items-center gap-4 text-text-inverse"
     style="background: var(--bg-header); border-bottom: 1px solid rgba(0,0,0,0.2);"
   >
-    <a href={isSetupRoute ? '/setup' : '/'} class="flex items-baseline gap-2 whitespace-nowrap text-text-inverse hover:no-underline">
+    <a href={isSetupRoute ? `${base}/setup` : `${base}/`} class="flex items-baseline gap-2 whitespace-nowrap text-text-inverse hover:no-underline">
       <span class="font-mono text-sm font-semibold tracking-wider">media_engine</span>
       <span class="text-xs opacity-60 font-mono">v0.6.0</span>
     </a>
@@ -62,7 +70,7 @@
         {#each links as link (link.href)}
           {@const active = isActive(link.href, $page.url.pathname)}
           <a
-            href={link.href}
+            href={`${base}${link.href}`}
             class="px-3 py-1 text-sm rounded font-medium transition-colors"
             class:bg-accent-green-soft={active}
             style={active ? 'color: var(--text-inverse); background: rgba(255,255,255,0.12);' : 'color: rgba(245,245,240,0.78);'}

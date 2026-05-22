@@ -10,6 +10,7 @@
    * the same `yaml = $state(...)` so they stay in sync.
    */
   import { onMount } from 'svelte';
+  import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { stringify as yamlStringify } from 'yaml';
@@ -281,7 +282,7 @@
     deleting = true;
     try {
       await deleteProfile(name);
-      await goto('/profiles');
+      await goto(`${base}/profiles`);
     } catch (e) {
       saveError = e instanceof ApiError ? e.detail : String(e);
       deleting = false;
@@ -300,7 +301,7 @@
           artifact_id,
         })),
       });
-      await goto(`/jobs/${body.job_id}`);
+      await goto(`${base}/jobs/${body.job_id}`);
     } catch (e) {
       runError = e instanceof ApiError ? e.detail : String(e);
     } finally {

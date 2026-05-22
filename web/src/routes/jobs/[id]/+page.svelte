@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import { page } from '$app/stores';
   import { api, ApiError } from '$lib/api/client';
   import { openSSE, type SSEEvent } from '$lib/sse/event-source';
@@ -96,7 +97,7 @@
 
 <header class="mb-5">
   <p class="text-xs font-mono mb-1" style="color: var(--text-muted);">
-    <a href="/jobs">jobs</a> / {jobId}
+    <a href="{base}/jobs">jobs</a> / {jobId}
   </p>
   {#if detail}
     <h1 class="text-2xl font-semibold mb-1" style="color: var(--text-primary);">
@@ -191,7 +192,7 @@
         <ul class="font-mono text-xs space-y-1">
           {#each outIds as artId (artId)}
             <li>
-              <a href="/catalog/{artId}" style="color: var(--accent-green);">{artId.slice(0, 16)}…</a>
+              <a href="{base}/catalog/{artId}" style="color: var(--accent-green);">{artId.slice(0, 16)}…</a>
             </li>
           {/each}
         </ul>

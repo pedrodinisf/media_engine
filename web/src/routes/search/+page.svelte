@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import { ApiError } from '$lib/api/client';
   import { ARTIFACT_KINDS, type ArtifactKind } from '$lib/api/artifacts';
   import {
@@ -162,7 +163,7 @@
         style="border-bottom: {i === response.results.length - 1 ? 'none' : '1px solid var(--border-soft)'};"
       >
         <a
-          href="/catalog/{r.artifact_id}"
+          href="{base}/catalog/{r.artifact_id}"
           class="block px-3 py-2"
           style="color: var(--text-primary); text-decoration: none;"
         >

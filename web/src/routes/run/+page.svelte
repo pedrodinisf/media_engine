@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { api, ApiError } from '$lib/api/client';
@@ -158,7 +159,7 @@
       };
       if (backend) body.backend = backend;
       const ack = await api.post<JobAck>('/run', body);
-      await goto(`/jobs/${ack.job_id}`);
+      await goto(`${base}/jobs/${ack.job_id}`);
     } catch (e) {
       submitError = e instanceof ApiError ? e.detail : String(e);
     } finally {

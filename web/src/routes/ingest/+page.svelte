@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { api, ApiError } from '$lib/api/client';
   import type { JobAck, UploadPreview, URLProbeResponse } from '$lib/api/client';
@@ -61,7 +62,7 @@
       fd.append('file', uploadFile);
       fd.append('commit', 'true');
       const ack = await api.postForm<JobAck>('/acquire/upload', fd);
-      await goto(`/jobs/${ack.job_id}`);
+      await goto(`${base}/jobs/${ack.job_id}`);
     } catch (e) {
       uploadError = e instanceof ApiError ? e.detail : String(e);
       uploadStatus = null;
@@ -102,7 +103,7 @@
         inputs: [],
         params: { url: urlInput, quality: urlQuality },
       });
-      await goto(`/jobs/${ack.job_id}`);
+      await goto(`${base}/jobs/${ack.job_id}`);
     } catch (e) {
       urlError = e instanceof ApiError ? e.detail : String(e);
     } finally {
@@ -138,7 +139,7 @@
         inputs: [],
         params,
       });
-      await goto(`/jobs/${ack.job_id}`);
+      await goto(`${base}/jobs/${ack.job_id}`);
     } catch (e) {
       liveError = e instanceof ApiError ? e.detail : String(e);
     } finally {

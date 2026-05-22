@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { setToken } from '$lib/stores/token';
 
@@ -26,7 +27,9 @@
     try {
       // Verify against the API before committing it to storage — if the
       // user pasted yesterday's revoked token, we'd rather catch it here
-      // than after every subsequent request 401s.
+      // than after every subsequent request 401s. NOTE: ``/operations``
+      // is a REST path, NOT scoped to the SPA's ``paths.base`` ('/ui') —
+      // FastAPI serves it at the app root. Keep this absolute.
       const res = await fetch('/operations', {
         headers: { Authorization: `Bearer ${trimmed}` },
       });
@@ -41,7 +44,7 @@
         return;
       }
       setToken(trimmed, rememberMe ? 'local' : 'session');
-      await goto('/');
+      await goto(`${base}/`);
     } catch (e) {
       error = `Could not reach the API: ${e instanceof Error ? e.message : String(e)}`;
       submitting = false;

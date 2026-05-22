@@ -4,9 +4,10 @@
    *
    * Renders one artifact: kind label at the top, op + backend below,
    * truncation badge when the walker stopped at max_depth. Whole node
-   * is a link to /catalog/{id} so click-to-drill-in works without
+   * is a link to {base}/catalog/{id} so click-to-drill-in works without
    * extra wiring.
    */
+  import { base } from '$app/paths';
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import { kindAccent, type FlowNodeData } from './lineage-layout';
 
@@ -16,7 +17,7 @@
 </script>
 
 <a
-  href="/catalog/{data.artifact_id}"
+  href="{base}/catalog/{data.artifact_id}"
   class="block rounded text-xs no-underline"
   style="
     width: 220px;

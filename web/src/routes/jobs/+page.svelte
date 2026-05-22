@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { base } from '$app/paths';
   import { api, ApiError } from '$lib/api/client';
   import { openSSE } from '$lib/sse/event-source';
 
@@ -132,7 +133,7 @@
     {#each jobs as job (job.id)}
       <tr style="border-bottom: 1px solid var(--border-soft);">
         <td class="px-3 py-2 font-mono text-xs">
-          <a href="/jobs/{job.id}" style="color: var(--text-primary);">
+          <a href="{base}/jobs/{job.id}" style="color: var(--text-primary);">
             {job.id.slice(0, 12)}…
           </a>
         </td>
@@ -171,7 +172,7 @@
     {#if jobs.length === 0 && !error}
       <tr>
         <td colspan="6" class="px-3 py-6 text-center text-xs italic" style="color: var(--text-muted);">
-          No jobs yet. Submit one via <a href="/ingest">Ingest</a> or <a href="/run">Run</a>.
+          No jobs yet. Submit one via <a href="{base}/ingest">Ingest</a> or <a href="{base}/run">Run</a>.
         </td>
       </tr>
     {/if}

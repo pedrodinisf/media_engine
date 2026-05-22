@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { base } from '$app/paths';
+
   // Placeholder dashboard. Commits 41–49 turn the panel cards into live
   // navigation tiles with cache hit counts, job summaries, and a recent
   // activity tail. Commit 39 ships the shell only so the rest of the
@@ -65,7 +67,7 @@
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
   {#each panels as panel (panel.href)}
     <a
-      href={panel.href}
+      href={`${base}${panel.href}`}
       class="block p-4 rounded transition-shadow hover:no-underline"
       style="background: var(--bg-card); border: 1px solid var(--border-soft); color: var(--text-primary);"
     >

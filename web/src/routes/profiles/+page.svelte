@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { ApiError } from '$lib/api/client';
   import {
@@ -106,7 +107,7 @@
       const payload = forkPayload(forkSource.body, newName);
       await saveProfile(payload);
       forkSource = null;
-      await goto(`/profiles/${encodeURIComponent(newName)}`);
+      await goto(`${base}/profiles/${encodeURIComponent(newName)}`);
     } catch (e) {
       error = e instanceof ApiError ? e.detail : String(e);
     } finally {
@@ -133,7 +134,7 @@
         graph: parsed.nodes,
         outputs: parsed.outputs,
       });
-      await goto(`/profiles/${encodeURIComponent(name)}`);
+      await goto(`${base}/profiles/${encodeURIComponent(name)}`);
     } catch (e) {
       error = e instanceof ApiError ? e.detail : String(e);
     }
@@ -191,7 +192,7 @@
         style="background: var(--bg-card); border: 1px solid var(--border-soft); color: var(--text-primary);"
       >
         <a
-          href="/profiles/{encodeURIComponent(p.name)}"
+          href="{base}/profiles/{encodeURIComponent(p.name)}"
           class="no-underline"
           style="color: inherit;"
         >

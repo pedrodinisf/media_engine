@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import { page } from '$app/stores';
   import { api, ApiError } from '$lib/api/client';
   import { artifactFileUrl, type Artifact } from '$lib/api/artifacts';
@@ -44,7 +45,7 @@
 
 <header class="mb-5">
   <p class="text-xs font-mono mb-1" style="color: var(--text-muted);">
-    <a href="/catalog">catalog</a> / {artifactId}
+    <a href="{base}/catalog">catalog</a> / {artifactId}
   </p>
   {#if artifact}
     <h1 class="text-2xl font-semibold mb-1 font-mono" style="color: var(--text-primary);">
