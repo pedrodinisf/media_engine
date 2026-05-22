@@ -49,6 +49,18 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["media_engine"]
 
+# Phase 6 commit 40: include the SvelteKit build artifact (populated by
+# `scripts/build_web.sh` / `pnpm -C web build` ahead of `hatch build`).
+# Gitignored on disk; the wheel ships it so `pip install media_engine[api]`
+# from PyPI ships the UI for free.
+[tool.hatch.build.targets.wheel.force-include]
+"media_engine/web/dist" = "media_engine/web/dist"
+
+[tool.hatch.build.targets.sdist]
+# Don't publish the SvelteKit source or its build artefact in source
+# distributions — wheels are the supported install path for the UI.
+exclude = ["web/", "media_engine/web/dist/"]
+
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0",

@@ -18,14 +18,18 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncGenerator
 from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from media_engine.api._state import AppState
 from media_engine.api.health import router as health_router
+from media_engine.api.middleware import UISecurityHeadersMiddleware
 from media_engine.api.routes import router
 from media_engine.bootstrap import register_all
 from media_engine.config import EngineConfig
@@ -34,6 +38,19 @@ from media_engine.runtime.gc import gc_interval_from_env, periodic_workdir_gc
 
 if TYPE_CHECKING:
     pass
+
+_logger = logging.getLogger(__name__)
+
+
+def ui_dist_dir() -> Path:
+    """Return the bundled SvelteKit dist directory.
+
+    Resolved relative to the installed package so the wheel + a ``uv pip
+    install -e .`` editable install both find it. The contributor flow
+    is ``pnpm -C web build`` once; ``med web start`` then validates the
+    tree exists before booting.
+    """
+    return Path(__file__).resolve().parent.parent / "web" / "dist"
 
 
 def build_app(
@@ -112,6 +129,27 @@ def build_app(
     )
     app.include_router(health_router)
     app.include_router(router)
+
+    # Phase 6 commit 40: optionally mount the SvelteKit SPA at /ui. We
+    # check at app-build time rather than at request time so a missing
+    # dist tree fails fast at startup (rather than 404-ing every UI
+    # request silently). Headless deploys without the UI just see the
+    # warning and don't lose any backend functionality.
+    dist = ui_dist_dir()
+    index_html = dist / "index.html"
+    if index_html.is_file():
+        app.add_middleware(UISecurityHeadersMiddleware)
+        app.mount(
+            "/ui",
+            StaticFiles(directory=str(dist), html=True),
+            name="ui",
+        )
+    else:
+        _logger.info(
+            "Web UI dist not found at %s — /ui mount skipped. Run "
+            "`pnpm -C web build` to populate it.",
+            dist,
+        )
     return app
 
 

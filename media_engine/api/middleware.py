@@ -1,0 +1,72 @@
+"""Security headers for the Phase 6 Web UI mount.
+
+The `/ui/*` prefix serves the SvelteKit SPA via FastAPI ``StaticFiles``.
+Modern browsers honor a stack of opt-in security headers that limit
+what the UI page can load and how downstream resources can embed it.
+We scope every header to `/ui/*` responses so the API surface (under
+the same FastAPI app) is unaffected — REST clients live on
+`/operations`, `/jobs`, etc., and don't need a CSP.
+
+Header rationale (commit 40 §9):
+
+- ``Content-Security-Policy``
+  - ``default-src 'self'`` — only same-origin loads.
+  - ``img-src 'self' data: blob:`` — supports inline thumbnails + blob
+    previews of artifacts the catalog browser will render (commit 44).
+  - ``media-src 'self' blob:`` — same, for ``<video>`` + ``<audio>``.
+  - ``worker-src 'self' blob:`` — pdf.js spawns its renderer in a worker
+    backed by a blob URL.
+  - ``script-src 'self' 'wasm-unsafe-eval'`` — pdf.js's wasm-backed
+    fallback build needs the wasm CSP token; no third-party CDN.
+  - ``style-src 'self' 'unsafe-inline'`` — Svelte's scoped styles + the
+    Tailwind v4 runtime inject inline ``<style>`` tags.
+- ``X-Content-Type-Options: nosniff`` — refuses to MIME-sniff a binary
+  download as HTML/JS.
+- ``Referrer-Policy: same-origin`` — minimizes Referer leakage; relevant
+  to the ?token= SSE query-param caveat documented in plan §13.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+UI_PREFIX = "/ui"
+
+_CSP = (
+    "default-src 'self'; "
+    "img-src 'self' data: blob:; "
+    "media-src 'self' blob:; "
+    "worker-src 'self' blob:; "
+    "script-src 'self' 'wasm-unsafe-eval'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
+class UISecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Adds CSP + ancillary security headers to ``/ui/*`` responses.
+
+    Idempotent — never overwrites a header an upstream handler already
+    set, so a future per-route override would win. Skipped for any
+    request whose path doesn't start with the UI prefix.
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        if not request.url.path.startswith(UI_PREFIX):
+            return response
+        response.headers.setdefault("Content-Security-Policy", _CSP)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        return response
