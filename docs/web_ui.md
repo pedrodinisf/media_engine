@@ -12,11 +12,13 @@ the architectural rationale (mount model, paste-token bootstrap, SSE
 auth) see [`architecture.md`](architecture.md) §11 + §12; for items
 explicitly deferred to v1.x see [`web_ui_deferred.md`](web_ui_deferred.md).
 
-> **Status (2026-05-22).** Phase 6 commits 39–48 + the post-46 audit +
-> post-48 audit have landed. Ingest, Run, Jobs, Catalog, Search, Cost,
-> Lineage, **and Profile workspace + examples library** are live.
-> Plugin catalog + settings (commit 49) are queued. The `+ui`
-> multi-stage Dockerfile lands in commit 50.
+> **Status (2026-05-22).** Phase 6 commits 39–49 + post-46 + post-48 +
+> post-49 audits have landed. Every panel is live: Ingest, Run, Jobs,
+> Catalog, Search, Cost, Lineage, **Profile workspace + examples
+> library**, **and Settings** (Tokens / Backends / Plugins ·
+> Extras / Plugins · Catalog / Storage / Config). Commit 50 — docs
+> refresh + screenshots + the `+ui` multi-stage Dockerfile + the
+> v0.6.0 release cut — is the only remaining work.
 
 ---
 
@@ -97,7 +99,7 @@ flat nav strip:
 | **Search** | Sync fulltext / semantic / hybrid query with type-as-you-go feedback. |
 | **Cost** | Per-op (or per-backend / per-namespace) rollup bars + drill-down ledger + monthly burn projection. |
 | **Profiles** | Discovery card grid → fork-this for bundled profiles → split-view workspace (visual DAG composer + CodeMirror YAML editor + live compile). |
-| **Settings** | (queued for commit 49 — token CRUD, plugin catalog, storage stats) |
+| **Settings** | Six-tab panel: Tokens · Backends · Plugins · Extras · Plugins · Catalog · Storage · Config. |
 
 ---
 
@@ -333,18 +335,56 @@ The whole flow is "fork → edit → save → run", same as the CLI
 loop (`med profile ls` → edit the YAML → `med profile run`); the
 UI is just the path of least resistance.
 
+### 4.9 Settings (`/ui/settings`)
+
+Six-tab panel that surfaces every operator knob the engine exposes
+over REST. Each tab lazy-loads its data on activation so the
+initial paint stays cheap.
+
+- **Tokens** — mint a new bearer token (label + namespace), list
+  every token (revoked rows greyed out), revoke with a one-click
+  button. Newly-minted secrets show in a one-time banner with the
+  standard "copy now, it won't be shown again" warning.
+- **Backends** — `GET /backends` rollup with a "Refresh health"
+  button that probes each backend's `health()` in parallel; rows
+  carry a coloured dot (🟢 ok · 🟡 degraded · 🔴 unavailable · ⚪
+  unknown).
+- **Plugins · Extras** — table of the 16 pyproject extras with
+  install status (server-side `importlib.util.find_spec` probe per
+  request, no caching) + the `uv sync --extra <name>` command +
+  a copy-to-clipboard button. The UI never executes installs —
+  plan §13 risk #3 (live-venv corruption + multi-minute installs
+  for `torch`/`pyannote`).
+- **Plugins · Catalog** — parallel checkbox grids for every op
+  and every `op__backend` key. Hidden entries stay registered
+  with `OpRegistry`/`BackendRegistry` but are filtered out of
+  discovery surfaces (REST `/operations`, MCP `tools/list`, UI op
+  picker). Persists to `{config_dir}/plugins.toml`. Filter input
+  narrows both grids.
+- **Storage** — `GET /storage/stats` rollup: total bytes,
+  free-disk GB, namespace, plus a bytes-by-kind table sorted
+  descending. Two action buttons — "GC preview" (dry-run) and
+  "GC apply" — fire `POST /storage/gc` with `apply` accordingly.
+  Result panel shows workdirs swept + eviction stats (when
+  `eviction_enabled = true` in config).
+- **Config** — read-only view of the effective per-op
+  `declared_resources` map (now carried on `OperationSummary` so
+  this is a single GET, not N+1). Inline editors for
+  `config.toml` + `resources.yaml` are deferred to v1.x —
+  `MEDIA_ENGINE_*` env vars are owned by the deploy, not the UI.
+
 ---
 
 ## 5. CLI ↔ UI parity matrix
 
 Every read-side CLI verb has a UI surface today; every write-side
-verb except `daemon`, `db migrate`, and `storage migrate` either
-already has one or is queued for commit 49.
+verb except `daemon`, `db migrate`, and `storage migrate` is
+covered.
 
 | CLI | UI surface | Commit |
 |---|---|---|
-| `med ops` | Run panel (op picker) + future Settings → Backends | 42 |
-| `med config` | Future Settings → Config (read-only) | 49 (queued) |
+| `med ops` | Run panel (op picker) + Settings → Backends | 42, 49 |
+| `med config` | Settings → Config (read-only) | 49 |
 | `med ls [--kind]` | Catalog browser | 44 |
 | `med show <id>` | Catalog detail | 44 |
 | `med lineage <id>` | Lineage tab + standalone viewer | 45 |
@@ -355,7 +395,9 @@ already has one or is queued for commit 49.
 | `med search` | Search surface | 46 |
 | `med cost ls / summary` | Cost ledger | 46 |
 | `med events tail / history` | Job detail Events tab + global `/events/stream` | 43 |
-| `med api token create / ls / revoke` | Future Settings → Tokens | 49 (queued) |
+| `med api token create / ls / revoke` | Settings → Tokens | 49 |
+| `med storage stats / gc` | Settings → Storage | 49 |
+| `med mcp serve` (allow-list) | Settings → Plugins · Catalog (filters tools/list) | 49 |
 | `med web start` | (the UI itself) | 40 |
 | `med daemon …` | **shell-only** — operator command | — |
 | `med db migrate` | **shell-only** — operator command | — |
@@ -451,20 +493,27 @@ pnpm -C web exec playwright test    # gated by CI=1
 
 ## 10. What's *not* here yet
 
-These are explicitly Phase 6 v1 scope but ship in later commits in
-the same release window:
+These are explicitly Phase 6 v1 scope but ship in the remaining
+commit in the same release window:
 
-- **Settings** (commit 49) — token CRUD UI, backends health board,
-  plugin extras catalog (show-don't-install), plugin op / backend
-  visibility toggles, storage stats + GC preview.
 - **`+ui` multi-stage Dockerfile** (commit 50) — final image with
   no Node runtime; today's compose stack still requires a host-side
   `pnpm -C web build`.
+- **Six bundled screenshots** (commit 50) — feature tour images
+  under `docs/web_ui/`, regenerable via
+  `scripts/gen_ui_screenshots.sh`.
+- **v0.6.0 release cut** (commit 50) — version bump,
+  `CHANGELOG.md` finalise, README refresh, architecture §11
+  closing summary.
 - **Per-node schema-driven param editor in the profile workspace.**
   The split-view ships today; the right pane's "Node …" card only
   exposes id + backend. Params are edited directly in the YAML
   pane (round-tripped through the AST so comments survive). The
   full `SchemaForm`-driven param editor is a small follow-up.
+- **Inline `config.toml` + `resources.yaml` editors** in Settings
+  → Config. The current Config tab is read-only; inline edit
+  lands in v1.x. `MEDIA_ENGINE_*` env vars are owned by the
+  deploy, not the UI.
 
 Items deferred *past* Phase 6 v1 (v1.x backlog) are catalogued in
 [`web_ui_deferred.md`](web_ui_deferred.md).

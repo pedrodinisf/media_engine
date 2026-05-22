@@ -890,6 +890,29 @@ roadmap; this section is the reconciliation):
     `yamlForLayout` $state that lags by 150 ms. Single canvas
     repaint per typing pause instead of per keystroke. Validate
     debounces a further 500 ms on top of that.
+  - **Plugin catalog gate is enforcement-only, not security**
+    (commit 49). `plugins.toml` hides ops/backends from discovery
+    surfaces (REST `/operations`, MCP `tools/list`, Web UI op
+    picker) but they stay registered. The MCP allow-list
+    (`MCPSecurityConfig`) remains the boundary for "this client
+    cannot call this op"; the catalog is "this op shouldn't show
+    up in my UI" for tidying.
+  - **Extras catalog hard-coded in `api/plugins.py`** (commit 49)
+    rather than parsed from `pyproject.toml` at request time.
+    The wheel ships without `pyproject.toml`, so a runtime parse
+    would 500 on a PyPI install. A regression test asserts
+    bidirectional parity at CI time.
+  - **`declared_resources` carried on `OperationSummary`** (post-
+    commit-49 audit), not just `OperationDetail`. The Web UI's
+    Settings → Config tab needs the field for every op; pre-audit
+    it fired 1 list + N detail requests just to read this one
+    string list. Lifting the field is cheap (a few tens of bytes
+    per row) and saves N round-trips per tab activation.
+  - **`/storage/*` reuses `state.engine.cache`** (post-commit-49
+    audit) instead of constructing a fresh `Cache(...)` per
+    request. SQLAlchemy spins up a new engine + pool per
+    construction; reusing the long-lived cache the engine already
+    holds removes that per-click overhead.
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit
@@ -899,11 +922,13 @@ pre-Phase-5 audit findings`, `fix(phase-5): close pre-Phase-6 audit
 findings`, `fix(phase-6): post-commit-46 audit — until-pagination,
 datetime-local tz, cost-page race`, `fix(phase-6): post-commit-48
 audit — validate string-loader, composer debounce, source field,
-rename guard`.
+rename guard`, `fix(phase-6): post-commit-49 audit — cache reuse,
+N+1 collapse, drift guard`.
 
 Phases 0–5 are complete; v0.5.0 is the current release. Phase 6
-(local-first Web UI) is mid-flight: commits 39–46 + the post-46
-audit have landed. Commits 47–50 are queued.
+(local-first Web UI) is one commit from close: commits 39–49 +
+three audit-fix passes have landed. Only commit 50 (docs +
+screenshots + `+ui` Dockerfile + v0.6.0 release cut) remains.
 
 After Phase 5, two further phases are formalised in plan §12.5 +
 §12.6 and queued post-v0.5.0:

@@ -2123,7 +2123,7 @@ flowchart TD
     <div class="tab-panel" id="t-web" role="tabpanel">
       <h4>Web UI &mdash; local-first browser surface</h4>
       <p>A SvelteKit single-page app is bundled inside the engine container at <code class="inline">/ui</code> and served by the same FastAPI process that powers the REST API. <strong>Full GUI parity with the CLI:</strong> anything you can do with <code class="inline">med &lt;verb&gt;</code> you can do from the browser. The path of least resistance for users who don't want a shell &mdash; while the CLI stays first-class for power users + CI.</p>
-      <p><strong>Panels live today (commits 39&ndash;48 + post-46 + post-48 audits):</strong> Ingest (upload / URL probe / livestream / batch), Run (op picker + schema-driven form + live cost preview), Jobs (live SSE-driven table + per-job detail with events / op runs / outputs / failure envelope + cancel), Catalog (paginated list + kind chip filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go feedback), Cost (per-{op,backend,namespace} rollup bars + monthly burn projection + paginated drill-down ledger), <strong>Profile workspace</strong> (split visual DAG composer + CodeMirror YAML editor + 650 ms live compile + fork-this examples library). <strong>Pending</strong> (commits 49&ndash;50): Plugin catalog + Settings + <code class="inline">+ui</code> Docker stage.</p>
+      <p><strong>Panels live today (commits 39&ndash;49 + 3 audits):</strong> Ingest (upload / URL probe / livestream / batch), Run (op picker + schema-driven form + live cost preview), Jobs (live SSE-driven table + per-job detail with events / op runs / outputs / failure envelope + cancel), Catalog (paginated list + kind chip filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go feedback), Cost (per-{op,backend,namespace} rollup bars + monthly burn projection + paginated drill-down ledger), <strong>Profile workspace</strong> (split visual DAG composer + CodeMirror YAML editor + 650 ms live compile + fork-this examples library), <strong>Settings</strong> (six-tab panel: Tokens · Backends · Plugins Extras · Plugins Catalog · Storage · Config). <strong>Pending</strong> (commit 50): <code class="inline">+ui</code> Docker stage + screenshots + v0.6.0 release cut.</p>
       <p><strong>Bootstrap:</strong> mint a bearer token via the CLI, then paste it into the browser at <code class="inline">/ui/setup</code>. Zero new endpoints, zero chicken-and-egg. Persists to <code class="inline">localStorage</code> (or <code class="inline">sessionStorage</code> via the session-only toggle).</p>
       <p><strong>Security:</strong> CSP scoped to <code class="inline">/ui/*</code> (<code class="inline">default-src 'self'</code> with <code class="inline">'wasm-unsafe-eval'</code> for pdf.js + <code class="inline">'unsafe-inline'</code> styles for Svelte's scoped CSS); same-origin only by default (<code class="inline">MEDIA_ENGINE_CORS_ORIGINS</code> opens dev origins); SSE routes accept <code class="inline">?token=&hellip;</code> since <code class="inline">EventSource</code> can't set headers (loopback-target, v1.x nonce hardening path queued).</p>
       <div class="code-block">
@@ -2256,7 +2256,7 @@ asyncio.run(<span class="fn">go</span>())</pre>
   <div class="eyebrow">CHRONOLOGY <span class="id">010 · 9 DAYS · 57+ COMMITS</span></div>
   <h2 class="section-title">v0.5.0 shipped; Phase 6 in flight on the Web UI.</h2>
   <p class="section-lede">
-    Phases 0&ndash;5 shipped between <strong>2026-05-14</strong> and <strong>2026-05-22</strong>. v0.5.0 is the current release: forty-nine commits, six audit-fix waves, thirty-four operations, thirty-plus backends, five transports. Phase 6 (local-first Web UI, plan &sect;12.5) is mid-flight: commits 39&ndash;48 + two audit-fix passes have landed; commits 49 (plugin catalog + settings) and 50 (<code class="inline">+ui</code> Dockerfile + v0.6.0 release cut) are the remaining work. Phase 7 (acoustic speaker identity, plan &sect;12.6) queues after.
+    Phases 0&ndash;5 shipped between <strong>2026-05-14</strong> and <strong>2026-05-22</strong>. v0.5.0 is the current release: forty-nine commits, six audit-fix waves, thirty-four operations, thirty-plus backends, five transports. Phase 6 (local-first Web UI, plan &sect;12.5) is near close: commits 39&ndash;49 + three audit-fix passes have landed; only commit 50 (<code class="inline">+ui</code> Dockerfile + screenshots + v0.6.0 release cut) remains. Phase 7 (acoustic speaker identity, plan &sect;12.6) queues after.
   </p>
 
   <div class="diagram">
@@ -2332,11 +2332,11 @@ asyncio.run(<span class="fn">go</span>())</pre>
           </div>
         </div>
 
-        <!-- Phase 6 — in flight, commits 39–48 + 2 audits landed -->
+        <!-- Phase 6 — in flight, commits 39–49 + 3 audits landed; only 50 left -->
         <div class="itl-row inflight">
-          <div class="itl-row-label"><span class="itl-id">P6</span><span class="itl-name">Web UI · in flight</span></div>
+          <div class="itl-row-label"><span class="itl-id">P6</span><span class="itl-name">Web UI · near close</span></div>
           <div class="itl-track">
-            <div class="itl-bar inflight" style="left: 91.5%; width: 5.5%"><span class="itl-bar-text">commits 39–48 + 2 audits · 49–50 queued</span></div>
+            <div class="itl-bar inflight" style="left: 91.5%; width: 6%"><span class="itl-bar-text">commits 39–49 + 3 audits · 50 queued</span></div>
           </div>
         </div>
 
@@ -2344,7 +2344,7 @@ asyncio.run(<span class="fn">go</span>())</pre>
 
       <div class="itl-legend">
         <span><span class="swatch done"></span>shipped (49 commits · phases 0–5 · v0.5.0)</span>
-        <span><span class="swatch future"></span>in flight (phase 6 · 12 commits · 10 landed)</span>
+        <span><span class="swatch future"></span>in flight (phase 6 · 12 commits · 11 landed)</span>
         <span><span class="status-dot amber live"></span>TODAY · May 22</span>
         <span style="opacity: 0.7">Phase 7 (acoustic speaker identity · 4 commits) queues after Phase 6 closes — see cards below.</span>
       </div>
@@ -2523,7 +2523,7 @@ asyncio.run(<span class="fn">go</span>())</pre>
       <div class="phase-id">PHASE <b>6</b></div>
       <div class="phase-body">
         <h4>Local-first Web UI · full GUI parity with the CLI</h4>
-        <p>The graphical surface. A SvelteKit single-page app bundled into the engine container at <code class="inline">/ui</code>, served by the same FastAPI process as REST; one-command boot via <code class="inline">med web start</code>. <strong>Live today (commits 39&ndash;48 + 2 audits):</strong> Ingest panel (upload / URL probe / livestream / batch), Run panel (op picker + schema-driven form + backend health + live cost preview), Jobs dashboard (live SSE table + per-job detail + cancel), Catalog browser (paginated list + kind filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go), Cost ledger (per-{op,backend,namespace} rollup bars + monthly burn projection + drill-down), <strong>Profile workspace</strong> (split visual DAG composer + CodeMirror YAML editor + 650 ms live compile) and <strong>examples library</strong> with one-click fork-this. <strong>Queued (commits 49&ndash;50):</strong> Plugin catalog (extras show-don't-install + per-op/backend visibility gate), Settings (tokens, backends, storage), and the <code class="inline">+ui</code> Docker stage + v0.6.0 release cut.</p>
+        <p>The graphical surface. A SvelteKit single-page app bundled into the engine container at <code class="inline">/ui</code>, served by the same FastAPI process as REST; one-command boot via <code class="inline">med web start</code>. <strong>Live today (commits 39&ndash;49 + 3 audits):</strong> Ingest panel (upload / URL probe / livestream / batch), Run panel (op picker + schema-driven form + backend health + live cost preview), Jobs dashboard (live SSE table + per-job detail + cancel), Catalog browser (paginated list + kind filter + per-kind preview affordances for all 14 artifact kinds), Catalog detail with Svelte Flow + dagre <strong>lineage graph viewer</strong>, Search (sync fulltext / semantic / hybrid with type-as-you-go), Cost ledger (per-{op,backend,namespace} rollup bars + monthly burn projection + drill-down), <strong>Profile workspace</strong> (split visual DAG composer + CodeMirror YAML editor + 650 ms live compile) with <strong>examples library</strong> + one-click fork-this, <strong>Settings</strong> (six-tab: Tokens / Backends / Plugins Extras / Plugins Catalog / Storage / Config). <strong>Queued (commit 50):</strong> <code class="inline">+ui</code> Docker stage + screenshots + v0.6.0 release cut.</p>
         <div class="phase-deliverables">
           <span class="deliverable">SPA + /ui mount</span>
           <span class="deliverable">med web start</span>
@@ -2535,14 +2535,14 @@ asyncio.run(<span class="fn">go</span>())</pre>
           <span class="deliverable">cost ledger</span>
           <span class="deliverable">profile workspace</span>
           <span class="deliverable">examples library</span>
-          <span class="deliverable">plugin manager · queued</span>
-          <span class="deliverable">settings · queued</span>
+          <span class="deliverable">plugin catalog</span>
+          <span class="deliverable">settings</span>
         </div>
       </div>
       <div class="phase-meta">
         <span class="phase-status next"><span class="status-dot amber live"></span>in flight</span>
         <span class="phase-window">post-Phase-5</span>
-        <span class="phase-commits">10<span class="unit">/ 12 commits</span></span>
+        <span class="phase-commits">11<span class="unit">/ 12 commits</span></span>
       </div>
     </article>
 
@@ -2586,9 +2586,9 @@ asyncio.run(<span class="fn">go</span>())</pre>
     <div class="metric"><div class="metric-value">34<span class="unit">ops</span></div><div class="metric-label">Registered</div></div>
     <div class="metric"><div class="metric-value">30+<span class="unit">backends</span></div><div class="metric-label">Pluggable</div></div>
     <div class="metric"><div class="metric-value">14<span class="unit">kinds</span></div><div class="metric-label">Typed artifacts</div></div>
-    <div class="metric"><div class="metric-value">856<span class="unit">py</span></div><div class="metric-label">29 gated skips</div></div>
-    <div class="metric"><div class="metric-value">47<span class="unit">fe</span></div><div class="metric-label">Vitest unit</div></div>
-    <div class="metric"><div class="metric-value">60+<span class="unit">commits</span></div><div class="metric-label">Phases 0&ndash;6 so far</div></div>
+    <div class="metric"><div class="metric-value">886<span class="unit">py</span></div><div class="metric-label">29 gated skips</div></div>
+    <div class="metric"><div class="metric-value">54<span class="unit">fe</span></div><div class="metric-label">Vitest unit</div></div>
+    <div class="metric"><div class="metric-value">65+<span class="unit">commits</span></div><div class="metric-label">Phases 0&ndash;6 so far</div></div>
   </div>
 
   <div class="callout amber">
@@ -2605,9 +2605,9 @@ asyncio.run(<span class="fn">go</span>())</pre>
 <footer>
   <span class="brand">FRAMEPULSE &middot; v0.6.0-dev</span>
   <div class="build">
-    <span>BUILD <b>PHASE 6 MID / 7</b></span>
-    <span>COMMITS <b>60+</b></span>
-    <span>TESTS <b>856 PY &middot; 47 FE</b></span>
+    <span>BUILD <b>PHASE 6 NEAR CLOSE / 7</b></span>
+    <span>COMMITS <b>65+</b></span>
+    <span>TESTS <b>886 PY &middot; 54 FE</b></span>
     <span>CACHE <b>SQLITE + POSTGRES</b></span>
     <span>ARCH <b>ARM64 + AMD64</b></span>
     <span>UPDATED <b>2026-05-22</b></span>

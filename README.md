@@ -126,17 +126,19 @@ add it to `media_engine/bootstrap.py::_op_classes()` /
 
 ## Status
 
-**v0.5.0 shipped; v0.6.0 in flight.** Phases 0–5 are complete (49
-commits). Phase 6 (local-first Web UI, plan §12.5) is mid-flight:
-commits 39–48 + post-46 and post-48 audit passes have landed —
-Ingest, Run, Jobs, Catalog, Search, Cost, Lineage, **and the
-Profile workspace + examples library with fork-this** are live.
-Plugin catalog + settings (commit 49) and the `+ui` Docker stage +
-v0.6.0 cut (commit 50) are the remaining work.
+**v0.5.0 shipped; v0.6.0 near close.** Phases 0–5 are complete
+(49 commits). Phase 6 (local-first Web UI, plan §12.5) is one
+commit from done: commits 39–49 + three audit-fix passes have
+landed — Ingest, Run, Jobs, Catalog, Search, Cost, Lineage,
+Profile workspace + examples library with fork-this, **and the
+six-tab Settings panel** (Tokens / Backends / Plugins Extras /
+Plugins Catalog / Storage / Config) are all live. Only the
+`+ui` Docker stage + screenshots + v0.6.0 release cut (commit 50)
+remain.
 
-Suite: 856 passed / 29 skipped (dep- and API-key-gated). Ruff +
-strict pyright clean. Frontend: 47 Vitest unit tests, svelte-check
-0/0 on 567 files. 34 ops, 30+ backends, 14 artifact kinds.
+Suite: 886 passed / 29 skipped (dep- and API-key-gated). Ruff +
+strict pyright clean. Frontend: 54 Vitest unit tests, svelte-check
+0/0 on 571 files. 34 ops, 30+ backends, 14 artifact kinds.
 
 **Phase 7 — acoustic speaker identity** (`speakers.embed_voice` +
 `speakers.cluster` + `speakers.match`, voice-fingerprint DB reusing
