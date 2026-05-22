@@ -1,0 +1,16 @@
+# pnpm 11 moved package-level settings here from package.json.
+#
+# - onlyBuiltDependencies allowlists esbuild's postinstall. esbuild
+#   actually ships a prebuilt @esbuild/<platform> binary so this is
+#   mostly cosmetic, but pnpm 11 treats unapproved builds as a hard
+#   gate that fails subsequent `pnpm <script>` invocations.
+#
+# - verifyDepsBeforeRun disables the pre-script install-status check.
+#   In pnpm 11.2.2 that check fires ERR_PNPM_IGNORED_BUILDS even when
+#   onlyBuiltDependencies is configured, blocking every `pnpm` script
+#   invocation. Turning it off lets the contributor flow stay
+#   `pnpm install && pnpm <script>` with no manual approval step.
+
+onlyBuiltDependencies:
+  - esbuild
+verifyDepsBeforeRun: false

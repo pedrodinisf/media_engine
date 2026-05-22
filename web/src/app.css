@@ -1,0 +1,118 @@
+@import 'tailwindcss';
+
+/* ─────────────────────────────────────────────────────────────────
+   Clean-NASA design tokens (light).
+   Mirrors docs/quickstart.html. Exposed both as Tailwind theme keys
+   (so `bg-bg-page`, `text-text-primary`, etc. work as utilities) and
+   as plain CSS custom properties (so hand-written CSS in components
+   can reference them via var(--bg-page)).
+   ───────────────────────────────────────────────────────────────── */
+@theme {
+  --color-bg-page: #f5f4ee;
+  --color-bg-card: #f5f5f0;
+  --color-bg-alt: #eeede8;
+  --color-bg-deep: #e6e5de;
+  --color-bg-header: #2a3328;
+
+  --color-border-light: #d1d5db;
+  --color-border-warm: #c9c5b8;
+  --color-border-soft: #dad8ce;
+
+  --color-accent-green: #059669;
+  --color-accent-green-soft: rgba(5, 150, 105, 0.08);
+  --color-accent-green-line: rgba(5, 150, 105, 0.22);
+  --color-accent-amber: #d97706;
+  --color-accent-amber-soft: rgba(217, 119, 6, 0.08);
+  --color-accent-amber-line: rgba(217, 119, 6, 0.25);
+  --color-accent-red: #dc2626;
+  --color-accent-red-soft: rgba(220, 38, 38, 0.08);
+
+  --color-text-primary: #2d2d2d;
+  --color-text-secondary: #555d66;
+  --color-text-muted: #7b8490;
+  --color-text-inverse: #f5f5f0;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, system-ui, sans-serif;
+  --font-mono: 'Monaco', 'Menlo', 'Consolas', 'JetBrains Mono', monospace;
+}
+
+/* Plain CSS variables for components that prefer var() over tailwind classes. */
+:root {
+  --bg-page: #f5f4ee;
+  --bg-card: #f5f5f0;
+  --bg-alt: #eeede8;
+  --bg-deep: #e6e5de;
+  --bg-header: #2a3328;
+  --border-light: #d1d5db;
+  --border-warm: #c9c5b8;
+  --border-soft: #dad8ce;
+  --accent-green: #059669;
+  --accent-amber: #d97706;
+  --accent-red: #dc2626;
+  --text-primary: #2d2d2d;
+  --text-secondary: #555d66;
+  --text-muted: #7b8490;
+  --text-inverse: #f5f5f0;
+  --rule: 1px solid var(--border-light);
+  --max-w: 1280px;
+}
+
+/* Dark-mode automatic remap. Phase 6 ships light-first; dark is best-
+   effort via prefers-color-scheme — tuneable in commit 50 / v1.x. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-page: #14171a;
+    --bg-card: #1a1e22;
+    --bg-alt: #1f2429;
+    --bg-deep: #262b30;
+    --bg-header: #0a0d0f;
+    --border-light: #2f3540;
+    --border-warm: #3a3f4a;
+    --border-soft: #2a2f38;
+    --text-primary: #e6e5de;
+    --text-secondary: #b4b8be;
+    --text-muted: #7b8490;
+    --text-inverse: #1a1e22;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--accent-green);
+  color: #fff;
+}
+
+a {
+  color: var(--accent-green);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+a:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+  border-radius: 3px;
+}

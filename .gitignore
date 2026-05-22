@@ -50,3 +50,15 @@ tests/fixtures/*.wav.tmp
 
 # Plan-mode session state
 .claude/
+
+# Phase 6 — Web UI build artifacts
+web/node_modules/
+web/.svelte-kit/
+web/build/
+web/test-results/
+web/playwright-report/
+web/coverage/
+media_engine/web/dist/
+
+# tldr code-graph cache
+.tldr/
