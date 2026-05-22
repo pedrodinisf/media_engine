@@ -1,6 +1,5 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
   import { api, ApiError } from '$lib/api/client';
   import { openSSE, type SSEEvent } from '$lib/sse/event-source';
 
@@ -33,12 +32,11 @@
   let error: string | null = $state(null);
   let activeTab: 'events' | 'op_runs' | 'outputs' | 'failure' = $state('events');
   let events: SSEEvent[] = $state([]);
-  let closeStream: (() => void) | null = null;
   const jobId = $derived($page.params.id ?? '');
 
-  async function refresh(): Promise<void> {
+  async function refresh(currentJobId: string): Promise<void> {
     try {
-      detail = await api.get<JobDetail>(`/jobs/${jobId}`);
+      detail = await api.get<JobDetail>(`/jobs/${currentJobId}`);
       error = null;
     } catch (e) {
       error = e instanceof ApiError ? e.detail : String(e);
@@ -49,9 +47,18 @@
     events = [...events, ev].slice(-500);
   }
 
-  onMount(() => {
-    void refresh();
-    closeStream = openSSE(`/jobs/${jobId}/events`, {
+  // SvelteKit reuses this component across same-route navigations
+  // (`/jobs/abc → /jobs/def`), so onMount alone would leave the SSE
+  // stream + refresh pointed at the OLD jobId. `$effect` re-runs on
+  // every jobId change and returns a cleanup that closes the prior
+  // stream + clears the event tail before reconnecting.
+  $effect(() => {
+    if (!jobId) return;
+    events = [];
+    detail = null;
+    error = null;
+    void refresh(jobId);
+    const close = openSSE(`/jobs/${jobId}/events`, {
       onEvent: (ev) => {
         appendEvent(ev);
         // Status transitions arrive as OpStarted/OpCompleted/OpFailed;
@@ -61,13 +68,12 @@
           ev.type === 'OpCompleted' ||
           ev.type === 'OpFailed'
         ) {
-          void refresh();
+          void refresh(jobId);
         }
       },
     });
+    return () => close();
   });
-
-  onDestroy(() => closeStream?.());
 
   function formatEvent(ev: SSEEvent): string {
     try {

@@ -144,6 +144,24 @@ def test_ui_prefix_constant_matches_mount_path() -> None:
     assert UI_PREFIX == "/ui"
 
 
+def test_ui_prefix_match_is_strict() -> None:
+    """`/uix` etc. must NOT match — naive startswith would smear CSP."""
+    from media_engine.api.middleware import _is_ui_path
+
+    assert _is_ui_path("/ui") is True
+    assert _is_ui_path("/ui/") is True
+    assert _is_ui_path("/ui/index.html") is True
+    assert _is_ui_path("/ui/_app/foo.js") is True
+    # Adjacent paths that share the prefix as a string but aren't /ui:
+    assert _is_ui_path("/uix") is False
+    assert _is_ui_path("/uixyz") is False
+    assert _is_ui_path("/uiblob") is False
+    # Unrelated paths stay clean.
+    assert _is_ui_path("/operations") is False
+    assert _is_ui_path("/health") is False
+    assert _is_ui_path("/") is False
+
+
 # ─────────────────────────────────────────────────────────────────
 # Helper
 # ─────────────────────────────────────────────────────────────────

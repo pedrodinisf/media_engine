@@ -22,7 +22,6 @@ import logging
 from collections.abc import AsyncGenerator
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -36,9 +35,6 @@ from media_engine.bootstrap import register_all
 from media_engine.config import EngineConfig
 from media_engine.runtime.engine import Engine
 from media_engine.runtime.gc import gc_interval_from_env, periodic_workdir_gc
-
-if TYPE_CHECKING:
-    pass
 
 _logger = logging.getLogger(__name__)
 

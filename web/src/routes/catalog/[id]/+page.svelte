@@ -1,6 +1,5 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
   import { api, ApiError } from '$lib/api/client';
   import { artifactFileUrl, type Artifact } from '$lib/api/artifacts';
   import ArtifactPreview from '$lib/components/previews/ArtifactPreview.svelte';
@@ -20,22 +19,30 @@
   let activeTab: 'preview' | 'metadata' | 'lineage' = $state('preview');
   const artifactId = $derived($page.params.id ?? '');
 
-  async function load(): Promise<void> {
+  async function load(currentId: string): Promise<void> {
     try {
-      artifact = await api.get<Artifact>(`/artifacts/${artifactId}`);
+      artifact = await api.get<Artifact>(`/artifacts/${currentId}`);
     } catch (e) {
       error = e instanceof ApiError ? e.detail : String(e);
       return;
     }
     try {
-      lineage = await api.get<LineageNode>(`/artifacts/${artifactId}/lineage?depth=6`);
-    } catch (e) {
+      lineage = await api.get<LineageNode>(`/artifacts/${currentId}/lineage?depth=6`);
+    } catch {
       // Lineage is best-effort; the artifact itself is the main view.
       lineage = null;
     }
   }
 
-  onMount(() => void load());
+  // SvelteKit reuses the component across same-route navigations, so
+  // re-load on artifactId change rather than once at onMount.
+  $effect(() => {
+    if (!artifactId) return;
+    artifact = null;
+    lineage = null;
+    error = null;
+    void load(artifactId);
+  });
 </script>
 
 <svelte:head>

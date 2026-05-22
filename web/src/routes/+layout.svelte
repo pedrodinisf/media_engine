@@ -93,7 +93,6 @@
     class="px-6 py-3 text-xs"
     style="color: var(--text-muted); border-top: var(--rule);"
   >
-    media_engine — local-first media-processing engine ·
-    <a href="https://github.com/anthropics/claude-code/issues" target="_blank" rel="noopener">Feedback</a>
+    media_engine — local-first media-processing engine
   </footer>
 </div>

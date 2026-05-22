@@ -64,9 +64,20 @@ class UISecurityHeadersMiddleware(BaseHTTPMiddleware):
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         response = await call_next(request)
-        if not request.url.path.startswith(UI_PREFIX):
+        if not _is_ui_path(request.url.path):
             return response
         response.headers.setdefault("Content-Security-Policy", _CSP)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         return response
+
+
+def _is_ui_path(path: str) -> bool:
+    """Strict prefix match: ``/ui`` exact or ``/ui/...``.
+
+    A naive ``startswith("/ui")`` would also match ``/uix`` or
+    ``/uixyz``, which would smear UI CSP across unrelated future
+    routes. Guarding here is cheaper than relying on every future
+    contributor remembering the gotcha.
+    """
+    return path == UI_PREFIX or path.startswith(UI_PREFIX + "/")

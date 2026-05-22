@@ -71,7 +71,11 @@
     opDetail = null;
     opDetailError = null;
     preview = null;
+    previewError = null;
     backendHealth = {};
+    // Stale input ids from the previous op would 422 against a new op
+    // expecting different kinds — clear them when the user switches.
+    inputIdsText = '';
     try {
       opDetail = await api.get<OperationDetail>(`/operations/${name}`);
       params = initialParams(opDetail.params_schema);
@@ -103,8 +107,10 @@
   }
 
   // Debounced cost preview — refresh whenever the op, backend, params,
-  // or inputs change.
-  let previewTimer: ReturnType<typeof setTimeout> | null = null;
+  // or inputs change. Returning a cleanup from $effect cancels both
+  // the pending timer AND ignores the in-flight fetch result on unmount
+  // (or before the next effect run fires) so we never write to dead
+  // state.
   $effect(() => {
     if (!selectedOp || !opDetail) return;
     // Capture deps so the effect re-runs on change.
@@ -112,8 +118,8 @@
     const _backend = backend;
     const _params = params;
     const _inputs = inputIds();
-    if (previewTimer) clearTimeout(previewTimer);
-    previewTimer = setTimeout(async () => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
       previewBusy = true;
       previewError = null;
       try {
@@ -123,14 +129,21 @@
           params: _params,
         };
         if (_backend) body.backend = _backend;
-        preview = await api.post<RunPreview>('/run/preview', body);
+        const result = await api.post<RunPreview>('/run/preview', body);
+        if (!cancelled) preview = result;
       } catch (e) {
-        preview = null;
-        previewError = e instanceof ApiError ? e.detail : String(e);
+        if (!cancelled) {
+          preview = null;
+          previewError = e instanceof ApiError ? e.detail : String(e);
+        }
       } finally {
-        previewBusy = false;
+        if (!cancelled) previewBusy = false;
       }
     }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   });
 
   async function submit(): Promise<void> {
