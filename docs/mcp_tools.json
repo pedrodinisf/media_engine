@@ -764,7 +764,7 @@
   },
   {
     "name": "intelligence__analyze",
-    "description": "Per-segment structured analysis of a Transcript → SessionAnalysis.\n\nOp name: intelligence.analyze (version 1.0.0)\nInputs: transcript\nOutputs: session_analysis",
+    "description": "Per-segment structured analysis of a Transcript → SessionAnalysis.\n\nOp name: intelligence.analyze (version 1.1.0)\nInputs: transcript\nOutputs: session_analysis",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1092,6 +1092,8 @@
         },
         "template_sha": {
           "default": "",
+          "description": "Auto-derived sha of the template file's bytes. Clients should not set this — the value is computed at validation time and any client-supplied value is overwritten.",
+          "readOnly": true,
           "title": "Template Sha",
           "type": "string"
         },
@@ -1161,6 +1163,8 @@
         },
         "template_sha": {
           "default": "",
+          "description": "Auto-derived sha of the template file's bytes. Clients should not set this — the value is computed at validation time and any client-supplied value is overwritten.",
+          "readOnly": true,
           "title": "Template Sha",
           "type": "string"
         },
@@ -1456,6 +1460,8 @@
         },
         "speaker_db_sha": {
           "default": "",
+          "description": "Auto-derived sha of the speaker_db file's bytes. Clients should not set this — the value is computed at validation time and any client-supplied value is overwritten.",
+          "readOnly": true,
           "title": "Speaker Db Sha",
           "type": "string"
         },

@@ -131,6 +131,15 @@ seven robustness improvements that lived in user-facing endpoints:
   hit the cache. New regression tests cover both same-content-
   different-path cache hits and same-path-different-content cache
   misses.
+- **Auto-derived `*_sha` fields marked `readOnly` in their JSON
+  schemas + carry a description.** Pydantic `model_dump_exclude` only
+  affects serialization, not the schema, so MCP and REST surfaces
+  still advertised `speaker_db_sha` / `template_sha` as settable
+  string fields. Clients (LLMs driving the MCP tools, the Phase 6
+  Web UI form generator) now see `{readOnly: true, description:
+  "Auto-derived sha … clients should not set this …"}` and can
+  hide or disable the field. The validator continues to overwrite
+  any client-supplied value, so the change is purely UX.
 
 ### Notes
 

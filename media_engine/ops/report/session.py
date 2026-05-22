@@ -57,7 +57,15 @@ class SessionReportParams(BaseModel):
     extra_context: dict[str, Any] = Field(default_factory=lambda: {})
     # Auto-derived; participates in canonical params so editing the
     # template invalidates the cache.
-    template_sha: str = ""
+    template_sha: str = Field(
+        default="",
+        description=(
+            "Auto-derived sha of the template file's bytes. Clients "
+            "should not set this — the value is computed at validation "
+            "time and any client-supplied value is overwritten."
+        ),
+        json_schema_extra={"readOnly": True},
+    )
 
     @model_validator(mode="before")
     @classmethod

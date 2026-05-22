@@ -86,7 +86,15 @@ class IdentifyParams(BaseModel):
     name_field: str = "name"
     alias_field: str = "aliases"
     intro_window_seconds: float = 30.0
-    speaker_db_sha: str = ""
+    speaker_db_sha: str = Field(
+        default="",
+        description=(
+            "Auto-derived sha of the speaker_db file's bytes. Clients "
+            "should not set this — the value is computed at validation "
+            "time and any client-supplied value is overwritten."
+        ),
+        json_schema_extra={"readOnly": True},
+    )
 
     @model_validator(mode="before")
     @classmethod

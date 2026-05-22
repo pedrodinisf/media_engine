@@ -63,7 +63,15 @@ class ZeitgeistReportParams(BaseModel):
     top_n_entities: int = 30
     top_n_claims: int = 20
     top_n_speakers: int = 20
-    template_sha: str = ""
+    template_sha: str = Field(
+        default="",
+        description=(
+            "Auto-derived sha of the template file's bytes. Clients "
+            "should not set this — the value is computed at validation "
+            "time and any client-supplied value is overwritten."
+        ),
+        json_schema_extra={"readOnly": True},
+    )
 
     @model_validator(mode="before")
     @classmethod
