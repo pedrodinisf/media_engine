@@ -63,7 +63,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 markers = [
-    "cross_validate: optional checks vs davos/framepulse; skipped when oracles absent",
+    "cross_validate: optional checks against external oracles; skipped when oracles absent",
     "needs_mlx: requires mlx-whisper",
     "needs_pyannote: requires pyannote + HF_TOKEN",
     "needs_gemini: requires GEMINI_API_KEY",

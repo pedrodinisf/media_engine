@@ -11,10 +11,9 @@
 
 ## 1. What this is
 
-`media_engine` factors the media-processing capabilities of two existing
-apps (`davos_video_grepper` — WEF video intelligence; `framepulse` —
-single-video studio) into one substrate so future apps are written as
-**profiles (data)**, not new programs (code).
+`media_engine` factors media-processing capabilities into one substrate
+so future applications are written as **profiles (data)**, not new
+programs (code).
 
 The substrate is five layers and four transports:
 
@@ -205,7 +204,7 @@ in-memory (`finalize_extract_data`).
 > never GC-visible). The `extract_invoke` split removes persistence from
 > the per-window path entirely.
 
-### 4.4 Op catalog (Phases 0–4 complete, 31 ops)
+### 4.4 Op catalog (Phases 0–5 complete, 34 ops)
 
 | Group | Ops | Backend layer |
 |---|---|---|
@@ -429,8 +428,9 @@ the other three contribute 0.
    world* changed (the page at that URL was updated; the live stream
    was re-recorded) but the op itself didn't.
 
-The same recipe works for the heavier davos / framepulse profiles
-landing in Phase 5 — the math is identical, just with more nodes.
+The same recipe works for the larger bundled `analysis-full` pipeline
+profile and for any user-authored pipeline — the math is identical,
+just with more nodes.
 
 `med lineage <id>` renders the upstream tree end-to-end (depth-limited
 + cycle-safe + tagged with `truncated_reason` when a branch is
@@ -448,7 +448,7 @@ media_engine/
 ├── config.py              pydantic-settings, MEDIA_ENGINE_* env, config.toml
 ├── logging_setup.py       text default, JSON via MEDIA_ENGINE_LOG_FORMAT
 ├── artifacts/             base (Kind/Artifact/hashing) · media · text · analysis
-├── ops/                   _base · _registry · <group>/<verb>.py (31 ops)
+├── ops/                   _base · _registry · <group>/<verb>.py (34 ops)
 ├── backends/              _base · _pricing · _gemini_vision · <group>_<verb>/<provider>.py
 ├── runtime/               engine · cache · storage · dag · retry · events
 │                          cost_tracker · lineage · model_pool · server_manager
@@ -471,18 +471,25 @@ infra/                     docker (Dockerfile + compose) · helm · terraform
 
 ## 11. Status & deviations from the plan
 
-**Phases 0–3 complete** (commits 1–28 + three audit-fix commits);
-**Phase 4 complete** (commits 29–34). Phase 4 added the FastAPI REST
-surface + `Job` concept + bearer-token auth (commit 29); the full MCP
-stdio server with read-only-by-default allow-list (commit 30); the
-Postgres / pgvector / postgres-tsvector backends + alembic migrations
-+ `med db migrate|dump-sqlite-to-postgres` (commit 31); LRU eviction
-+ workdir GC + `med storage stats|gc|migrate` (commit 32); the IaaC
-package (Dockerfile, docker-compose, Helm chart, Terraform module),
-`/health` + `/ready` probes + `med health|ready`, and
-`docs/deployment.md` (commit 33); and the `resources.yaml` loader
-(commit 34). **31 ops.** Suite: 702 passed / 29 skipped
-(dependency/API-key/network gated); `ruff` and strict `pyright` clean.
+**Phases 0–5 complete** (commits 1–38 + audit-fix commits per phase).
+Phase 4 added the FastAPI REST surface + `Job` concept + bearer-token
+auth (commit 29); the full MCP stdio server with read-only-by-default
+allow-list (commit 30); the Postgres / pgvector / postgres-tsvector
+backends + alembic migrations + `med db migrate|dump-sqlite-to-postgres`
+(commit 31); LRU eviction + workdir GC + `med storage stats|gc|migrate`
+(commit 32); the IaaC package (Dockerfile, docker-compose, Helm chart,
+Terraform module), `/health` + `/ready` probes + `med health|ready`,
+and `docs/deployment.md` (commit 33); and the `resources.yaml` loader
+(commit 34). **Phase 5 (commits 35–38)** added `speakers.identify`
+(rapidfuzz name-CSV fuzzy match, commit 35); the bundled `analysis-full`
+pipeline profile + `AnalyzeParams.prompt_path` resolution (commit 36);
+`report.session` + `report.zeitgeist` Jinja2 renderers + the five
+starter `kind: prompt` profiles (commit 37); and the v0.5.0 release —
+README rewrite, `cli_reference.md`, `api_reference.md`,
+`adding_a_backend.md`, committed `openapi.json` + `mcp_tools.json`, the
+e2e demo script, and `CHANGELOG.md` (commit 38). **34 ops.** Suite:
+764 passed / 29 skipped (dependency/API-key/network gated); `ruff` and
+strict `pyright` clean.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
 > backend ``sqlite-vss`` (loadable extension). We ship a plain SQLite
@@ -656,16 +663,78 @@ roadmap; this section is the reconciliation):
     lifespan boot and flips them to `failed` with an
     `InterruptedRun` envelope so clients see a terminal state
     after a crash instead of a permanently in-flight row.
+- Phase-5 ratified deviations:
+  - **`speakers.identify` operates on `Transcript → Transcript`**, not
+    `Diarization → Diarization` as the plan text said. The as-built
+    `Diarization` artifact carries only `{speaker_id, start, end}`
+    per segment — text lives in the `Transcript` that
+    `audio.transcribe_diarized` emits (with `speaker_id` stamped on
+    each segment by `_align_speakers`). The op consumes that
+    Transcript and emits a Transcript carrying a
+    `speaker_name` per segment + a top-level `speaker_names` map +
+    `speaker_match_meta` (confidence scores). Cluster ids are
+    preserved, lossless. The output kind matches the input — the
+    plan's `Diarization → Diarization` framing was a description
+    error, not an architectural change.
+  - **`IdentifyParams.speaker_db_sha` is auto-derived**. A
+    `model_validator(mode="before")` hashes the CSV bytes into a
+    16-char prefix that participates in canonical params, so editing
+    the file invalidates the cache. The `speaker_db` Path stays for
+    user clarity but isn't load-bearing on the cache key.
+  - **`AnalyzeParams.prompt_path` is dict-input only.** A
+    `model_validator(mode="before")` reads the file's text and
+    inlines it into `prompt`; the path is popped from the data dict
+    so it never enters canonical params. Cache key tracks resolved
+    text, not file path — editing the `.md` invalidates cache on the
+    next run.
+  - **`intelligence.analyze` bumped to 1.1.0.** Two additive changes
+    that the bundled `analysis-full` profile needed: (1) pass
+    `speaker_names` through from the input Transcript's metadata to
+    the output SessionAnalysis's metadata, so `report.session` can
+    render a Speakers section; (2) read each window's speaker from
+    `speaker_name` first, then `speaker_id`, then `speaker` — picks
+    up `speakers.identify` resolutions and the cluster ids that
+    `audio.transcribe_diarized` stamps. Output shape only grew;
+    bumping version (per engine principle 2) makes the change
+    discoverable through the cache.
+  - **`SessionReportParams.template_sha` + `ZeitgeistReportParams.template_sha`
+    auto-derived** via the same `model_validator(mode="before")`
+    trick. Editing a `.j2` template invalidates the cache without
+    requiring a version bump on the op.
+  - **`report.session` and `report.zeitgeist` use lenient Jinja2
+    `Undefined`.** A missing analysis key renders as empty string
+    rather than aborting the whole report. Markdown is already a
+    forgiving format; tight strictness would make a single bad
+    window kill a 50-window render.
+  - **The bundled-profile discovery path was already wired** in
+    `cli/profile.py:27` (`repo_dir = Path(__file__).parents[2] /
+    "profiles"`). Phase 5 commit 35's plan text reads "add
+    <repo>/profiles/ to default discovery paths"; we read that as
+    populating the directory, since the discovery loader (and the
+    CLI it's wired into) already accepts the path.
+  - **The bundled `analysis-full` schema uses generic dimensions**
+    (`summary`, `topics`, `entities`, `claims`,
+    `sentiment{polarity,confidence}`, `questions`). The engine's
+    zero-domain principle (`§3`) extends to the bundled profiles —
+    they need to be reusable across content domains. Specialize by
+    cloning the directory and rewriting the schema + prompt; no
+    engine change required.
+  - **`profiles/*.md` paths are resolved against CWD,** not the
+    profile file's parent. Today's pipeline compiler doesn't pass a
+    profile-dir context through to param resolution; users run
+    `med profile run analysis-full` from the repo root for now. A
+    profile-dir-relative resolver is a small Phase 6 enhancement
+    (the Web UI will need it for non-CWD workflows anyway).
 
 Audit-driven correctness fixes are called out inline as *Design note
 (audit fix)*. Reconciliation commits: `fix(phase-1): close audit
 findings`, `fix(phase-2): close pre-Phase-3 audit findings`,
 `fix(phase-3): close pre-Phase-4 audit findings`, `fix(phase-4): close
-pre-Phase-5 audit findings`.
+pre-Phase-5 audit findings`, `fix(phase-5): close pre-Phase-6 audit
+findings`.
 
-Phase 4 (REST + full MCP + Postgres + IaaC) is complete; Phase 5
-(domain profiles + speakers + reports + final polish) is the next
-work.
+Phases 0–5 are complete; v0.5.0 is the current release. Phase 6
+(local-first Web UI) is the next work.
 
 After Phase 5, two further phases are formalised in plan §12.5 +
 §12.6 and queued post-v0.5.0:
@@ -692,8 +761,11 @@ After Phase 5, two further phases are formalised in plan §12.5 +
 
 ---
 
-*Companion docs:* `adding_an_operation.md` (how to add an op + backend),
-`writing_a_profile.md` (YAML pipeline vs MD prompt), `deployment.md`
-(env vars + volumes + probes + scaling, Phase 4),
-`quickstart.html` (executive overview + chronology). A REST / MCP /
-CLI reference is scheduled for Phase 5 commit 38.
+*Companion docs:* `adding_an_operation.md` (how to add an op),
+`adding_a_backend.md` (how to add a backend implementation, Phase 5),
+`writing_a_profile.md` (YAML pipeline vs MD prompt),
+`profile_analysis_full.md` (bundled starter pipeline, Phase 5),
+`deployment.md` (env vars + volumes + probes + scaling, Phase 4),
+`cli_reference.md` (every `med <verb>`, Phase 5),
+`api_reference.md` (REST + MCP + Python API surface, Phase 5),
+`quickstart.html` (executive overview + chronology).

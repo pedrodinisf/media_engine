@@ -56,10 +56,10 @@ YAML frontmatter) or pipeline (YAML DAG).
 
 ## Common commands
 - `uv sync` — install
-- `uv run pytest -q` — all tests (~620 passing, ~25 dep-gated skips)
+- `uv run pytest -q` — all tests (764 passing, 29 dep-gated skips)
 - `uv run pyright media_engine` — strict typecheck
 - `uv run ruff check` / `uv run ruff format` — lint/format
-- `uv run med ops` — list registered operations (31 as of Phase 3)
+- `uv run med ops` — list registered operations (34 as of Phase 5)
 - `uv run med config` — print effective configuration
 - `uv run med daemon start|status|stop` — warm-engine daemon lifecycle
 - `uv run med profile ls|show|run` — discover / inspect / execute profiles
@@ -101,12 +101,6 @@ YAML frontmatter) or pipeline (YAML DAG).
 - Resources: `~/.config/media_engine/resources.yaml` (optional — overrides
   semaphore capacities / remaps which ops claim which resources)
 - Cache: `cache.db` (SQLite Phases 0–3; Postgres opt-in Phase 4+)
-
-## Source projects (oracles, never replaced)
-- `davos_video_grepper/` — WEF video intelligence; provides golden outputs for
-  transcribe/diarize cross-validation.
-- `framepulse/` — single-video studio; provides golden outputs for ffmpeg
-  correctness, frame extraction, cost estimation patterns.
 
 ## Engine principles
 1. Capability-named operations (not technology-named).
