@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -49,7 +49,7 @@ from media_engine.runtime.jsonschema import load_schema
 
 
 class AnalyzeParams(BaseModel):
-    prompt: str
+    prompt: str = ""
     schema_def: dict[str, Any] | str
     model: str = "gemini-2.5-flash"
     system_prompt: str | None = None
@@ -58,6 +58,34 @@ class AnalyzeParams(BaseModel):
     window: int = 1  # transcript segments per analysis window
     classify_labels: list[str] | None = None
     classify_multi_label: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_prompt_path(cls, data: Any) -> Any:
+        """Resolve ``prompt_path: <path>`` (only accepted via input dict) into
+        the inline ``prompt`` field at construction time.
+
+        We don't expose ``prompt_path`` as a real model field because the
+        cache key needs to track the file's *resolved text*, not its path.
+        Reading the file here means a profile that says
+        ``prompt_path: profiles/foo/prompt.md`` cache-invalidates correctly
+        whenever the file's contents change.
+        """
+        if not isinstance(data, dict):
+            return data
+        d = cast("dict[str, Any]", data)
+        pp = d.pop("prompt_path", None)
+        if pp and not d.get("prompt"):
+            d["prompt"] = Path(str(pp)).read_text(encoding="utf-8")
+        return d
+
+    @model_validator(mode="after")
+    def _check_prompt_set(self) -> AnalyzeParams:
+        if not self.prompt:
+            raise ValueError(
+                "intelligence.analyze requires `prompt` or `prompt_path`."
+            )
+        return self
 
     @field_validator("window")
     @classmethod

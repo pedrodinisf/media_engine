@@ -1,0 +1,48 @@
+{# Session report — rendered by report.session (Phase 5 commit 37).
+   Variables: session, segments, model, backend, speaker_names, title,
+   extra_context. -#}
+# {{ title or "Session report" }}
+
+**Model:** `{{ model or "—" }}` · **Backend:** `{{ backend or "—" }}`
+**Windows analyzed:** {{ segments | length }}
+
+{% if speaker_names -%}
+## Speakers
+
+{% for cluster_id, name in speaker_names.items() | sort -%}
+- `{{ cluster_id }}` — {{ name or "_(unresolved)_" }}
+{% endfor %}
+{% endif -%}
+
+## Window-by-window analysis
+
+{% for w in segments -%}
+### Window {{ w.window_index }} · {{ "%.1f"|format(w.start or 0) }}s – {{ "%.1f"|format(w.end or 0) }}s
+{% if w.speaker -%}
+**Speaker:** {{ speaker_names.get(w.speaker) or w.speaker }}
+{% endif %}
+**Summary.** {{ w.analysis.summary or "_(no summary)_" }}
+
+{% if w.analysis.topics -%}
+**Topics:** {{ w.analysis.topics | join(", ") }}
+{% endif -%}
+{% if w.analysis.entities -%}
+**Entities:** {{ w.analysis.entities | join(", ") }}
+{% endif -%}
+{% if w.analysis.claims -%}
+**Claims:**
+{% for c in w.analysis.claims -%}
+- {{ c }}
+{% endfor -%}
+{% endif -%}
+{% if w.analysis.questions -%}
+**Questions raised:**
+{% for q in w.analysis.questions -%}
+- {{ q }}
+{% endfor -%}
+{% endif -%}
+{% if w.analysis.sentiment -%}
+**Sentiment:** polarity {{ "%.2f"|format(w.analysis.sentiment.polarity or 0) }} · confidence {{ "%.2f"|format(w.analysis.sentiment.confidence or 0) }}
+{% endif %}
+
+{% endfor %}

@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "topics", "entities", "claims", "sentiment"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "topics": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 80 },
+      "maxItems": 8
+    },
+    "entities": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 80 },
+      "maxItems": 12
+    },
+    "claims": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 240 },
+      "maxItems": 6
+    },
+    "sentiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["polarity", "confidence"],
+      "properties": {
+        "polarity": { "type": "number" },
+        "confidence": { "type": "number" }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 240 },
+      "maxItems": 5
+    }
+  }
+}

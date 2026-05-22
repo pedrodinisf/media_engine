@@ -1,0 +1,48 @@
+profile_schema_version: "1.0"
+name: analysis-full
+kind: pipeline
+description: >
+  Full content-analysis pipeline. Takes any spoken-video source, transcribes
+  + diarizes it, resolves speaker names against a CSV, runs a windowed LLM
+  analysis with a profile-supplied JSON schema, and renders a Markdown
+  session report. Generic dimensions (summary, topics, entities, claims,
+  sentiment, questions) — clone & edit profiles/analysis-full/* to specialize.
+  Default LLM backend is local mlx-lm (Apple Silicon, reproducible).
+
+inputs:
+  - { name: source, kind: video }
+
+graph:
+  - id: audio
+    op: video.extract_audio
+    inputs: { in: source }
+
+  - id: transcript
+    op: audio.transcribe_diarized
+    inputs: { audio: audio }
+    params:
+      language: en
+
+  - id: identified
+    op: speakers.identify
+    inputs: { transcript: transcript }
+    params:
+      speaker_db: profiles/analysis-full/speakers.csv
+      min_confidence: 0.7
+
+  - id: analyzed
+    op: intelligence.analyze
+    inputs: { transcript: identified }
+    params:
+      model: mlx-community/Qwen2.5-14B-Instruct-4bit
+      prompt_path: profiles/analysis-full/analyze_prompt.md
+      schema_def: profiles/analysis-full/analysis_schema.json
+      window: 8
+
+  - id: report
+    op: report.session
+    inputs: { analyzed: analyzed }
+    params:
+      template: profiles/analysis-full/session_report.md.j2
+
+outputs: [report]

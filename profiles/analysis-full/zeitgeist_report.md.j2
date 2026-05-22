@@ -1,0 +1,34 @@
+{# Cross-session zeitgeist report — rendered by report.zeitgeist (commit 37).
+   Variables: sessions, aggregate, title, extra_context.
+   aggregate = {avg_polarity, polarity_count, top_topics, top_entities,
+                top_claims, top_speakers, n_sessions, n_windows}. -#}
+# {{ title or "Zeitgeist report" }}
+
+**Sessions analyzed:** {{ aggregate.n_sessions }} · **Windows:** {{ aggregate.n_windows }}
+{% if aggregate.avg_polarity is not none -%}
+**Average sentiment polarity:** {{ "%.3f"|format(aggregate.avg_polarity) }} (over {{ aggregate.polarity_count }} samples)
+{% endif %}
+
+## Top topics
+
+{% for topic, count in aggregate.top_topics -%}
+- **{{ topic }}** — {{ count }}
+{% endfor %}
+
+## Top entities
+
+{% for entity, count in aggregate.top_entities -%}
+- **{{ entity }}** — {{ count }}
+{% endfor %}
+
+## Top claims
+
+{% for claim, count in aggregate.top_claims -%}
+- _({{ count }}x)_ {{ claim }}
+{% endfor %}
+
+## Most-heard speakers
+
+{% for speaker, count in aggregate.top_speakers -%}
+- **{{ speaker }}** — {{ count }} window(s)
+{% endfor %}
