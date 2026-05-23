@@ -118,16 +118,25 @@ ImportError should reach the user.
 ## 5. `BackendRequirements`
 
 Filled in by every backend; consumed by the `Backend.is_available()`
-gate and surfaced in `GET /backends/{name}`. The fields are
-informational + checked-where-cheap:
+gate, the `med doctor` introspection surface (Phase 6.5), and
+surfaced in `GET /backends/{name}`. The fields are checked where
+cheap:
 
 | Field            | What it means                                                 |
 | ---------------- | ------------------------------------------------------------- |
 | `env`            | Env vars that must be set (checked via `os.environ`).         |
 | `binaries`       | CLI binaries that must be on `PATH` (`shutil.which`).          |
-| `services`       | Logical services this backend talks to (`"vllm-mlx"`, `"gemini-api"`); informational only — not auto-pinged. |
-| `hardware`       | Hardware labels: `"apple_silicon"`, `"nvidia_gpu"`, …          |
-| `min_memory_gb`  | Heuristic guard — the resource manager refuses to schedule when free RAM is below this. |
+| `services`       | Python packages this backend imports. `med doctor` calls `importlib.util.find_spec` and tries the dash→underscore variant (PyPI `mlx-lm` → import `mlx_lm`). **Declare every optional-extra import here**, including ML SDKs that look "obvious" (`pymupdf`, `mlx-whisper`, `sentence-transformers`). The pre-Phase-6.5 omissions made doctor report green on machines that would then fail at run time. |
+| `hardware`       | Hardware labels: `"apple_silicon"` is the only one with a real checker today; others are recorded as "degraded — unknown" so they don't block but show up as a warning. |
+| `min_memory_gb`  | Heuristic guard — `med doctor` checks total RAM against this; the resource manager also refuses to schedule when free RAM is below this. |
+
+> **Lesson from B-010 (v0.6.1):** if your backend has an
+> `import` at the top of the file (even lazy, even inside the
+> call path), the corresponding PyPI name belongs in `services`.
+> ``med doctor`` won't discover an undeclared dep — it trusts the
+> manifest. A missing entry means "doctor says ok, runtime says
+> ImportError" — exactly the silent-failure UX Phase 6.5 was
+> built to eliminate.
 
 ## 6. Register the backend
 

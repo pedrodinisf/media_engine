@@ -74,6 +74,10 @@ uv run med daemon start              # warm engine for fast reuse
 uv run med api start                 # REST + SSE on :8000 (headless)
 uv run med web start --open          # REST + SSE + /ui SPA, opens browser
 uv run med mcp serve                 # MCP stdio for LLM clients
+
+# Diagnose
+uv run med doctor                    # which ops work on this machine?
+uv run med doctor --op audio.        # deep view of one op family
 ```
 
 Use `--help` on any subcommand for the full flag set, or see
@@ -130,6 +134,16 @@ add it to `media_engine/bootstrap.py::_op_classes()` /
 
 ## Status
 
+**v0.6.1 shipped (2026-05-23).** Phase 6.5 — a short post-release
+quality + UX pass — introduced `med doctor` (declarative dep map
+per op + backend) and an operator-invoked op matrix runner
+(`scripts/op_matrix.py`); fixed B-001 (Job-detail SSE Events tab
+never surfaced events — three independent root causes, all
+closed: REST job_id plumbing, snake_case event-name alignment
+between server + client, replay-on-subscribe for the timing
+race); plus B-003 (token namespace default) and B-010 (three
+backends with under-declared Python-package deps).
+
 **v0.6.0 shipped (2026-05-22).** Phases 0–6 are complete (50
 commits). Phase 6 (local-first Web UI, plan §12.5) delivered the
 full SvelteKit SPA bundled at `/ui` plus the `+ui` multi-stage
@@ -139,13 +153,13 @@ fork-this, and the six-tab Settings panel (Tokens / Backends /
 Plugins Extras / Plugins Catalog / Storage / Config) are all live
 with full CLI parity.
 
-Suite: 886 passed / 29 skipped (dep- and API-key-gated). Ruff +
+Suite: 922 passed / 29 skipped (dep- and API-key-gated). Ruff +
 strict pyright clean. Frontend: 54 Vitest unit tests, svelte-check
-0/0 on 571 files. 34 ops, 30+ backends, 14 artifact kinds.
+0/0 on 572 files. 34 ops, 30+ backends, 14 artifact kinds.
 
 **Phase 7 — acoustic speaker identity** (`speakers.embed_voice` +
 `speakers.cluster` + `speakers.match`, voice-fingerprint DB reusing
-the pgvector backend) is queued post-v0.6.0 per plan §12.6.
+the pgvector backend) is queued post-v0.6.x per plan §12.6.
 
 v1.0 lands when the REST surface freezes (after Phase 6). Before then
 semver stays 0.x; backwards compatibility is best-effort but not

@@ -275,6 +275,31 @@ class Engine:
         # contract.
         event_job_id = job_id or op_run_id
         workdir = self.storage.ensure_workdir(op_run_id)
+
+        # ctx.run_op pre-fills job_id with the parent's event_job_id so
+        # composite ops (audio.transcribe_diarized, intelligence.*,
+        # search.hybrid, video.multimodal vllm-mlx) emit their sub-op
+        # events under the same job_id as the parent. Without this,
+        # SSE filtering by REST job_id would see the composite's own
+        # OpStarted/OpCompleted but miss every sub-op event, leaving
+        # an empty middle in the events tab. Sub-ops can still override
+        # by passing job_id= explicitly (rarely useful).
+        async def _scoped_run_op(
+            op_name: str,
+            *,
+            inputs: list[str] | None = None,
+            backend: str | None = None,
+            job_id: str | None = None,
+            **params: Any,
+        ) -> list[AnyArtifact]:
+            return await self.run(
+                op_name,
+                inputs=inputs,
+                backend=backend,
+                job_id=job_id or event_job_id,
+                **params,
+            )
+
         ctx = OperationContext(
             workdir=workdir,
             config=self.config,
@@ -283,7 +308,7 @@ class Engine:
             emit=self.event_bus.emit,
             server_manager=self.server_manager,
             model_pool=self.model_pool,
-            run_op=self.run,
+            run_op=_scoped_run_op,
             backend=backend_name,
             cache=self.cache,
         )

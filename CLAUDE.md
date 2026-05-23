@@ -56,11 +56,25 @@ YAML frontmatter) or pipeline (YAML DAG).
 
 ## Common commands
 - `uv sync` — install
-- `uv run pytest -q` — all tests (773 passing, 29 dep-gated skips)
+- `uv run pytest -q` — all tests (922 passing, 29 dep-gated skips)
 - `uv run pyright media_engine` — strict typecheck
 - `uv run ruff check` / `uv run ruff format` — lint/format
 - `uv run med ops` — list registered operations (34 as of Phase 5)
 - `uv run med config` — print effective configuration
+- `uv run med doctor [--op N] [--json]` — declarative dep map per op +
+  backend. Walks every registered op, evaluates each backend's
+  `BackendRequirements` against the live env (env vars, binaries,
+  importable packages, hardware, RAM), prints a green/red matrix and
+  exits non-zero if any op has no working backend. The answer to
+  "what works right now on this machine?" Phase 6.5.
+- `uv run python scripts/op_matrix.py [--filter X]` — runtime op
+  matrix. Walks every op, attempts execution through `Engine.run`
+  against synthetic fixtures, classifies as ✓/⊘/✗. Writes
+  `tests/e2e_op_matrix_report.md`. Operator-invoked; complements
+  `med doctor` by exercising the engine through real op paths.
+- `bash scripts/verify_b001.sh [--headed]` — drive a real Chromium
+  through the Job-detail SSE flow against a clean `med web start`.
+  Regression gate for B-001 (SSE Events tab); operator-invoked.
 - `uv run med daemon start|status|stop` — warm-engine daemon lifecycle
 - `uv run med profile ls|show|run` — discover / inspect / execute profiles
 - `uv run med acquire <file>` — `acquire.upload` shortcut (local files)

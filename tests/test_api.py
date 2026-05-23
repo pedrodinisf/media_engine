@@ -569,6 +569,101 @@ async def test_sse_replays_already_persisted_events_b001(
 
 
 @pytest.mark.anyio
+async def test_composite_subop_inherits_parent_job_id_b001(
+    api_engine: Engine, tmp_path: Path
+) -> None:
+    """B-001 follow-up: composite ops calling ``ctx.run_op`` without an
+    explicit ``job_id`` must inherit the parent's job_id, otherwise
+    sub-op events fire under a fresh internal id and the SSE stream
+    filtered by the parent's id misses them entirely.
+
+    Validated via a tiny in-test composite op that wraps acquire.upload.
+    """
+    import asyncio
+    import shutil
+
+    from pydantic import BaseModel
+
+    from media_engine.artifacts import AnyArtifact, Kind
+    from media_engine.ops import (
+        CostEstimate,
+        Operation,
+        OperationContext,
+        OpRegistry,
+        register_op,
+    )
+    from media_engine.runtime.events import OpStarted
+
+    class _ComposeParams(BaseModel):
+        source_path: str
+
+    class _ComposeUpload(Operation):
+        name = "compose.upload"
+        version = "1.0.0"
+        input_kinds: tuple[Kind, ...] = ()
+        output_kinds = (Kind.Video,)
+        params_model = _ComposeParams
+        records_cost = False
+
+        async def run(
+            self,
+            inputs: list[AnyArtifact],
+            params: BaseModel,
+            ctx: OperationContext,
+        ) -> list[AnyArtifact]:
+            assert isinstance(params, _ComposeParams)
+            assert ctx.run_op is not None
+            return await ctx.run_op(
+                "acquire.upload",
+                inputs=[],
+                source_path=params.source_path,
+                link_mode="copy",
+            )
+
+        def cost_estimate(
+            self, inputs: list[AnyArtifact], params: BaseModel
+        ) -> CostEstimate:
+            return CostEstimate()
+
+    try:
+        register_op(_ComposeUpload)
+        seen: list[tuple[str, str | None]] = []
+
+        async def listener() -> None:
+            async for ev in api_engine.event_bus.subscribe():
+                if isinstance(ev, OpStarted):
+                    seen.append((ev.op_name, ev.job_id))
+                    if len(seen) >= 2:
+                        return
+
+        listen_task = asyncio.create_task(listener())
+        await asyncio.sleep(0.02)
+
+        src = tmp_path / "compose.mp4"
+        shutil.copyfile(Path(__file__).parent / "fixtures" / "sample.mp4", src)
+
+        await api_engine.run(
+            "compose.upload",
+            source_path=str(src),
+            job_id="parent-rest-job",
+        )
+        await asyncio.wait_for(listen_task, timeout=2.0)
+
+        # Both the composite's own OpStarted AND the sub-op
+        # (acquire.upload)'s OpStarted must carry the parent's
+        # job_id. Pre-fix the sub-op got a fresh uuid4() and SSE
+        # filters missed it.
+        assert len(seen) == 2
+        for op_name, jid in seen:
+            assert jid == "parent-rest-job", (
+                f"op {op_name!r} fired with job_id={jid!r}, "
+                "expected parent's id"
+            )
+    finally:
+        OpRegistry._ops.pop("compose.upload", None)
+
+
+@pytest.mark.anyio
 async def test_engine_run_uses_provided_job_id_for_events(
     api_engine: Engine, tmp_path: Path
 ) -> None:

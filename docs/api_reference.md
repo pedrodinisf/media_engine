@@ -71,8 +71,26 @@ Response (202 Accepted):
 { "job_id": "j-9b2c..." }
 ```
 The op runs asynchronously. Subscribe to events at
-`GET /jobs/{job_id}/events` (SSE: `OpStarted`, `Progress`, `LogLine`,
-`OpCompleted`, `OpFailed`) or poll `GET /jobs/{job_id}`.
+`GET /jobs/{job_id}/events` (SSE — frames carry an `event:` field
+matching one of `op_started`, `progress`, `log_line`, `op_completed`,
+`op_failed`, `artifact_ready`, matching the snake_case `Event.type`
+literals) or poll `GET /jobs/{job_id}`.
+
+**v0.6.1 (B-001) — replay-on-subscribe.** The SSE pumper first
+replays any events the job already emitted (queried from the
+persistent `events` table by `job_id`, ordered chronologically),
+then switches to live mode with `event_id` dedup against the
+replayed set. So a client that connects AFTER `POST /run` returned
+— the common race for fast ops — still receives the early
+`OpStarted` frame. Each SSE frame carries an `id: <event_id>`
+field; clients may use the `EventSource` `Last-Event-ID` mechanism
+to resume, though the server-side pumper currently ignores it
+(replay always starts from the beginning of the job's history).
+Note: replaying requires `events.job_id`, added by alembic
+migration `0002_events_job_id` — sqlite users on a fresh
+`Cache()`-created DB get the column automatically;
+existing deployments upgrading from v0.6.0 must run
+`med db migrate`.
 
 #### `POST /run/preview` (Phase 6 commit 42)
 Same body shape as `POST /run`, returns a cost preview without

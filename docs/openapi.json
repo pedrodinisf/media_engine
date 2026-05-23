@@ -3,7 +3,7 @@
   "info": {
     "title": "media_engine",
     "description": "Universal media-processing engine — typed artifacts, composable operations, pluggable backends.",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "paths": {
     "/health": {

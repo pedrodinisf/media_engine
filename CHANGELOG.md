@@ -6,6 +6,141 @@ once we ship v1.0 (after Phase 6 — the REST surface needs to freeze
 first). Until then expect 0.x to bump frequently and best-effort
 backwards compatibility.
 
+## [0.6.1] — 2026-05-23
+
+Phase 6.5 — a focused post-release quality + UX pass. Started from
+the user's manual smoke session against v0.6.0, which surfaced
+three concrete bugs in the new Web UI flows + a deeper pattern:
+**the op → backend → dependency contract was declared in code
+(`BackendRequirements`) but never reachable to operators**. So
+when the Web UI form rendered fine and the cost preview computed
+fine but submit silently failed deep in `Engine.run`, there was
+no diagnostic surface to fall back on. This release fixes the
+known bugs *and* builds the introspection surfaces (`med doctor`
++ op matrix runner) that turn that class of bug into a single
+green/red command.
+
+### Added
+
+- **`med doctor [--op N] [--json]`** — declarative dep map per op
+  + backend. Walks every registered op, evaluates each backend's
+  `BackendRequirements` (env vars, binaries on PATH, importable
+  Python packages, hardware tag, RAM) against the live env, prints
+  a green/red matrix, exits non-zero if any op has no working
+  backend. `--op X` filters to one op or a prefix; `--json` for CI.
+  Non-router ops roll up to the *default backend's* status (a
+  working alternative doesn't help if the default route is broken);
+  router ops keep "ok if any" semantics with the deep view flagging
+  when the default is the broken one. ~300 LOC + 23 unit tests.
+- **Op matrix runner (`scripts/op_matrix.py`)** — walks every
+  registered op, attempts execution through `Engine.run` against
+  vendored fixture artifacts (one per Kind), classifies as
+  ✓ / ⊘ / ✗, writes `tests/e2e_op_matrix_report.md`. Runtime
+  failures matching known dep-gap patterns are reclassified as ⊘
+  so ✗ truly means engine bug. Pre-filters via doctor; steers
+  through a working alternate backend when the default is broken
+  but the router has alternatives. Operator-invoked
+  (`uv run python scripts/op_matrix.py`); not part of the pytest
+  gate. Current result: ✓ 14 · ⊘ 20 · ✗ 0.
+- **`scripts/verify_b001.sh`** — boots a clean `med web start`,
+  mints a token, drives `web/tests/e2e/flows/sse_events.spec.ts`
+  through real Chromium asserting the Job-detail Events tab
+  populates within 5s, tears down. `--headed` to watch live.
+  Regression gate for B-001.
+- **`docs/phase-6-5-bugs.md`** — triaged bug log (now 7 open: 1
+  p1, 6 p2). Future sessions resume here.
+- New schema column `events.job_id` (+ `idx_events_job` index) —
+  the persistent event log can now be queried by REST/CLI
+  submission id, decoupled from `op_run_id` (which is per-op).
+  Alembic migration `0002_events_job_id`.
+- `Engine.run` and `Engine.run_pipeline` accept an optional
+  `job_id` kwarg. When provided, emitted `Event.job_id` carries
+  it (used by the REST surface to correlate SSE streams with
+  submitted jobs). `ctx.run_op` is wrapped in a closure that
+  pre-fills the parent's `job_id` so composite sub-op events stay
+  correlated automatically.
+
+### Fixed
+
+- **B-001 (p0) — Job-detail Events tab populates within seconds
+  of submission**, was "Waiting for events…" indefinitely. Three
+  independent root causes, all closed:
+  1. `Engine.run` minted its own internal id and stamped events
+     with it; the REST `job_id` never reached the SSE filter.
+     Engine.run now accepts the caller-supplied `job_id`;
+     `submit_run_op` + `submit_pipeline` pass it through.
+  2. The Web UI SSE wrapper listened for `OpStarted/...`
+     (PascalCase) but the server emits `op_started/...`
+     (snake_case from `Event.type` literals); every named-event
+     frame was dropped on the floor. Aligned both sides on
+     snake_case.
+  3. A client subscribing AFTER an event has fired (the common
+     race for fast ops) missed it; `EventBus.subscribe()` only
+     delivers events emitted after registration. Added
+     replay-on-subscribe to `api/sse.py`: the pumper queries the
+     persistent `events` table by `job_id`, yields persisted
+     frames first, then switches to live mode with `event_id`
+     dedup against the replayed set.
+  - Regression coverage: 3 new `tests/test_api.py` tests +
+    Playwright spec against a live `med web start`. Verifier
+    run on this machine: ✓ 292ms (5s budget).
+- **B-003 (p1) — `med api token create --namespace` reads
+  `MEDIA_ENGINE_NAMESPACE`**. Before, it defaulted to literal
+  `"default"`, so tokens minted on a non-default engine 403'd
+  every authed endpoint (`require_token` enforces ns parity).
+  `cmd_token_create` now defaults from `EngineConfig().namespace`
+  when `--namespace` is unset. Regression covered.
+- **B-010 (p2) — under-declared backend deps**.
+  `transcribe/mlx_whisper`, `document/pymupdf`, and
+  `embed_text/sentence_transformers` declared `BackendRequirements`
+  without their `services=[…]` Python-package entries; doctor
+  reported them green even when missing and users hit opaque
+  `RuntimeError: X is not installed` at runtime. Manifests
+  corrected.
+- `EventLogEntry.id` now uses `Event.event_id` as the row PK
+  (was a fresh `uuid4()`), so replay/live dedup against the bus
+  stream works without parsing JSON payloads.
+
+### Changed
+
+- `cache.event_log()` accepts `job_id=` filter and `order=` param
+  (`"desc"` default — preserves existing `med events history`
+  behaviour; `"asc"` for SSE replay's causal-order requirement).
+- `cache.record_event()` accepts optional `event_id=` (used as
+  the row PK when provided) and `job_id=` (persisted alongside
+  `op_run_id`).
+- README + `CLAUDE.md` + `docs/architecture.md` §11 + `docs/api_reference.md`
+  + `docs/cli_reference.md` + `docs/adding_a_backend.md` updated to
+  reference the new doctor surface, the SSE replay semantics, the
+  snake_case event-name protocol, and the lesson learned about
+  declaring every optional dep in `BackendRequirements`.
+
+### Upgrade notes
+
+- **Sqlite users on a fresh `Cache()`-created DB**: the new
+  `events.job_id` column is created automatically via
+  `Base.metadata.create_all`. No action required.
+- **Sqlite users upgrading an existing 0.6.0 DB, OR any Postgres
+  deployment**: run `med db migrate` to apply
+  `0002_events_job_id`. Until then, SSE replay silently degrades
+  to live-only mode (the client-side snake_case fix is
+  schema-independent, so live mode still works once the timing
+  race is over).
+- No artifact-cache schema change — `cache_artifacts` etc.
+  unchanged.
+
+### Suite
+
+922 passed / 29 skipped (was 894 / 29). Ruff + strict pyright
+clean. Frontend: 54 Vitest unit tests, svelte-check 0/0 on 572
+files. New: `tests/test_doctor.py` (23 tests),
+`tests/e2e_op_matrix_report.md` (regenerable matrix report),
+`web/tests/e2e/flows/sse_events.spec.ts` (Playwright B-001
+regression). Commits: 4 (`feat(cli): med doctor`, `feat(qa):
+op matrix + doctor enhance + bug log`, `fix(api/web): SSE
+events deliver to job-detail (B-001 p0) + B-003 p1`,
+`test(e2e): browser-driven B-001 regression spec`).
+
 ## [0.6.0] — 2026-05-22
 
 Phase 6 (local-first Web UI, plan §12.5) closes. Twelve numbered
