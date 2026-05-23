@@ -199,9 +199,15 @@ uv run med storage gc --apply
 | -------- | ------------------------------------------------------ |
 | `med health`           | Liveness — always succeeds when the process is up. |
 | `med ready`            | Readiness — non-zero exit when any dependency is down. |
+| `med doctor [--op N] [--json]` | Walk every op + backend, evaluate `BackendRequirements` against the current env, print a green/red matrix. `--op` filters to one op or a prefix (`audio.`). `--json` emits the structured report. Exits non-zero when any op has no working backend (CI-gateable). |
 
 Used by Kubernetes/Docker probes. The REST surface exposes the same as
 `/health` and `/ready` (see API reference).
+
+`med doctor` is the answer to "I tried to run X and got an opaque error":
+it surfaces the op→backend→dep contract that `BackendRequirements`
+declares but the engine doesn't actively enforce at startup. Run it after
+`uv sync` or in a fresh container to see which ops are usable.
 
 ## Exit codes
 
