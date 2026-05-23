@@ -68,7 +68,7 @@ class PyMuPdfBackend(Backend):
     op_name = "document.parse"
     name = BACKEND_NAME
     version = BACKEND_VERSION
-    requires = BackendRequirements()
+    requires = BackendRequirements(services=["pymupdf"])
 
     async def execute(
         self,

@@ -91,7 +91,9 @@ class SentenceTransformersEmbedTextBackend(Backend):
     op_name = "embed.text"
     name = BACKEND_NAME
     version = BACKEND_VERSION
-    requires = BackendRequirements(hardware=["apple_silicon"])
+    requires = BackendRequirements(
+        services=["sentence-transformers"], hardware=["apple_silicon"]
+    )
 
     async def execute(
         self,

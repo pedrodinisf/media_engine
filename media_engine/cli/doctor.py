@@ -121,12 +121,30 @@ def _print_deep(op: OpDoctorReport) -> None:
         f"{', '.join(op.input_kinds) or '—'} → {', '.join(op.output_kinds) or '—'}"
     )
     console.print("\n" + header)
+    default_note = ""
+    if op.default_backend is not None and op.default_backend_status is not None:
+        default_note = (
+            f"   default_backend: {op.default_backend} "
+            f"({_color(op.default_backend_status)})"
+        )
+    elif op.default_backend is not None:
+        default_note = f"   default_backend: {op.default_backend}"
     console.print(
         f"  status: {_color(op.overall)}"
-        f"   default_backend: {op.default_backend or '—'}"
+        f"{default_note}"
         f"   router: {'yes' if op.has_router else 'no'}"
         f"   embedded: {'yes' if op.embedded else 'no'}"
     )
+    if (
+        op.has_router
+        and op.default_backend is not None
+        and op.default_backend_status == "unavailable"
+    ):
+        console.print(
+            "  [yellow]note: this op has a param-router; default route is "
+            "unavailable but other backends work — pass --backend or set "
+            "a routable model param[/yellow]"
+        )
     if op.embedded:
         console.print(
             "  [dim](no Backend subclasses registered; dep contract not "

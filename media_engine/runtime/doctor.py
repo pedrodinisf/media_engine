@@ -61,6 +61,12 @@ class OpDoctorReport:
     embedded: bool = False  # op has no registered Backend subclasses
     backends: list[BackendDoctorReport] = field(default_factory=lambda: [])  # noqa: PIE807
     overall: Overall = "ok"
+    # Status of the *production hot path* — the backend Engine.run would
+    # actually pick if the caller doesn't pass --backend. For router ops
+    # this is the static default; the router may pick something else at
+    # runtime based on params (e.g. model prefix). ``None`` for embedded
+    # ops with no Backend layer.
+    default_backend_status: Overall | None = None
 
 
 @dataclass
@@ -194,11 +200,27 @@ def _roll_backend(checks: list[RequirementCheck]) -> Overall:
     return "ok"
 
 
-def _roll_op(backend_reports: list[BackendDoctorReport]) -> Overall:
+def _roll_op(
+    backend_reports: list[BackendDoctorReport],
+    default_backend_status: Overall | None,
+    has_router: bool,
+) -> Overall:
+    """Roll the overall op status.
+
+    Rules:
+      - Embedded (no backends): assume ok.
+      - Router op: ok if *any* backend works (the caller can pick the
+        working one via params).
+      - Non-router op with a default backend: the op's effective status
+        IS the default backend's status. A working alternative doesn't
+        help if no caller passes ``--backend`` to reach it.
+      - No default backend and not embedded: ok if any backend works
+        (the caller must always specify, so doctor parity with router).
+    """
     if not backend_reports:
-        # Embedded op (no Backend subclass) — assume ok; we can't
-        # introspect its body.
         return "ok"
+    if not has_router and default_backend_status is not None:
+        return default_backend_status
     statuses = [b.overall for b in backend_reports]
     if any(s == "ok" for s in statuses):
         return "ok"
@@ -240,16 +262,24 @@ def check_op(op_cls: type[Operation]) -> OpDoctorReport:
     backend_reports: list[BackendDoctorReport] = []
     for name in backend_names:
         backend_reports.append(check_backend(BackendRegistry.get(op_cls.name, name)))
+    has_router = _has_custom_router(op_cls)
+    default_backend_status: Overall | None = None
+    if op_cls.default_backend is not None:
+        for b in backend_reports:
+            if b.backend_name == op_cls.default_backend:
+                default_backend_status = b.overall
+                break
     return OpDoctorReport(
         op_name=op_cls.name,
         op_version=op_cls.version,
         input_kinds=[k.value for k in op_cls.input_kinds],
         output_kinds=[k.value for k in op_cls.output_kinds],
         default_backend=op_cls.default_backend,
-        has_router=_has_custom_router(op_cls),
+        has_router=has_router,
         embedded=not backend_names,
         backends=backend_reports,
-        overall=_roll_op(backend_reports),
+        overall=_roll_op(backend_reports, default_backend_status, has_router),
+        default_backend_status=default_backend_status,
     )
 
 

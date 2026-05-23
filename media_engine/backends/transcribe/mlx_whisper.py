@@ -139,7 +139,9 @@ class MlxWhisperTranscribeBackend(Backend):
     op_name = "audio.transcribe"
     name = BACKEND_NAME
     version = BACKEND_VERSION
-    requires = BackendRequirements(hardware=["apple_silicon"])
+    requires = BackendRequirements(
+        services=["mlx-whisper"], hardware=["apple_silicon"]
+    )
 
     async def execute(
         self,
@@ -215,7 +217,9 @@ class MlxWhisperDetectLanguageBackend(Backend):
     op_name = "audio.detect_language"
     name = BACKEND_NAME
     version = BACKEND_VERSION
-    requires = BackendRequirements(hardware=["apple_silicon"])
+    requires = BackendRequirements(
+        services=["mlx-whisper"], hardware=["apple_silicon"]
+    )
 
     async def execute(
         self,
