@@ -182,6 +182,12 @@ class EventLogEntry(Base):
     type: Mapped[str] = mapped_column(String, nullable=False)
     op_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
     op_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Phase 6.5 (B-001 fix): job_id is the REST/CLI submission id, distinct
+    # from op_run_id (which is per-op-execution). A pipeline job has many
+    # op_runs sharing one job_id; a single-op REST job has job_id ≠
+    # op_run_id (the engine generates op_run_id internally). Indexed so
+    # SSE replay can ``WHERE job_id = ?`` cheaply.
+    job_id: Mapped[str | None] = mapped_column(String, nullable=True)
     namespace: Mapped[str] = mapped_column(
         String, nullable=False, default="default"
     )
@@ -190,6 +196,7 @@ class EventLogEntry(Base):
     __table_args__ = (
         Index("idx_events_ts", "ts"),
         Index("idx_events_run", "op_run_id"),
+        Index("idx_events_job", "job_id"),
     )
 
 
@@ -613,16 +620,24 @@ class Cache:
         op_name: str | None,
         payload_json: str,
         namespace: str = "default",
+        job_id: str | None = None,
+        event_id: str | None = None,
     ) -> None:
-        """Append one event to the durable tail (best-effort sink)."""
+        """Append one event to the durable tail (best-effort sink).
+
+        ``event_id`` — if provided, used as the row PK so the persisted
+        id matches ``Event.event_id`` exactly. This lets the SSE pumper
+        dedup live vs replayed events by id without parsing payloads.
+        """
         with self.session() as s:
             s.add(
                 EventLogEntry(
-                    id=uuid4().hex,
+                    id=event_id or uuid4().hex,
                     ts=_ensure_utc(ts),
                     type=event_type,
                     op_run_id=op_run_id,
                     op_name=op_name,
+                    job_id=job_id,
                     namespace=namespace,
                     payload_json=payload_json,
                 )
@@ -633,16 +648,28 @@ class Cache:
         *,
         since: datetime | None = None,
         op_run_id: str | None = None,
+        job_id: str | None = None,
         namespace: str | None = None,
         limit: int | None = None,
+        order: str = "desc",
     ) -> list[EventLogEntry]:
-        """Return persisted events newest-first, optionally filtered."""
+        """Return persisted events optionally filtered.
+
+        ``order`` — ``"desc"`` (newest-first, default — matches
+        ``med events history`` UX) or ``"asc"`` (chronological — what
+        SSE replay needs to preserve causal order).
+        """
         with self.session() as s:
-            stmt = select(EventLogEntry).order_by(EventLogEntry.ts.desc())
+            stmt = select(EventLogEntry)
+            stmt = stmt.order_by(
+                EventLogEntry.ts.desc() if order == "desc" else EventLogEntry.ts.asc()
+            )
             if since is not None:
                 stmt = stmt.where(EventLogEntry.ts >= _ensure_utc(since))
             if op_run_id is not None:
                 stmt = stmt.where(EventLogEntry.op_run_id == op_run_id)
+            if job_id is not None:
+                stmt = stmt.where(EventLogEntry.job_id == job_id)
             if namespace is not None:
                 stmt = stmt.where(EventLogEntry.namespace == namespace)
             if limit is not None:

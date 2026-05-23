@@ -240,8 +240,14 @@ async def execute_pipeline(
     *,
     run_op: Callable[..., Awaitable[list[AnyArtifact]]],
     semaphores: dict[str, asyncio.Semaphore] | None = None,
+    job_id: str | None = None,
 ) -> DAGResult:
-    """Execute the pipeline; return per-node outcomes (partial completion)."""
+    """Execute the pipeline; return per-node outcomes (partial completion).
+
+    ``job_id`` — REST/CLI submission id stamped on every per-node
+    ``Engine.run`` call so emitted events carry it; required for the
+    SSE pumper to attribute events to the right job (B-001).
+    """
     waves = validate_and_sort(pipeline)
     semaphores = semaphores or {}
 
@@ -286,6 +292,7 @@ async def execute_pipeline(
                     semaphores=semaphores,
                     successes=successes,
                     failures=failures,
+                    job_id=job_id,
                 ))
 
     return DAGResult(successes=successes, failures=failures)
@@ -299,6 +306,7 @@ async def _run_node(
     semaphores: dict[str, asyncio.Semaphore],
     successes: dict[str, NodeSuccess],
     failures: dict[str, NodeFailure],
+    job_id: str | None = None,
 ) -> None:
     op_class = OpRegistry.get(node.op_name)
     declared = op_class.declared_resources
@@ -306,12 +314,14 @@ async def _run_node(
 
     async def _attempt() -> list[AnyArtifact]:
         async with _acquire_all(semaphores, declared):
-            return await run_op(
-                node.op_name,
-                inputs=input_ids,
-                backend=node.backend,
+            kwargs: dict[str, object] = {
+                "inputs": input_ids,
+                "backend": node.backend,
                 **node.params,
-            )
+            }
+            if job_id is not None:
+                kwargs["job_id"] = job_id
+            return await run_op(node.op_name, **kwargs)
 
     try:
         outputs = await with_retry(_attempt, policy=policy)

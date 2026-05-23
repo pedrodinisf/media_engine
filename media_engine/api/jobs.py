@@ -136,7 +136,7 @@ async def _run_single_op(
     )
     try:
         artifacts = await state.engine.run(
-            op_name, inputs=inputs, backend=backend, **params
+            op_name, inputs=inputs, backend=backend, job_id=job_id, **params
         )
     except asyncio.CancelledError:
         # `cancel_job` already wrote the cancelled row; just exit quietly.
@@ -168,7 +168,9 @@ async def _run_pipeline(
         job_id=job_id, status="running", started_at=datetime.now(UTC)
     )
     try:
-        result: DAGResult = await state.engine.run_pipeline(pipeline)
+        result: DAGResult = await state.engine.run_pipeline(
+            pipeline, job_id=job_id
+        )
     except asyncio.CancelledError:
         raise
     except BaseException as exc:  # noqa: BLE001

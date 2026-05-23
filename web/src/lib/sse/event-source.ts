@@ -27,13 +27,19 @@ export type SSEOptions = {
   events?: readonly string[];
 };
 
+// Names match the server-side Event.type literals (snake_case), which
+// is what ``api/sse.py::job_event_stream`` puts in the SSE ``event:``
+// field. Before B-001 was fixed these were PascalCase ('OpStarted',
+// …) and the listeners never fired — the EventSource handed every
+// frame to the unnamed onmessage handler (which doesn't fire on
+// named-event frames at all), so the UI saw nothing.
 const DEFAULT_EVENT_NAMES = [
-  'OpStarted',
-  'OpCompleted',
-  'OpFailed',
-  'Progress',
-  'LogLine',
-  'ArtifactReady',
+  'op_started',
+  'op_completed',
+  'op_failed',
+  'progress',
+  'log_line',
+  'artifact_ready',
 ] as const;
 
 /** Open an SSE connection. Returns a `close()` callback. */

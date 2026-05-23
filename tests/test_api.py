@@ -509,3 +509,96 @@ async def test_sse_stream_filters_by_job_id() -> None:
     assert frame["event"] == "op_started"
     assert '"j1"' in frame["data"]
     await gen.aclose()
+
+
+@pytest.mark.anyio
+async def test_sse_replays_already_persisted_events_b001(
+    api_engine: Engine,
+) -> None:
+    """B-001 regression: a client subscribing AFTER an event has already
+    been emitted (and persisted via the EventBus sink) must still see
+    that event via the replay phase.
+
+    Before the fix, ``job_event_stream`` only subscribed to the bus
+    and never queried the persistent log; clients connecting even a
+    few ms after ``POST /run`` returned saw an empty stream forever.
+    """
+    import asyncio
+    from datetime import UTC, datetime
+
+    from media_engine.api.sse import job_event_stream
+    from media_engine.runtime.events import OpCompleted, OpStarted
+
+    bus = api_engine.event_bus
+    job_id = "test-job-b001"
+    # Emit two events BEFORE any subscriber exists — the persistence
+    # sink (engine._persist_event) writes them to the events table.
+    bus.emit(
+        OpStarted(
+            event_id="ev-001",
+            op_run_id="run-001",
+            job_id=job_id,
+            timestamp=datetime.now(UTC),
+            op_name="acquire.upload",
+        )
+    )
+    bus.emit(
+        OpCompleted(
+            event_id="ev-002",
+            op_run_id="run-001",
+            job_id=job_id,
+            timestamp=datetime.now(UTC),
+            duration_seconds=0.01,
+        )
+    )
+    # Open the SSE stream — replay should catch both.
+    gen = job_event_stream(
+        bus,
+        job_id,
+        cache=api_engine.cache,
+        namespace=api_engine.config.namespace,
+        keepalive_seconds=60.0,
+    )
+    seen: list[str] = []
+    for _ in range(2):
+        frame = await asyncio.wait_for(gen.__anext__(), timeout=2.0)
+        seen.append(frame["event"])
+    assert "op_started" in seen
+    assert "op_completed" in seen
+    await gen.aclose()
+
+
+@pytest.mark.anyio
+async def test_engine_run_uses_provided_job_id_for_events(
+    api_engine: Engine, tmp_path: Path
+) -> None:
+    """B-001 root cause: events must carry the caller-supplied job_id
+    so SSE filters can match. Before the fix, Engine.run generated its
+    own internal id and the REST job_id never reached events."""
+    import asyncio
+    import shutil
+
+    from media_engine.runtime.events import OpCompleted, OpStarted
+
+    received: list[str | None] = []
+
+    async def listener() -> None:
+        async for ev in api_engine.event_bus.subscribe():
+            if isinstance(ev, OpStarted | OpCompleted):
+                received.append(ev.job_id)
+                if len(received) >= 2:
+                    return
+
+    listen_task = asyncio.create_task(listener())
+    await asyncio.sleep(0.02)
+
+    src = tmp_path / "sample.mp4"
+    shutil.copyfile(Path(__file__).parent / "fixtures" / "sample.mp4", src)
+
+    await api_engine.run(
+        "acquire.upload",
+        source_path=src,
+        job_id="rest-supplied-job-id",
+    )
+    await asyncio.wait_for(listen_task, timeout=2.0)
+    assert all(jid == "rest-supplied-job-id" for jid in received)

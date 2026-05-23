@@ -92,11 +92,18 @@ def cmd_token_create(
         typer.Option("--label", help="Human-readable name for this token"),
     ] = "",
     namespace: Annotated[
-        str,
+        str | None,
         typer.Option(
-            "--namespace", help="Multi-tenant namespace this token scopes to"
+            "--namespace",
+            help=(
+                "Multi-tenant namespace this token scopes to. "
+                "Defaults to the engine's namespace "
+                "(MEDIA_ENGINE_NAMESPACE / config.toml). "
+                "A literal 'default' is only used when the engine config "
+                "doesn't override it."
+            ),
         ),
-    ] = "default",
+    ] = None,
     json_out: Annotated[
         bool,
         typer.Option("--json", help="Emit machine-readable JSON"),
@@ -105,9 +112,13 @@ def cmd_token_create(
     """Mint a new bearer token. The secret is printed once — save it now."""
     from media_engine.api.auth import create_token
 
+    # B-003: default to the engine's resolved namespace, not literal "default".
+    # Tokens minted under a namespace that doesn't match the engine 403 on
+    # every authed endpoint (require_token enforces ns parity).
+    resolved_namespace = namespace if namespace is not None else EngineConfig().namespace
     cache = _open_cache()
     try:
-        token = create_token(cache, label=label, namespace=namespace)
+        token = create_token(cache, label=label, namespace=resolved_namespace)
     finally:
         cache.close()
     if json_out:

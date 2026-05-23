@@ -62,12 +62,13 @@
     const close = openSSE(`/jobs/${jobId}/events`, {
       onEvent: (ev) => {
         appendEvent(ev);
-        // Status transitions arrive as OpStarted/OpCompleted/OpFailed;
-        // refresh the job row so the badge updates.
+        // Status transitions arrive as op_started / op_completed /
+        // op_failed (snake_case matching the server-side Event.type
+        // literals). PascalCase here was the B-001 client-side bug.
         if (
-          ev.type === 'OpStarted' ||
-          ev.type === 'OpCompleted' ||
-          ev.type === 'OpFailed'
+          ev.type === 'op_started' ||
+          ev.type === 'op_completed' ||
+          ev.type === 'op_failed'
         ) {
           void refresh(jobId);
         }

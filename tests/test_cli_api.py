@@ -71,6 +71,35 @@ def test_token_revoke_unknown_returns_nonzero(
     assert r.exit_code != 0
 
 
+def test_token_create_defaults_to_engine_namespace(
+    runner: CliRunner, cli_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B-003 regression: ``--namespace`` defaults to MEDIA_ENGINE_NAMESPACE.
+
+    Before the fix, ``med api token create`` hard-coded ``"default"`` as
+    the namespace default, so a token minted under a non-default engine
+    config 403'd on every authed endpoint (require_token requires
+    token-ns == engine-ns).
+    """
+    monkeypatch.setenv("MEDIA_ENGINE_NAMESPACE", "team-acme")
+    create = runner.invoke(app, ["api", "token", "create", "--json"])
+    assert create.exit_code == 0, create.stdout
+    payload = json.loads(create.stdout)
+    assert payload["namespace"] == "team-acme"
+
+
+def test_token_create_explicit_namespace_wins(
+    runner: CliRunner, cli_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B-003: explicit ``--namespace`` still overrides the engine default."""
+    monkeypatch.setenv("MEDIA_ENGINE_NAMESPACE", "team-acme")
+    create = runner.invoke(
+        app, ["api", "token", "create", "--namespace", "team-beta", "--json"]
+    )
+    assert create.exit_code == 0
+    assert json.loads(create.stdout)["namespace"] == "team-beta"
+
+
 def test_api_help(runner: CliRunner, cli_env: Path) -> None:
     r = runner.invoke(app, ["api", "--help"])
     assert r.exit_code == 0

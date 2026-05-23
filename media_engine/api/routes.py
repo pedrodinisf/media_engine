@@ -631,8 +631,16 @@ async def get_job_events(
     job = state.cache.get_job(job_id, namespace=token.namespace)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
+    # B-001: pass cache + namespace so the pumper can replay any
+    # events the job already emitted (between POST /run returning and
+    # this EventSource handshake completing) before switching to live.
     return EventSourceResponse(
-        job_event_stream(state.engine.event_bus, job_id)
+        job_event_stream(
+            state.engine.event_bus,
+            job_id,
+            cache=state.cache,
+            namespace=token.namespace,
+        )
     )
 
 

@@ -129,6 +129,8 @@ class Engine:
             event_type=event.type,
             op_run_id=event.op_run_id,
             op_name=op_name,
+            job_id=getattr(event, "job_id", None),
+            event_id=event.event_id,
             payload_json=event.model_dump_json(),
             namespace=self.config.namespace,
         )
@@ -205,6 +207,7 @@ class Engine:
         *,
         inputs: list[str] | None = None,
         backend: str | None = None,
+        job_id: str | None = None,
         **params: Any,
     ) -> list[AnyArtifact]:
         """Execute a single operation with content-addressed caching.
@@ -212,6 +215,12 @@ class Engine:
         Resolves the op + (optional) backend, validates input kinds and
         params, looks up the cache, and either returns cached artifacts or
         runs the op and persists the result.
+
+        ``job_id`` — REST/CLI submission id to stamp on every emitted
+        Event. When provided, events carry it so the SSE pumper can
+        ``WHERE job_id = ?`` against the persisted log. When unset (CLI
+        direct or daemon-routed calls), events fall back to using the
+        engine-generated op_run_id (preserves legacy behaviour).
         """
         op_class = OpRegistry.get(op_name)
         op = op_class()
@@ -258,8 +267,14 @@ class Engine:
         # No cache hit → we'll write. Enforce the disk-space gate now.
         assert_free_space(self.config.permanent_store, self.config.min_free_gb)
 
-        job_id = uuid4().hex
-        workdir = self.storage.ensure_workdir(job_id)
+        op_run_id = uuid4().hex
+        # Event.job_id carries the submission id when REST/CLI provides
+        # one (so SSE can filter persistently-logged events by job).
+        # When unset, we fall back to op_run_id — preserves legacy
+        # daemon/CLI behaviour where job_id ≡ op_run_id was the implicit
+        # contract.
+        event_job_id = job_id or op_run_id
+        workdir = self.storage.ensure_workdir(op_run_id)
         ctx = OperationContext(
             workdir=workdir,
             config=self.config,
@@ -277,8 +292,8 @@ class Engine:
         self.event_bus.emit(
             OpStarted(
                 event_id=uuid4().hex,
-                op_run_id=job_id,
-                job_id=job_id,
+                op_run_id=op_run_id,
+                job_id=event_job_id,
                 timestamp=started_at,
                 op_name=op_name,
                 inputs=list(input_ids),
@@ -294,13 +309,13 @@ class Engine:
             raw_outputs = await with_retry(_attempt, policy=retry_policy)
         except BaseException as exc:  # noqa: BLE001 -- envelope, then re-raise
             self.event_bus.emit(
-                build_op_failed(exc, op_run_id=job_id, job_id=job_id)
+                build_op_failed(exc, op_run_id=op_run_id, job_id=event_job_id)
             )
             raise
         finally:
             # Workdir cleanup is best-effort; failures shouldn't mask op errors.
             with contextlib.suppress(Exception):
-                self.storage.cleanup_workdir(job_id)
+                self.storage.cleanup_workdir(op_run_id)
         finished_at = datetime.now(UTC)
         duration = (finished_at - started_at).total_seconds()
 
@@ -345,8 +360,8 @@ class Engine:
         self.event_bus.emit(
             OpCompleted(
                 event_id=uuid4().hex,
-                op_run_id=job_id,
-                job_id=job_id,
+                op_run_id=op_run_id,
+                job_id=event_job_id,
                 timestamp=finished_at,
                 outputs=[o.id for o in raw_outputs],
                 duration_seconds=duration,
@@ -484,7 +499,9 @@ class Engine:
         params_model = op_class.params_model(**params)
         return op.cost_estimate(resolved_inputs, params_model)
 
-    async def run_pipeline(self, pipeline: Pipeline) -> DAGResult:
+    async def run_pipeline(
+        self, pipeline: Pipeline, *, job_id: str | None = None
+    ) -> DAGResult:
         """Run a Pipeline through the async DAG executor.
 
         Source artifacts come from ``pipeline.sources``. The executor enforces
@@ -511,6 +528,7 @@ class Engine:
             pipeline,
             run_op=self.run,
             semaphores=self._get_semaphores(),
+            job_id=job_id,
         )
 
     # ── Internals ──
