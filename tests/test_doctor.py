@@ -327,6 +327,11 @@ def test_composite_cycle_guard() -> None:
         # The single delegate is skipped by the cycle guard — there are
         # no delegate_overalls entries, and a note records the skip.
         assert any("cycle guard" in n for n in report.notes)
+        # And the composite must report unavailable (not the embedded
+        # default of "ok"), so the Settings UI doesn't render a green
+        # checkmark for an op no one can actually run. Audit fix from
+        # the Phase 6.6 fresh-eyes review.
+        assert report.overall == "unavailable"
     finally:
         OpRegistry._ops.pop(_CyclicComposite.name, None)
 

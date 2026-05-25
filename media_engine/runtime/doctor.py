@@ -304,11 +304,13 @@ def check_op(
         # worst of theirs. Skip self-references and already-visited nodes
         # to break any cycle defensively.
         next_visited = _visited | {op_cls.name}
+        cycles_skipped = 0
         for delegate_name in op_cls.delegates_to:
             if delegate_name in next_visited:
                 notes.append(
                     f"delegate {delegate_name!r} skipped (cycle guard)"
                 )
+                cycles_skipped += 1
                 continue
             try:
                 delegate_cls = OpRegistry.get(delegate_name)
@@ -325,6 +327,12 @@ def check_op(
                 delegate_overalls.values(),
                 key=lambda o: _OVERALL_PRIORITY[o],
             )
+        elif cycles_skipped:
+            # Every delegate was self-referential — composite is un-runnable
+            # because none of its delegates is reachable. Without this branch
+            # the overall would stay at the embedded default of "ok" and the
+            # Settings UI would falsely flag the cycle as healthy.
+            overall = "unavailable"
 
     return OpDoctorReport(
         op_name=op_cls.name,

@@ -643,9 +643,11 @@ class Engine:
         # model-prefix dispatch) > default_backend. The result is the
         # single source of truth — cache key, ctx.backend, cost ledger and
         # provenance all use it, so the backend recorded is the one that ran.
-        chosen: str | None = (
-            requested or op.select_backend(params_model) or default
-        )
+        # Cache the router pick (some routers do non-trivial work — string
+        # parsing on params.model, registry lookups for plugin ops) so we
+        # don't compute it twice between selection + B-008 validation.
+        routed = op.select_backend(params_model)
+        chosen: str | None = requested or routed or default
         if chosen is None:
             raise ValueError(
                 f"{op_name} requires a backend; available: {registered}"
@@ -659,15 +661,13 @@ class Engine:
         # deep inside the backend's model-load path with a confusing
         # message. Failing loudly here points the operator at the actual
         # fix (change the model param or drop the --backend).
-        if requested is not None:
-            routed = op.select_backend(params_model)
-            if routed is not None and routed != requested:
-                raise ValueError(
-                    f"{op_name}: backend {requested!r} is incompatible "
-                    f"with the current params (model routes to "
-                    f"{routed!r}). Either change the model param or "
-                    f"omit --backend so the router picks {routed!r}."
-                )
+        if requested is not None and routed is not None and routed != requested:
+            raise ValueError(
+                f"{op_name}: backend {requested!r} is incompatible "
+                f"with the current params (model routes to "
+                f"{routed!r}). Either change the model param or "
+                f"omit --backend so the router picks {routed!r}."
+            )
         backend_class = BackendRegistry.get(op_name, chosen)
         return (chosen, backend_class.version)
 

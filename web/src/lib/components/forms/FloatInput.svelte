@@ -23,15 +23,25 @@
   // Text buffer the input renders. Seed from `value` on mount (via untrack
   // so the $state initializer doesn't subscribe to the prop), then sync
   // through the effect below. String() always renders with a period
-  // regardless of locale.
-  let text = $state(untrack(() => (value === null ? '' : String(value))));
+  // regardless of locale; NaN renders as "NaN" which the parser then
+  // rejects (treated like null).
+  function serialize(v: number | null): string {
+    if (v === null || !Number.isFinite(v)) return '';
+    return String(v);
+  }
+
+  let text = $state(untrack(() => serialize(value)));
 
   $effect(() => {
     const parsed = parseFloatInput(text);
     // Re-sync only when the parent's value diverges from our local parse.
     // Avoids clobbering an in-progress "0." while the user is mid-type.
-    if (parsed !== value && !isIntermediate(text)) {
-      text = value === null ? '' : String(value);
+    // Guard with Number.isFinite on `value` — a parent passing NaN would
+    // otherwise loop forever (NaN !== NaN, so the parsed/value comparison
+    // never settles).
+    const valueComparable = Number.isFinite(value) ? value : null;
+    if (parsed !== valueComparable && !isIntermediate(text)) {
+      text = serialize(value);
     }
   });
 

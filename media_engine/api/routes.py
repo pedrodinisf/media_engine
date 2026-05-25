@@ -437,12 +437,25 @@ def post_run_preview(
 
     # Resolve backend the same way Engine.run does.
     op_inst = op_cls()
-    backend_name = body.backend or op_inst.select_backend(params_model) or op_cls.default_backend
+    routed = op_inst.select_backend(params_model)
+    backend_name = body.backend or routed or op_cls.default_backend
+    # An op with no registered Backend layer (composite / fan-out) gets
+    # an empty backend list — flag it so the UI can render "(composite)"
+    # instead of "—" in the cost preview (B-005 p1).
+    registered_backends = BackendRegistry.for_op(op_cls.name)
+    is_embedded = (
+        op_cls.default_backend is None and not registered_backends
+    )
     # Router model/backend consistency (B-008). Mirror the engine's
-    # _resolve_backend validation so the cost-preview surface can warn
-    # ahead of submit, not only at run time.
+    # _resolve_backend validation so the cost-preview surface warns
+    # ahead of submit, not only at run time. Two failure modes:
+    # (a) backend exists in the registry but conflicts with the router's
+    #     model-prefix dispatch → 422 naming both candidates.
+    # (b) backend is a string the registry doesn't know → 422 listing
+    #     the available backends. Without this, the preview returned
+    #     200 with the bogus name echoed, then submission crashed deep
+    #     inside ``_resolve_backend``.
     if body.backend is not None:
-        routed = op_inst.select_backend(params_model)
         if routed is not None and routed != body.backend:
             raise HTTPException(
                 status_code=422,
@@ -453,13 +466,17 @@ def post_run_preview(
                     f"override so the router picks {routed!r}."
                 ),
             )
-    # An op with no registered Backend layer (composite / fan-out) gets
-    # an empty backend list — flag it so the UI can render "(composite)"
-    # instead of "—" in the cost preview (B-005 p1).
-    is_embedded = (
-        op_cls.default_backend is None
-        and not BackendRegistry.for_op(op_cls.name)
-    )
+        if (
+            not is_embedded
+            and body.backend not in registered_backends
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{body.op}: backend {body.backend!r} is not registered. "
+                    f"Available: {sorted(registered_backends) or '(none)'}."
+                ),
+            )
 
     try:
         estimate = state.engine.estimate_op_cost(
