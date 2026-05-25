@@ -57,6 +57,7 @@ def _op_classes() -> list[type]:
     from media_engine.ops.speakers.identify import SpeakersIdentify
     from media_engine.ops.transcript.merge import TranscriptMerge
     from media_engine.ops.transcript.parse import TranscriptParse
+    from media_engine.ops.video.comprehend import VideoComprehend
     from media_engine.ops.video.extract_audio import VideoExtractAudio
     from media_engine.ops.video.multimodal import VideoMultimodal
     from media_engine.ops.video.sample_frames import VideoSampleFrames
@@ -93,6 +94,7 @@ def _op_classes() -> list[type]:
         SpeakersIdentify,
         TranscriptMerge,
         TranscriptParse,
+        VideoComprehend,
         VideoExtractAudio,
         VideoMultimodal,
         VideoSampleFrames,

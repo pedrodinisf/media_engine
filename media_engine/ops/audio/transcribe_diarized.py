@@ -33,7 +33,7 @@ from media_engine.ops import (
 from media_engine.ops.audio._models import DIARIZE_MODELS, WHISPER_MODELS
 
 
-def _release_audio_models(ctx: OperationContext | None = None) -> None:
+def release_audio_models(ctx: OperationContext | None = None) -> None:
     """Drop cached audio models (whisper singleton + pyannote pool slots).
 
     Two layers — both best-effort and silent on missing optional deps so
@@ -212,7 +212,7 @@ class AudioTranscribeDiarized(Operation):
         # models alone. RAM-tight hosts depend on this. (Pyannote slot
         # cleanup inside the helper is a no-op here — it hasn't loaded
         # yet — but matters at the new video.comprehend call site.)
-        _release_audio_models(ctx)
+        release_audio_models(ctx)
         diarize_outs = await ctx.run_op(
             "audio.diarize", inputs=[audio.id], **diarize_kwargs
         )
