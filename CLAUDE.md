@@ -166,20 +166,42 @@ Phases are formalized in `~/.claude/plans/goofy-gathering-beaver.md`
 
 **Shipped:**
 
-- **Phase 6 — Local-first Web UI** *(shipped — current version
-  `0.6.1`)*. SvelteKit SPA built into `media_engine/web/dist/` and
-  served by `med web start` at `/ui`. Full GUI parity with the CLI:
-  ingestion (upload / URL / livestream / batch), run configuration
-  (op picker + auto-generated forms from
-  `params_model.model_json_schema()` + cost preview + backend
-  selector), job dashboard with SSE live updates, catalog browser,
-  lineage graph viewer, search + cost ledger, profile workspace,
-  plugin manager, settings (config.toml, resources.yaml, namespace
-  switcher, token CRUD, backend health). Deferred v1 items are
-  tracked in `docs/web_ui_deferred.md`; bug ledger lives in
-  `docs/phase-6-5-bugs.md`. The shell stays first-class for power
-  users and CI; the UI is the path of least resistance for everyone
-  else.
+- **Phase 6 — Local-first Web UI** *(shipped)*. SvelteKit SPA built
+  into `media_engine/web/dist/` and served by `med web start` at
+  `/ui`. Full GUI parity with the CLI: ingestion (upload / URL /
+  livestream / batch), run configuration (op picker + auto-generated
+  forms from `params_model.model_json_schema()` + cost preview +
+  backend selector), job dashboard with SSE live updates, catalog
+  browser, lineage graph viewer, search + cost ledger, profile
+  workspace, plugin manager, settings (config.toml, resources.yaml,
+  namespace switcher, token CRUD, backend health). Deferred v1 items
+  are tracked in `docs/web_ui_deferred.md`; bug ledger lives in
+  `docs/phase-6-5-bugs.md`.
+
+- **Phase 6.6 — Audit + close-out** *(shipped — current version
+  `0.6.2`)*. Closed every open Phase-6.5 bug: B-004 (locale-safe
+  float input — `FloatInput.svelte` keeps a period-decimal text
+  buffer so pt-PT users see `0.2` not `0,2`); B-006 (intelligence
+  model dropdown via `json_schema_extra` + `_models.py` catalog);
+  B-007 (composites forward `--backend` to delegates; precedence is
+  explicit composite param > `ctx.backend` > delegate's router);
+  B-008 (router model/backend consistency hard-fail at submit and
+  `/run/preview`); B-009 (`med doctor` walks `delegates_to` and
+  surfaces a per-delegate breakdown in `OpDoctorReport`
+  + Settings → Doctor expand row, with cycle-guard). E2E specs
+  in `scripts/verify_settings.sh` grew to 14 (was 11).
+
+- **Hetzner deploy** *(shipped — `deploy/hetzner/`)*. One-shot
+  Ubuntu provisioner that stands up the full stack (engine +
+  Postgres/pgvector + Caddy + Let's Encrypt) on a single Hetzner
+  Cloud VPS without modifying application code. Full operator guide
+  at `docs/Hetzner_Deployment_Handbook.md` (14 sections: prereqs,
+  one-shot deploy, day-2 ops, security model, sizing/swap, FAQ,
+  disaster recovery, decommissioning). `Dockerfile.hetzner` extends
+  the portable `infra/docker/Dockerfile` with the full extras + the
+  Playwright two-step install; `docker-compose.override.yaml` adds
+  Caddy and drops the public `:8000` bind so the engine is only
+  reachable via the TLS-terminated reverse proxy.
 
 **Roadmap:**
 

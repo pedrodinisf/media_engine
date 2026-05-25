@@ -1579,9 +1579,9 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
 <span class="cmt"># 3. Sanity check — 34 capability-named ops + the dep matrix for this machine</span>
 <span class="fn">uv run med</span> ops
 <span class="fn">uv run med</span> config
-<span class="fn">uv run med</span> doctor                <span class="cmt"># which ops work right now? (v0.6.1)</span></pre>
+<span class="fn">uv run med</span> doctor                <span class="cmt"># which ops work right now? (v0.6.2)</span></pre>
         </div>
-        <p class="desc" style="margin-top: 12px;">For Apple Silicon: <code class="inline">--extra transcribe-mlx</code> pulls in <code class="inline">mlx-whisper</code> (uses the Neural Engine). For Intel or cross-platform, swap in <code class="inline">--extra vlm-cloud</code> to route through Gemini/Claude instead. <strong><code class="inline">med doctor</code></strong> (v0.6.1) walks every op + backend and tells you exactly which are usable on this host vs which are missing env vars / binaries / Python packages &mdash; the answer to "I tried to run X and got an opaque error."</p>
+        <p class="desc" style="margin-top: 12px;">For Apple Silicon: <code class="inline">--extra transcribe-mlx</code> pulls in <code class="inline">mlx-whisper</code> (uses the Neural Engine). For Intel or cross-platform, swap in <code class="inline">--extra vlm-cloud</code> to route through Gemini/Claude instead. <strong><code class="inline">med doctor</code></strong> (v0.6.2 walks <code class="inline">delegates_to</code> too &mdash; composites turn red when their delegates are missing, not just when their own backend is) tells you exactly which ops are usable on this host vs which are missing env vars / binaries / Python packages &mdash; the answer to "I tried to run X and got an opaque error."</p>
       </div>
     </article>
 
@@ -2016,7 +2016,7 @@ flowchart TD
     <div class="decision-cell"><div class="dc-label">▸ shell</div><div class="dc-title">CLI (cold)</div><div class="dc-when">One-shot scripting, CI jobs, ad-hoc reprocessing.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ shell</div><div class="dc-title">CLI + daemon</div><div class="dc-when">Local dev with hot models. CLI auto-routes via 50&thinsp;ms ping.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ http</div><div class="dc-title">REST + SSE</div><div class="dc-when">Service integration, web frontends, async job pattern.</div></div>
-    <div class="decision-cell"><div class="dc-label">▸ browser</div><div class="dc-title">Web UI <span style="font-size:10px;color:var(--accent-green);">v0.6.0</span></div><div class="dc-when">Local-first SvelteKit SPA at <code class="inline">/ui</code>. Full GUI parity with the CLI &mdash; see &sect;008.</div></div>
+    <div class="decision-cell"><div class="dc-label">▸ browser</div><div class="dc-title">Web UI <span style="font-size:10px;color:var(--accent-green);">v0.6.2</span></div><div class="dc-when">Local-first SvelteKit SPA at <code class="inline">/ui</code>. Full GUI parity with the CLI &mdash; see &sect;008.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ stdio</div><div class="dc-title">MCP</div><div class="dc-when">AI agents (Claude Code &amp; friends). Allow-listed tool surface.</div></div>
     <div class="decision-cell"><div class="dc-label">▸ in-proc</div><div class="dc-title">Python API</div><div class="dc-when">Embedded use. <code class="inline">from media_engine import Engine</code>.</div></div>
   </div>
@@ -2478,10 +2478,10 @@ Output as Markdown headings. Be concise.</pre>
      012 — CHRONOLOGY
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="chronology">
-  <div class="eyebrow">CHRONOLOGY <span class="id">012 · 10 DAYS · 70+ COMMITS</span></div>
-  <h2 class="section-title">v0.6.1 shipped; Phase 6.5 closed the SSE bug + dep-introspection gap.</h2>
+  <div class="eyebrow">CHRONOLOGY <span class="id">012 · 12 DAYS · 80+ COMMITS</span></div>
+  <h2 class="section-title">v0.6.2 shipped; Phase 6.6 closed every open Phase-6.5 bug.</h2>
   <p class="section-lede">
-    Phases 0&ndash;6.5 shipped between <strong>2026-05-14</strong> and <strong>2026-05-23</strong>. v0.6.1 is the current release: fifty Phase-6 commits + three Phase-6 audit-fix passes + two docs syncs, then four Phase-6.5 commits closing the p0 SSE Events-tab bug and shipping <code class="inline">med doctor</code> + the op matrix runner (seventy-plus total commits across the release window). Thirty-four operations, thirty-plus backends, six transports (CLI, daemon, REST + SSE, MCP stdio, Python API, and the SvelteKit Web UI at <code class="inline">/ui</code>). Phase 7 (acoustic speaker identity, plan &sect;12.6) queues next.
+    Phases 0&ndash;6.6 shipped between <strong>2026-05-14</strong> and <strong>2026-05-25</strong>. v0.6.2 is the current release: fifty Phase-6 commits + three Phase-6 audit-fix passes + two docs syncs, four Phase-6.5 commits closing the p0 SSE Events-tab bug and shipping <code class="inline">med doctor</code> + the op matrix runner, then seven Phase-6.6 commits that closed the five remaining bugs (B-004 locale-safe float input, B-006 intelligence model dropdown, B-007 composite backend forwarding, B-008 router model/backend consistency, B-009 doctor walking <code class="inline">delegates_to</code>) and grew the regression e2e from 11 to 14 specs (eighty-plus total commits across the release window). Thirty-four operations, thirty-plus backends, six transports (CLI, daemon, REST + SSE, MCP stdio, Python API, and the SvelteKit Web UI at <code class="inline">/ui</code>). Phase 7 (acoustic speaker identity, plan &sect;12.6) queues next.
   </p>
 
   <div class="diagram">
@@ -2569,15 +2569,23 @@ Output as Markdown headings. Be concise.</pre>
         <div class="itl-row">
           <div class="itl-row-label"><span class="itl-id">P6.5</span><span class="itl-name">Doctor + matrix + B-001 fix</span></div>
           <div class="itl-track">
-            <div class="itl-bar" style="left: 95%; width: 5%"><span class="itl-bar-text">4 commits · med doctor · op matrix · SSE Events · v0.6.1 cut</span></div>
+            <div class="itl-bar" style="left: 95%; width: 3%"><span class="itl-bar-text">4 commits · med doctor · op matrix · SSE Events · v0.6.1 cut</span></div>
+          </div>
+        </div>
+
+        <!-- Phase 6.6 — audit close-out, ends May 25 -->
+        <div class="itl-row">
+          <div class="itl-row-label"><span class="itl-id">P6.6</span><span class="itl-name">Bug close-out + Hetzner deploy</span></div>
+          <div class="itl-track">
+            <div class="itl-bar" style="left: 98%; width: 2%"><span class="itl-bar-text">7 commits · B-004/006/007/008/009 closed · v0.6.2 cut</span></div>
           </div>
         </div>
 
       </div>
 
       <div class="itl-legend">
-        <span><span class="swatch done"></span>shipped (54 commits · phases 0–6.5 · v0.6.1)</span>
-        <span><span class="status-dot amber live"></span>TODAY · May 23</span>
+        <span><span class="swatch done"></span>shipped (61 commits · phases 0–6.6 · v0.6.2)</span>
+        <span><span class="status-dot amber live"></span>TODAY · May 25</span>
         <span style="opacity: 0.7">Phase 7 (acoustic speaker identity · 4 commits) queues next — see card below.</span>
       </div>
     </div>
@@ -2810,6 +2818,34 @@ Output as Markdown headings. Be concise.</pre>
       </div>
     </article>
 
+    <article class="phase-card shipped">
+      <div class="phase-id">PHASE <b>6.6</b></div>
+      <div class="phase-body">
+        <h4>Audit close-out + Hetzner deploy</h4>
+        <p>Closed every open Phase-6.5 bug in seven focused commits, then shipped a one-shot single-VPS Ubuntu deploy on top.
+        <strong>B-004 (p1)</strong> &mdash; locale-safe <code class="inline">FloatInput.svelte</code> replaces <code class="inline">&lt;input type="number"&gt;</code> for floats so <code class="inline">0.2</code> renders with a period regardless of OS locale (pt-PT users were seeing <code class="inline">0,2</code>, which the server then 422'd).
+        <strong>B-006 (p2)</strong> &mdash; intelligence ops surface a curated <code class="inline">GEMINI_MODELS + CLAUDE_MODELS + MLX_LM_MODELS</code> dropdown via <code class="inline">json_schema_extra={"enum": …}</code>, mirroring the audio-ops pattern.
+        <strong>B-007 (p1)</strong> &mdash; composites forward <code class="inline">--backend</code> to their delegates. Engine now preserves <code class="inline">requested</code> for embedded ops so <code class="inline">ctx.backend</code> flows in; each intelligence composite gained an explicit <code class="inline">extract_backend</code> param. Precedence: explicit composite param &gt; ctx.backend &gt; delegate's model-prefix router.
+        <strong>B-008 (p1)</strong> &mdash; <code class="inline">Engine._resolve_backend</code> + <code class="inline">/run/preview</code> hard-fail when <code class="inline">--backend</code> disagrees with what <code class="inline">op.select_backend(params)</code> would have routed to; preview also rejects unregistered backend names with a 422 listing the available options.
+        <strong>B-009 (p2)</strong> &mdash; <code class="inline">med doctor</code> now recursively walks <code class="inline">delegates_to</code>; composites take the worst-of-leaves overall and the Settings &rarr; Doctor expand row renders a per-delegate status list. Cycle-guarded.
+        Plus the <a href="Hetzner_Deployment_Handbook.md">Hetzner deployment handbook</a> &mdash; a single-VPS Ubuntu provisioner that stands up engine + Postgres/pgvector + Caddy/Let's-Encrypt without modifying application code.</p>
+        <div class="phase-deliverables">
+          <span class="deliverable">FloatInput · locale-safe</span>
+          <span class="deliverable">intelligence model dropdown</span>
+          <span class="deliverable">composite --backend forwarding</span>
+          <span class="deliverable">router consistency check</span>
+          <span class="deliverable">doctor walks delegates_to</span>
+          <span class="deliverable">14 e2e specs (was 11)</span>
+          <span class="deliverable">deploy/hetzner · one-shot</span>
+        </div>
+      </div>
+      <div class="phase-meta">
+        <span class="phase-status done"><span class="status-dot green"></span>shipped</span>
+        <span class="phase-window">v0.6.2 · 2026-05-25</span>
+        <span class="phase-commits">9<span class="unit">/ 9 commits</span></span>
+      </div>
+    </article>
+
     <article class="phase-card future">
       <div class="phase-id">PHASE <b>7</b></div>
       <div class="phase-body">
@@ -2827,7 +2863,7 @@ Output as Markdown headings. Be concise.</pre>
       </div>
       <div class="phase-meta">
         <span class="phase-status next"><span class="status-dot amber"></span>roadmap</span>
-        <span class="phase-window">post-Phase-6.5</span>
+        <span class="phase-window">post-Phase-6.6</span>
         <span class="phase-commits">0<span class="unit">/ 4 commits</span></span>
       </div>
     </article>
@@ -2841,33 +2877,34 @@ Output as Markdown headings. Be concise.</pre>
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="status">
   <div class="eyebrow">MISSION STATUS <span class="id">013 · WHERE WE ARE</span></div>
-  <h2 class="section-title">Phase 6.5 complete &mdash; v0.6.1 shipped (2026-05-23).</h2>
+  <h2 class="section-title">Phase 6.6 complete &mdash; v0.6.2 shipped (2026-05-25).</h2>
   <p class="section-lede">
-    Phases 0&ndash;6.5 are closed (v0.6.1). Phase 6 (local-first Web UI, plan &sect;12.5) delivered the full SvelteKit SPA bundled at <code class="inline">/ui</code> over twelve numbered commits (39&ndash;50) plus three audit-fix passes and two docs syncs. Phase 6.5 followed up with a focused quality + UX pass: <strong><code class="inline">med doctor</code></strong> (declarative dep map per op + backend), the <strong>op matrix runner</strong> (runtime ✓/&#8854;/&#10005; report against every op), and the <strong>B-001 (p0)</strong> fix that gets live SSE frames into the Job-detail Events tab within ~300 ms of submission. v1.0 lands when the REST surface freezes &mdash; the only Phase-6-adjacent v1.x backlog is the small follow-ups in <a href="web_ui_deferred.md">web_ui_deferred.md</a>.
+    Phases 0&ndash;6.6 are closed (v0.6.2). Phase 6 (local-first Web UI, plan &sect;12.5) delivered the full SvelteKit SPA bundled at <code class="inline">/ui</code> over twelve numbered commits (39&ndash;50) plus three audit-fix passes and two docs syncs. Phase 6.5 followed up with a focused quality + UX pass: <strong><code class="inline">med doctor</code></strong> (declarative dep map per op + backend), the <strong>op matrix runner</strong> (runtime ✓/&#8854;/&#10005; report against every op), and the <strong>B-001 (p0)</strong> fix that gets live SSE frames into the Job-detail Events tab within ~300 ms of submission. Phase 6.6 closed every remaining open p1/p2 bug (B-004 / B-006 / B-007 / B-008 / B-009) and shipped the <a href="Hetzner_Deployment_Handbook.md">Hetzner deploy</a> on top. v1.0 lands when the REST surface freezes &mdash; the only Phase-6-adjacent v1.x backlog is the small follow-ups in <a href="web_ui_deferred.md">web_ui_deferred.md</a>.
   </p>
 
   <div class="metrics">
     <div class="metric"><div class="metric-value">34<span class="unit">ops</span></div><div class="metric-label">Registered</div></div>
     <div class="metric"><div class="metric-value">30+<span class="unit">backends</span></div><div class="metric-label">Pluggable</div></div>
     <div class="metric"><div class="metric-value">14<span class="unit">kinds</span></div><div class="metric-label">Typed artifacts</div></div>
-    <div class="metric"><div class="metric-value">922<span class="unit">py</span></div><div class="metric-label">29 gated skips</div></div>
-    <div class="metric"><div class="metric-value">54<span class="unit">fe</span></div><div class="metric-label">Vitest unit</div></div>
-    <div class="metric"><div class="metric-value">70+<span class="unit">commits</span></div><div class="metric-label">Phases 0&ndash;6.5 so far</div></div>
+    <div class="metric"><div class="metric-value">998<span class="unit">py</span></div><div class="metric-label">14 env-gated</div></div>
+    <div class="metric"><div class="metric-value">70<span class="unit">fe</span></div><div class="metric-label">Vitest unit</div></div>
+    <div class="metric"><div class="metric-value">15<span class="unit">e2e</span></div><div class="metric-label">Playwright</div></div>
+    <div class="metric"><div class="metric-value">80+<span class="unit">commits</span></div><div class="metric-label">Phases 0&ndash;6.6 so far</div></div>
   </div>
 
   <div class="callout">
-    <strong>What shipped (v0.6.0 + v0.6.1).</strong> Every Web UI panel is live (Ingest / Run / Jobs / Catalog / Search / Cost / Catalog detail / Lineage graph / Profile workspace + examples library with fork-this / Settings) with schema-driven param forms, live SSE updates, debounced cost preview, per-kind artifact previews, the visual DAG composer + CodeMirror YAML editor + live <code class="inline">POST /profiles/validate</code>, and the six-tab settings surface (tokens, backends health, plugin extras + catalog, storage stats + GC, config). Backed by a typed REST client wrapping the Phase-6 endpoints. v0.6.1 added <code class="inline">med doctor [--op N] [--json]</code> for op/backend dep introspection, <code class="inline">scripts/op_matrix.py</code> for runtime op validation, closed three bugs (B-001 p0 / B-003 p1 / B-010 p2), and persisted job_id alongside events for SSE replay-on-subscribe. See <a href="web_ui.md">docs/web_ui.md</a> for the panel tour, <a href="phase-6-5-bugs.md">docs/phase-6-5-bugs.md</a> for the triaged bug log, and <a href="web_ui_deferred.md">docs/web_ui_deferred.md</a> for the v1.x backlog.
+    <strong>What shipped (v0.6.0 &rarr; v0.6.2).</strong> Every Web UI panel is live (Ingest / Run / Jobs / Catalog / Search / Cost / Catalog detail / Lineage graph / Profile workspace + examples library with fork-this / Settings) with schema-driven param forms, live SSE updates, debounced cost preview, per-kind artifact previews, the visual DAG composer + CodeMirror YAML editor + live <code class="inline">POST /profiles/validate</code>, and the eight-tab settings surface (tokens, backends health, plugin extras + catalog, storage stats + GC, config, doctor matrix with delegate breakdown, secrets catalog with unblock-impact, visibility). Backed by a typed REST client wrapping the Phase-6 endpoints. <strong>v0.6.1</strong> added <code class="inline">med doctor [--op N] [--json]</code>, <code class="inline">scripts/op_matrix.py</code>, closed B-001 / B-003 / B-010, persisted <code class="inline">job_id</code> alongside events for SSE replay-on-subscribe. <strong>v0.6.2</strong> closed the five remaining open bugs: B-004 locale-safe float input, B-006 intelligence-model dropdown, B-007 composite backend forwarding, B-008 router model/backend consistency, B-009 doctor walking <code class="inline">delegates_to</code>. Companion deliverable: <code class="inline">deploy/hetzner/</code> single-VPS one-shot bootstrap + the operator handbook. See <a href="web_ui.md">docs/web_ui.md</a> for the panel tour, <a href="phase-6-5-bugs.md">docs/phase-6-5-bugs.md</a> for the triaged bug log, and <a href="web_ui_deferred.md">docs/web_ui_deferred.md</a> for the v1.x backlog.
   </div>
 
   <div class="callout">
-    <strong>What's next.</strong> Phase 7 (acoustic speaker identity &mdash; voice fingerprints, cross-recording clustering) lands post-v0.6.1 on top of Phase 5's name-CSV <code class="inline">speakers.identify</code>: new ops <code class="inline">speakers.embed_voice</code> / <code class="inline">speakers.cluster</code> / <code class="inline">speakers.match</code>, new artifact kinds <code class="inline">SpeakerEmbedding</code> + <code class="inline">SpeakerProfile</code>, voice-fingerprint DB reusing the pgvector backend, and namespace-scoped privacy controls.
+    <strong>What's next.</strong> Phase 7 (acoustic speaker identity &mdash; voice fingerprints, cross-recording clustering) lands post-v0.6.2 on top of Phase 5's name-CSV <code class="inline">speakers.identify</code>: new ops <code class="inline">speakers.embed_voice</code> / <code class="inline">speakers.cluster</code> / <code class="inline">speakers.match</code>, new artifact kinds <code class="inline">SpeakerEmbedding</code> + <code class="inline">SpeakerProfile</code>, voice-fingerprint DB reusing the pgvector backend, and namespace-scoped privacy controls.
   </div>
 </section>
 
 </main>
 
 <footer>
-  <span class="brand">FRAMEPULSE &middot; v0.6.1</span>
+  <span class="brand">FRAMEPULSE &middot; v0.6.2</span>
   <div class="build">
     <span>BUILD <b>PHASE 6.5 COMPLETE / 7</b></span>
     <span>COMMITS <b>70+</b></span>

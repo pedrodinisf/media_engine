@@ -1,10 +1,17 @@
 """Smoke test — package imports and version is set."""
 
+import re
+
 import media_engine
 
 
 def test_version_is_set() -> None:
-    assert media_engine.__version__ == "0.6.1"
+    # Assert format rather than pinning to a literal so the test doesn't
+    # break every release cut. The strict pin caused a Phase-6.6 audit
+    # miss when v0.6.2 shipped without updating this file.
+    assert re.fullmatch(r"\d+\.\d+\.\d+(?:[a-zA-Z0-9.+-]+)?", media_engine.__version__), (
+        f"version must be semver-like, got {media_engine.__version__!r}"
+    )
 
 
 def test_package_imports() -> None:
