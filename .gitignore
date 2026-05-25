@@ -35,13 +35,56 @@ htmlcov/
 *.swo
 .DS_Store
 
-# Project state
+# ─── Secrets — env files ─────────────────────────────────────
+# Broad coverage for every "*.env" variant we've seen across the
+# Python/Node ecosystem. `*.example` and `*.example.*` are
+# re-included via negations so committed templates still ship.
 .env
-.env.local
+.env.*
+.envrc
+secrets.env
+deploy/hetzner/secrets.env
+!.env.example
+!.env.*.example
+!secrets.env.example
+
+# ─── Secrets — keys + certificates ───────────────────────────
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.kdbx
+*.vault
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# ─── Secrets — service-account JSONs ─────────────────────────
+credentials.json
+service-account.json
+auth.json
+gcloud-*.json
+
+# ─── Backups + DB dumps ──────────────────────────────────────
+# bare `*.sql` deliberately NOT ignored — deploy/hetzner/init/*.sql
+# is a legitimately tracked init script for the Postgres container.
+deploy/hetzner/backups/
+*.sql.gz
+*.dump
+*.bak
 
 # Engine ephemeral state
 /tmp/media_engine/
 *.log
+
+# Auto-generated reports
+tests/e2e_op_matrix_report.md
+
+# Local tooling state (per-machine, never commit)
+.tldrignore
 
 # Test fixtures (large media; rebuilt by build_fixtures.py)
 # (committed fixtures explicitly listed; this is a safety net)
