@@ -91,7 +91,71 @@ def test_secrets_list_known_catalog(
     # No value field is ever returned.
     for row in body["items"]:
         assert "value" not in row
-        assert {"name", "label", "set", "source"} <= set(row)
+        assert {
+            "name",
+            "label",
+            "set",
+            "source",
+            "unblocks_direct",
+            "unblocks_indirect",
+            "adds_alternate",
+        } <= set(row)
+
+
+def test_postgres_env_vars_match_backends(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """Catalog ships MEDIA_ENGINE_FULLTEXT_DB_URL + ..._SEMANTIC_DB_URL,
+    matching what the postgres-tsvector / pgvector backends actually read
+    (search: media_engine/backends/search/*). The earlier catalog
+    listed MEDIA_ENGINE_DATABASE_URL which doesn't exist anywhere —
+    setting it via the UI would have done nothing."""
+    r = client.get("/settings/secrets", headers=auth)
+    names = {row["name"] for row in r.json()["items"]}
+    assert "MEDIA_ENGINE_FULLTEXT_DB_URL" in names
+    assert "MEDIA_ENGINE_SEMANTIC_DB_URL" in names
+    assert "MEDIA_ENGINE_DATABASE_URL" not in names
+
+
+def test_secrets_impact_gemini_unblocks_direct_and_indirect(
+    client: TestClient,
+    auth: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Setting GEMINI_API_KEY would directly unblock ~5 vision/LLM ops
+    AND indirectly unblock the intelligence.summarize/classify/analyze
+    composites that delegate to intelligence.extract via the new
+    Operation.delegates_to mechanism."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    r = client.get("/settings/secrets", headers=auth)
+    gemini = next(
+        row for row in r.json()["items"] if row["name"] == "GEMINI_API_KEY"
+    )
+    # Direct unblock — intelligence.extract is the highest-value one.
+    assert "intelligence.extract" in gemini["unblocks_direct"]
+    # Composite delegation reach.
+    assert "intelligence.summarize" in gemini["unblocks_indirect"]
+    assert "intelligence.classify" in gemini["unblocks_indirect"]
+    assert "intelligence.analyze" in gemini["unblocks_indirect"]
+
+
+def test_secrets_impact_hf_unblocks_only_diarize(
+    client: TestClient,
+    auth: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HF_TOKEN unblocks audio.diarize directly but does NOT indirectly
+    unblock audio.transcribe_diarized because that composite ALSO needs
+    audio.transcribe (mlx-whisper extra) — the unblock-propagation
+    requires ALL delegates to become reachable."""
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    r = client.get("/settings/secrets", headers=auth)
+    hf = next(row for row in r.json()["items"] if row["name"] == "HF_TOKEN")
+    assert "audio.diarize" in hf["unblocks_direct"]
+    # The composite needs both audio.transcribe AND audio.diarize, and
+    # audio.transcribe is gated by an extra (mlx-whisper service), not
+    # an env var — so HF alone doesn't unblock the composite.
+    assert "audio.transcribe_diarized" not in hf["unblocks_indirect"]
 
 
 def test_secrets_put_writes_file_with_0600(

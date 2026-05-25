@@ -206,6 +206,15 @@ export type SecretInfo = {
   url: string;
   set: boolean;
   source: 'shell' | 'file' | 'unset';
+  /** Ops that would have a working backend if this secret were set
+   *  AND currently do not. */
+  unblocks_direct: string[];
+  /** Composites that transitively reach a directly-unblocked op via
+   *  Operation.delegates_to (e.g. intelligence.summarize → extract). */
+  unblocks_indirect: string[];
+  /** Ops that already work via another backend; this secret would just
+   *  add the cloud/extra alternative (not currently blocked). */
+  adds_alternate: string[];
 };
 
 export type SecretsListResponse = {

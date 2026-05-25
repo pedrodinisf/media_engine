@@ -328,6 +328,45 @@
     return doctorReport.ops;
   });
 
+  // Aggregate "what's the quickest path to fix the unavailable column?".
+  // For each unavailable backend, count which single env or service
+  // requirement is missing; surface the top-N as one-click fix-it
+  // entries. The same op might appear multiple times (multiple
+  // backends, all missing one requirement); we de-dupe by op name.
+  type FixIt = {
+    kind: 'env' | 'service';
+    name: string;
+    ops: string[];
+  };
+  const doctorFixIts = $derived.by<FixIt[]>(() => {
+    if (!doctorReport) return [];
+    const byReq = new Map<string, { kind: 'env' | 'service'; name: string; ops: Set<string> }>();
+    for (const op of doctorReport.ops) {
+      if (op.overall !== 'unavailable') continue;
+      // For this op to become "ok" we need ANY of its backends to be ok.
+      // Per backend, the simplest fix is the single missing requirement
+      // when there's only one. Aggregate across the op's backends.
+      for (const b of op.backends) {
+        if (b.overall === 'ok') continue;
+        const missing = b.requirements.filter((r) => r.status !== 'ok');
+        if (missing.length !== 1) continue;
+        const r = missing[0]!;
+        if (r.kind !== 'env' && r.kind !== 'service') continue;
+        const key = `${r.kind}:${r.name}`;
+        const bucket = byReq.get(key) ?? { kind: r.kind, name: r.name, ops: new Set<string>() };
+        bucket.ops.add(op.op_name);
+        byReq.set(key, bucket);
+      }
+    }
+    const out: FixIt[] = [];
+    for (const [, bucket] of byReq) {
+      out.push({ kind: bucket.kind, name: bucket.name, ops: [...bucket.ops].sort() });
+    }
+    // Highest impact first.
+    out.sort((a, b) => b.ops.length - a.ops.length || a.name.localeCompare(b.name));
+    return out;
+  });
+
   // ─────────────── Secrets ───────────────
   let secrets = $state<SecretInfo[]>([]);
   let secretsFilePath = $state<string>('');
@@ -517,6 +556,35 @@
         <span style="color: var(--accent-amber);">🟡 degraded: {doctorReport.summary.degraded}</span>
         <span style="color: var(--accent-red);">🔴 unavailable: {doctorReport.summary.unavailable}</span>
       </div>
+
+      {#if doctorFixIts.length > 0}
+        <div
+          class="rounded p-3 mb-3"
+          style="background: var(--accent-amber-soft); border: 1px solid var(--accent-amber-line);"
+        >
+          <h3 class="text-xs font-semibold mb-2" style="color: var(--accent-amber);">
+            Quick fixes — highest impact first
+          </h3>
+          <ul class="space-y-1.5">
+            {#each doctorFixIts as fix (fix.kind + ':' + fix.name)}
+              <li class="text-xs font-mono flex items-start gap-2">
+                <button
+                  type="button"
+                  onclick={() => activate(fix.kind === 'env' ? 'secrets' : 'extras')}
+                  class="px-2 py-0.5 rounded font-semibold whitespace-nowrap"
+                  style="background: var(--accent-amber); color: var(--text-inverse);"
+                >
+                  {fix.kind === 'env' ? 'Set' : 'Install'} {fix.name} ↗
+                </button>
+                <span style="color: var(--text-primary);">
+                  unblocks <strong>{fix.ops.length}</strong> op{fix.ops.length === 1 ? '' : 's'}:
+                  <span style="color: var(--text-secondary);">{fix.ops.join(', ')}</span>
+                </span>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
     {/if}
 
     {#if doctorLoading && !doctorReport}
@@ -636,6 +704,42 @@
                   · <a href={row.url} target="_blank" rel="noopener" class="underline">get one</a>
                 {/if}
               </div>
+              {#if row.unblocks_direct.length + row.unblocks_indirect.length + row.adds_alternate.length > 0}
+                <details class="mb-2">
+                  <summary class="text-xs cursor-pointer" style="color: var(--accent-green);">
+                    {#if row.unblocks_direct.length > 0}
+                      Unblocks <strong>{row.unblocks_direct.length}</strong> op{row.unblocks_direct.length === 1 ? '' : 's'}
+                      {#if row.unblocks_indirect.length > 0}
+                        + <strong>{row.unblocks_indirect.length}</strong> composite{row.unblocks_indirect.length === 1 ? '' : 's'}
+                      {/if}
+                    {:else if row.unblocks_indirect.length > 0}
+                      Unblocks {row.unblocks_indirect.length} composite{row.unblocks_indirect.length === 1 ? '' : 's'}
+                    {:else}
+                      Adds an alternate backend to {row.adds_alternate.length} op{row.adds_alternate.length === 1 ? '' : 's'}
+                    {/if}
+                  </summary>
+                  <div class="mt-1.5 ml-3 text-xs font-mono">
+                    {#if row.unblocks_direct.length > 0}
+                      <div style="color: var(--text-secondary);">
+                        <span style="color: var(--accent-green);">direct →</span>
+                        {row.unblocks_direct.join(', ')}
+                      </div>
+                    {/if}
+                    {#if row.unblocks_indirect.length > 0}
+                      <div style="color: var(--text-secondary);">
+                        <span style="color: var(--accent-green);">via composite →</span>
+                        {row.unblocks_indirect.join(', ')}
+                      </div>
+                    {/if}
+                    {#if row.adds_alternate.length > 0}
+                      <div style="color: var(--text-muted);">
+                        <span>alternate to local →</span>
+                        {row.adds_alternate.join(', ')}
+                      </div>
+                    {/if}
+                  </div>
+                </details>
+              {/if}
               <div class="flex gap-2 items-center">
                 <input
                   type="password"

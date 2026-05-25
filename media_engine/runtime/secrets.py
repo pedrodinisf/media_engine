@@ -56,11 +56,19 @@ KNOWN_SECRETS: tuple[dict[str, str], ...] = (
         "url": "https://huggingface.co/settings/tokens",
     },
     {
-        "name": "MEDIA_ENGINE_DATABASE_URL",
-        "label": "Postgres connection string",
+        "name": "MEDIA_ENGINE_FULLTEXT_DB_URL",
+        "label": "Postgres connection (search.fulltext)",
         "category": "Database",
-        "used_by": "search.fulltext (postgres-tsvector), search.semantic "
-        "(pgvector). Default sqlite path is used when unset.",
+        "used_by": "search.fulltext (postgres-tsvector). Default sqlite-fts5 "
+        "works without this — only set when you want Postgres-backed FT.",
+        "url": "",
+    },
+    {
+        "name": "MEDIA_ENGINE_SEMANTIC_DB_URL",
+        "label": "Postgres connection (search.semantic)",
+        "category": "Database",
+        "used_by": "search.semantic (pgvector). Default sqlite vector backend "
+        "works without this — only set when you want pgvector.",
         "url": "",
     },
 )

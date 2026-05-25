@@ -309,6 +309,16 @@ class SecretInfo(BaseModel):
     where the value came from (shell, file, or unset). The Web UI surfaces
     "set" / "unset" as a status icon; the user can overwrite the value by
     posting a new one via ``PUT /settings/secrets``.
+
+    ``unblocks_direct`` lists the ops whose current default / router path
+    is gated by this env var and would resolve to a working backend if
+    the secret were set. ``unblocks_indirect`` lists composites that
+    delegate (via ``Operation.delegates_to``) to a directly-unblocked op
+    — e.g. setting GEMINI_API_KEY unblocks ``intelligence.extract``
+    directly and ``intelligence.summarize`` / ``intelligence.classify``
+    / ``intelligence.analyze`` indirectly. ``adds_alternate`` is for
+    ops that already have a working backend on this machine — the
+    secret adds a new option but the op isn't currently blocked.
     """
 
     name: str
@@ -318,6 +328,9 @@ class SecretInfo(BaseModel):
     url: str = ""
     set: bool
     source: Literal["shell", "file", "unset"]
+    unblocks_direct: list[str] = Field(default_factory=lambda: cast(list[str], []))
+    unblocks_indirect: list[str] = Field(default_factory=lambda: cast(list[str], []))
+    adds_alternate: list[str] = Field(default_factory=lambda: cast(list[str], []))
 
 
 class SecretsListResponse(BaseModel):
@@ -1196,6 +1209,86 @@ def get_settings_doctor(
     return diagnose(op_filter=op).to_dict()
 
 
+def _compute_env_impact() -> dict[str, dict[str, list[str]]]:
+    """Walk the op×backend registry and group by env-var dependency.
+
+    Returns ``{env_name: {direct: [op], indirect: [op], alternate: [op]}}``.
+
+    * **direct** — ops that would have a working backend *if* this env
+      var were set, AND currently do not (i.e. the secret is the missing
+      link). Computed by checking each backend's BackendRequirements env
+      list; if the backend's only blocker is this env var, it's
+      direct.
+    * **indirect** — composites that declare ``delegates_to`` and
+      transitively reach a directly-unblocked op.
+    * **alternate** — ops where this env var would *add* a backend but
+      the op already has another working backend (e.g. GEMINI for
+      ``frames.analyze`` when ``vllm-mlx`` already works).
+    """
+    from media_engine.runtime.doctor import check_op
+
+    impact: dict[str, dict[str, list[str]]] = {}
+
+    op_reports = [check_op(op) for op in OpRegistry.list_all()]
+    # First pass — figure out which ops currently have ≥1 working backend
+    # so we can tell "direct unblock" apart from "alternate".
+    op_has_working: dict[str, bool] = {}
+    for r in op_reports:
+        op_has_working[r.op_name] = (
+            r.embedded or any(b.overall == "ok" for b in r.backends)
+        )
+
+    # Second pass — for each non-ok backend, see which single env var
+    # would clear it (i.e. it's the only missing requirement).
+    for r in op_reports:
+        for b in r.backends:
+            if b.overall == "ok":
+                continue
+            missing_envs = [
+                req.name for req in b.requirements
+                if req.kind == "env" and req.status != "ok"
+            ]
+            non_env_blockers = [
+                req for req in b.requirements
+                if req.kind != "env" and req.status != "ok"
+            ]
+            # The env var only "unblocks" if it's the only thing missing.
+            if len(missing_envs) == 1 and not non_env_blockers:
+                env = missing_envs[0]
+                bucket = impact.setdefault(
+                    env, {"direct": [], "indirect": [], "alternate": []}
+                )
+                target = "alternate" if op_has_working[r.op_name] else "direct"
+                if r.op_name not in bucket[target]:
+                    bucket[target].append(r.op_name)
+
+    # Third pass — propagate through delegates_to. A composite that
+    # delegates to a directly-unblocked op gets the indirect tag,
+    # provided that ALL of its delegates would become reachable.
+    for op_cls in OpRegistry.list_all():
+        deps = op_cls.delegates_to
+        if not deps:
+            continue
+        for env, bucket in impact.items():
+            unblocked_set = set(bucket["direct"])
+            # If every delegate is either already working or would be
+            # unblocked by this env, the composite is indirectly
+            # reachable.
+            reachable = all(
+                op_has_working.get(d, False) or d in unblocked_set
+                for d in deps
+            )
+            touches_unblocked = any(d in unblocked_set for d in deps)
+            if reachable and touches_unblocked:
+                if (
+                    op_cls.name not in bucket["indirect"]
+                    and op_cls.name not in bucket["direct"]
+                ):
+                    bucket["indirect"].append(op_cls.name)
+
+    return impact
+
+
 def _secret_info_rows(config_dir: Path) -> tuple[list[SecretInfo], str]:
     """Build the SecretInfo rows for a given config dir.
 
@@ -1211,6 +1304,7 @@ def _secret_info_rows(config_dir: Path) -> tuple[list[SecretInfo], str]:
     )
 
     file_contents = read_secrets(config_dir)
+    impact = _compute_env_impact()
     rows: list[SecretInfo] = []
     for entry in KNOWN_SECRETS:
         name = entry["name"]
@@ -1222,6 +1316,7 @@ def _secret_info_rows(config_dir: Path) -> tuple[list[SecretInfo], str]:
             source = "file"
         else:
             source = "shell"
+        env_impact = impact.get(name, {"direct": [], "indirect": [], "alternate": []})
         rows.append(
             SecretInfo(
                 name=name,
@@ -1231,6 +1326,9 @@ def _secret_info_rows(config_dir: Path) -> tuple[list[SecretInfo], str]:
                 url=entry.get("url", ""),
                 set=is_set,
                 source=source,
+                unblocks_direct=sorted(env_impact["direct"]),
+                unblocks_indirect=sorted(env_impact["indirect"]),
+                adds_alternate=sorted(env_impact["alternate"]),
             )
         )
     return rows, str(secrets_path(config_dir))
