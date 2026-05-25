@@ -17,9 +17,9 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -35,6 +35,7 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.intelligence._models import INTELLIGENCE_MODELS
 from media_engine.ops.intelligence.classify import (
     CLASSIFY_SCHEMA,
     classify_prompt,
@@ -52,7 +53,10 @@ from media_engine.runtime.jsonschema import load_schema
 class AnalyzeParams(BaseModel):
     prompt: str = ""
     schema_def: dict[str, Any] | str
-    model: str = "gemini-2.5-flash"
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(INTELLIGENCE_MODELS)}),
+    ] = "gemini-2.5-flash"
     system_prompt: str | None = None
     temperature: float = 0.2
     max_tokens: int = 2048

@@ -14,9 +14,9 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import Annotated, Any, Protocol, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     Analysis,
@@ -34,6 +34,7 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.intelligence._models import INTELLIGENCE_MODELS
 from media_engine.runtime.jsonschema import SchemaError, load_schema, validate
 
 _INPUT_KINDS = (Kind.Transcript, Kind.MarkdownArtifact, Kind.Analysis)
@@ -43,7 +44,10 @@ class ExtractParams(BaseModel):
     prompt: str
     # Inline JSON schema, or a path to a ``.json`` schema file.
     schema_def: dict[str, Any] | str
-    model: str = "gemini-2.5-flash"
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(INTELLIGENCE_MODELS)}),
+    ] = "gemini-2.5-flash"
     system_prompt: str | None = None
     temperature: float = 0.2
     max_tokens: int = 4096

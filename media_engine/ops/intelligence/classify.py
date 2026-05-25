@@ -7,9 +7,9 @@ what the labels mean).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from media_engine.artifacts import AnyArtifact, Kind
 from media_engine.ops import (
@@ -18,6 +18,7 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.intelligence._models import INTELLIGENCE_MODELS
 from media_engine.ops.intelligence.extract import (
     ExtractParams,
     IntelligenceExtract,
@@ -40,7 +41,10 @@ _SCHEMA: dict[str, Any] = {
 class ClassifyParams(BaseModel):
     labels: list[str]
     multi_label: bool = False
-    model: str = "gemini-2.5-flash"
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(INTELLIGENCE_MODELS)}),
+    ] = "gemini-2.5-flash"
     system_prompt: str | None = None
     temperature: float = 0.0
     max_tokens: int = 1024

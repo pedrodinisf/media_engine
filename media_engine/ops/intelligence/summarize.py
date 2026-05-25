@@ -7,9 +7,9 @@ domain-free: this is just a convenience profile baked into an op so common
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import AnyArtifact, Kind
 from media_engine.ops import (
@@ -18,6 +18,7 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.intelligence._models import INTELLIGENCE_MODELS
 from media_engine.ops.intelligence.extract import (
     ExtractParams,
     IntelligenceExtract,
@@ -37,7 +38,10 @@ _SCHEMA: dict[str, Any] = {
 
 
 class SummarizeParams(BaseModel):
-    model: str = "gemini-2.5-flash"
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(INTELLIGENCE_MODELS)}),
+    ] = "gemini-2.5-flash"
     focus: str | None = None
     system_prompt: str | None = None
     temperature: float = 0.2
