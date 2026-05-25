@@ -60,6 +60,18 @@
   let submitting = $state(false);
   let submitError: string | null = $state(null);
 
+  // ─────────────── Input-kind pre-validation (B-002) ───────────────
+  // The engine rejects kind-mismatched inputs in Engine._validate_input_kinds,
+  // but the rejection surfaces as a silent failed job with a generic
+  // ValueError. Catch the mistake at the form boundary instead.
+  type InputCheck =
+    | { status: 'checking' }
+    | { status: 'ok'; kind: string }
+    | { status: 'wrong_kind'; kind: string }
+    | { status: 'not_found' }
+    | { status: 'error'; detail: string };
+  let inputChecks = $state<Record<string, InputCheck>>({});
+
   onMount(async () => {
     try {
       ops = await api.get<OperationSummary[]>('/operations');
@@ -107,6 +119,86 @@
       .map((s) => s.trim())
       .filter(Boolean);
   }
+
+  // Validate each pasted input id against the selected op's input_kinds.
+  // Debounced + cancelable so re-typing doesn't pile up requests. We fetch
+  // /artifacts/{id} for each unique id, compare its `kind`, and store the
+  // outcome under inputChecks. The Run button consumes a derived
+  // `inputBlockingError` so a wrong-kind paste hard-blocks submission;
+  // "not found" is only a warning (the artifact might live in a different
+  // namespace / not be readable by this token).
+  $effect(() => {
+    if (!opDetail) {
+      inputChecks = {};
+      return;
+    }
+    if (opDetail.input_kinds.length === 0) {
+      inputChecks = {};
+      return;
+    }
+    const ids = Array.from(new Set(inputIds()));
+    if (ids.length === 0) {
+      inputChecks = {};
+      return;
+    }
+    // Lower-case the allowed kinds once for cheap comparisons.
+    const allowed = new Set(opDetail.input_kinds.map((k) => k.toLowerCase()));
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      // Mark all currently-pending ids as checking.
+      const initial: Record<string, InputCheck> = {};
+      for (const id of ids) initial[id] = { status: 'checking' };
+      inputChecks = initial;
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const art = await api.get<{ kind: string }>(`/artifacts/${id}`);
+            if (cancelled) return;
+            const next: InputCheck = allowed.has(art.kind.toLowerCase())
+              ? { status: 'ok', kind: art.kind }
+              : { status: 'wrong_kind', kind: art.kind };
+            inputChecks = { ...inputChecks, [id]: next };
+          } catch (e) {
+            if (cancelled) return;
+            if (e instanceof ApiError && e.status === 404) {
+              inputChecks = { ...inputChecks, [id]: { status: 'not_found' } };
+            } else {
+              inputChecks = {
+                ...inputChecks,
+                [id]: {
+                  status: 'error',
+                  detail: e instanceof ApiError ? e.detail : String(e),
+                },
+              };
+            }
+          }
+        }),
+      );
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  });
+
+  // Hard-block submit when any input has a kind mismatch. "Not found"
+  // and "error" are surfaced inline but don't block — the engine is the
+  // source of truth and may still resolve them (different namespace,
+  // stale cache, etc.).
+  const inputBlockingError = $derived.by<string | null>(() => {
+    if (!opDetail || opDetail.input_kinds.length === 0) return null;
+    const ids = inputIds();
+    if (ids.length === 0) return null;
+    const wrong = ids
+      .map((id) => ({ id, check: inputChecks[id] }))
+      .filter((row) => row.check?.status === 'wrong_kind');
+    if (wrong.length === 0) return null;
+    const allowed = opDetail.input_kinds.join(' | ');
+    const got = wrong
+      .map((row) => (row.check?.status === 'wrong_kind' ? row.check.kind : '?'))
+      .join(', ');
+    return `Wrong input kind${wrong.length === 1 ? '' : 's'}: expected ${allowed}, got ${got}.`;
+  });
 
   // Debounced cost preview — refresh whenever the op, backend, params,
   // or inputs change. Returning a cleanup from $effect cancels both
@@ -242,15 +334,49 @@
             Input artifact ids
           </span>
           <span class="block text-xs mb-1.5" style="color: var(--text-muted);">
-            Space- or comma-separated. Order matters when the op declares multiple input kinds.
+            Space- or comma-separated. Expecting <code class="font-mono">{opDetail.input_kinds.join(' | ')}</code>.
+            {#if opDetail.variadic_inputs}
+              Any number of inputs, each of the listed kinds.
+            {/if}
           </span>
           <input
             type="text"
             bind:value={inputIdsText}
             class="w-full px-3 py-2 rounded text-sm font-mono"
-            style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
+            style="background: var(--bg-page); color: var(--text-primary); border: 1px solid {inputBlockingError
+              ? 'var(--accent-red)'
+              : 'var(--border-light)'};"
             placeholder="e.g. a-3c1f… b-9b2c…"
           />
+          {#if Object.keys(inputChecks).length > 0}
+            <ul class="mt-1.5 space-y-0.5 text-xs font-mono">
+              {#each Object.entries(inputChecks) as [id, check] (id)}
+                <li>
+                  {#if check.status === 'checking'}
+                    <span style="color: var(--text-muted);">… {id.slice(0, 12)}…</span>
+                  {:else if check.status === 'ok'}
+                    <span style="color: var(--accent-green);">✓ {id.slice(0, 12)}… — {check.kind}</span>
+                  {:else if check.status === 'wrong_kind'}
+                    <span style="color: var(--accent-red);">
+                      ✗ {id.slice(0, 12)}… — got <strong>{check.kind}</strong>, need {opDetail.input_kinds.join(' | ')}
+                    </span>
+                  {:else if check.status === 'not_found'}
+                    <span style="color: var(--accent-amber);">
+                      ⚠ {id.slice(0, 12)}… — not found in this namespace
+                    </span>
+                  {:else}
+                    <span style="color: var(--text-muted);">? {id.slice(0, 12)}… — {check.detail}</span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if inputBlockingError}
+            <p
+              class="mt-2 text-xs p-2 rounded"
+              style="color: var(--accent-red); background: var(--accent-red-soft); border: 1px solid rgba(220, 38, 38, 0.25);"
+            >{inputBlockingError}</p>
+          {/if}
         </label>
       {/if}
 
@@ -319,10 +445,11 @@
 
         <button
           type="button"
-          disabled={!selectedOp || submitting}
+          disabled={!selectedOp || submitting || inputBlockingError !== null}
           onclick={submit}
           class="px-5 py-2 rounded text-sm font-semibold disabled:opacity-50"
           style="background: var(--accent-green); color: var(--text-inverse);"
+          title={inputBlockingError ?? ''}
         >
           {submitting ? 'Submitting…' : 'Run'}
         </button>
