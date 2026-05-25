@@ -618,7 +618,7 @@
         <h3 class="text-xs font-semibold mt-4 mb-2" style="color: var(--text-secondary);">{category}</h3>
         <div class="rounded" style="border: 1px solid var(--border-soft);">
           {#each rows as row (row.name)}
-            <div class="p-3" style="border-bottom: 1px solid var(--border-soft);">
+            <div class="p-3" style="border-bottom: 1px solid var(--border-soft);" data-secret-row={row.name}>
               <div class="flex items-start justify-between gap-3 mb-1 flex-wrap">
                 <div>
                   <div class="text-xs font-mono font-semibold">

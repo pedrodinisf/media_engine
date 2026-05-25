@@ -54,23 +54,28 @@ test('Settings → Secrets lists the catalog and round-trips a save', async ({ p
   await expect(page.getByText('ANTHROPIC_API_KEY')).toBeVisible();
   await expect(page.getByText('HF_TOKEN')).toBeVisible();
 
-  // Type a secret value into the GEMINI_API_KEY row and save.
-  const geminiRow = page.locator('div', { hasText: /^🟢 GEMINI_API_KEY|⚪ GEMINI_API_KEY/ }).first();
-  const input = geminiRow.locator('input[type="password"]').first();
+  // Each row carries a stable data-secret-row attribute so the spec
+  // doesn't depend on fragile text-based locators.
+  const geminiRow = page.locator('[data-secret-row="GEMINI_API_KEY"]');
+  await expect(geminiRow).toBeVisible();
+
+  const input = geminiRow.locator('input[type="password"]');
   await input.fill('test-key-from-e2e');
   await geminiRow.getByRole('button', { name: 'Save' }).click();
 
   // The status must flip to "set" (🟢 prefix) within a couple seconds
   // of the PUT round-trip.
-  await expect(page.locator('text=/🟢\\s+GEMINI_API_KEY/')).toBeVisible({
+  await expect(geminiRow.locator('text=/🟢\\s+GEMINI_API_KEY/')).toBeVisible({
     timeout: 5_000,
   });
 });
 
 test('B-005: composite op shows "(composite)" not "—" in cost preview', async ({ page }) => {
   await page.goto(`${baseURL}/ui/run`);
-  // Pick intelligence.summarize from the op picker.
-  await page.locator('select').first().selectOption('intelligence.summarize');
+  // The op picker is a button list (each op is a <button> in the left
+  // pane); the first <select> on the page is the backend picker that
+  // appears AFTER an op is chosen. Click the button by exact text.
+  await page.getByRole('button', { name: 'intelligence.summarize', exact: true }).click();
   // Wait for the debounced cost preview to fire (~250ms) + render.
   // The fix surfaces "(composite — chosen at run time)" via the
   // `embedded` flag from /run/preview. The pre-fix UI would show "—".
