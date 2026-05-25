@@ -10,9 +10,9 @@ audio (the underlying Whisper backends typically expose a fast
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     Analysis,
@@ -28,10 +28,14 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.audio._models import WHISPER_MODELS
 
 
 class DetectLanguageParams(BaseModel):
-    model: str = "mlx-community/whisper-large-v3-mlx"
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(WHISPER_MODELS)}),
+    ] = "mlx-community/whisper-large-v3-mlx"
 
 
 @register_op

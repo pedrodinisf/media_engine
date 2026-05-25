@@ -8,9 +8,9 @@ Backends ship in ``media_engine.backends.transcribe.*``.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -26,10 +26,14 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.audio._models import WHISPER_MODELS
 
 
 class TranscribeParams(BaseModel):
-    model: str = "mlx-community/whisper-large-v3-mlx"
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(WHISPER_MODELS)}),
+    ] = "mlx-community/whisper-large-v3-mlx"
     language: str | None = None  # None = auto-detect
     temperature: float = 0.0
     word_timestamps: bool = True

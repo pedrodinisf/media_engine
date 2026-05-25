@@ -8,9 +8,9 @@ speaker_id}]`` and ``num_speakers``.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -26,13 +26,17 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.audio._models import DIARIZE_MODELS
 
 
 class DiarizeParams(BaseModel):
     num_speakers: int | None = None
     min_speakers: int | None = None
     max_speakers: int | None = None
-    model: str = "pyannote/speaker-diarization-3.1"
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(DIARIZE_MODELS)}),
+    ] = "pyannote/speaker-diarization-3.1"
 
 
 @register_op
