@@ -325,6 +325,21 @@ class VllmMlxVideoMultimodalBackend(Backend):
         return CostEstimate(local_seconds=30.0)
 
 
+def release_server(ctx: OperationContext) -> bool:
+    """Stop the vllm-mlx server so its RAM is freed.
+
+    Composites that fan out a different model after a vllm-mlx phase
+    (e.g. ``video.comprehend``: per-frame VLM → audio transcribe →
+    Gemini synth) call this between phases to reclaim the ~8-12 GB the
+    server holds. The next caller will pay the ~30-60s warm cost when
+    they ask for a model again, but the rest of the pipeline gets the
+    RAM back. Returns ``True`` if something was actually stopped.
+    """
+    if ctx.server_manager is None:
+        return False
+    return ctx.server_manager.stop(_SERVER_NAME)
+
+
 # Public re-exports: the vllm-mlx server lifecycle + frame-encoding path is
 # shared verbatim by ``backends.frames_analyze.vllm_mlx`` (same local model,
 # no extraction step). Exposed as public names so that reuse doesn't reach
@@ -341,4 +356,5 @@ __all__ = [
     "ensure_server",
     "find_vllm_mlx_binary",
     "frame_data_url",
+    "release_server",
 ]
