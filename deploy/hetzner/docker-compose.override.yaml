@@ -1,0 +1,107 @@
+# media_engine — Hetzner deploy override.
+#
+# Layered on top of infra/docker/docker-compose.yaml. Invoked with:
+#   docker compose \
+#     --project-directory <repo-root> \
+#     -f infra/docker/docker-compose.yaml \
+#     -f deploy/hetzner/docker-compose.override.yaml \
+#     <cmd>
+#
+# (bootstrap.sh and the operator scripts encapsulate this via a `dc()`
+# function so the project-directory + both -f files are impossible to
+# forget.)
+#
+# What changes vs upstream:
+#   1. Postgres password is env-driven (POSTGRES_PASSWORD), and the
+#      pgvector extension is created via a mounted init SQL file.
+#   2. Engine image is rebuilt from Dockerfile.hetzner with the full
+#      Linux extras superset + Playwright chromium baked in.
+#   3. The public 8000 port publish from upstream is dropped — engine
+#      is reachable only over the compose user-defined network from
+#      Caddy. (Dodges the Docker-vs-UFW iptables bypass gotcha.)
+#   4. secrets.env is bind-mounted into the container so the Settings
+#      UI can rotate API keys without a restart.
+#   5. Caddy added as the TLS-terminating reverse proxy (auto Let's
+#      Encrypt via the HTTP-01 challenge).
+#   6. restart: unless-stopped on every long-lived service.
+
+# Path-resolution note (Compose v2):
+#   Relative paths in compose files (build.context AND bind mount
+#   sources) are resolved against the COMPOSE PROJECT DIRECTORY,
+#   which defaults to the directory of the first -f file. Our
+#   wrapper invokes:
+#     docker compose -f infra/docker/docker-compose.yaml \
+#                    -f deploy/hetzner/docker-compose.override.yaml ...
+#   so the project directory is `infra/docker/`. Upstream's
+#   `context: ../..` is designed for that default. Everything below
+#   uses `../..` to reach the repo root.
+#
+#   Do NOT pass --project-directory anywhere — overriding it breaks
+#   upstream's `../..`.
+
+services:
+  postgres:
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ../../deploy/hetzner/init:/docker-entrypoint-initdb.d:ro
+
+  engine:
+    build:
+      # `../..` from project dir (infra/docker/) = repo root.
+      context: ../..
+      dockerfile: deploy/hetzner/Dockerfile.hetzner
+    image: media_engine:hetzner
+    restart: unless-stopped
+    # Drop the upstream `8000:8000` publish — Caddy proxies internally
+    # over the compose network. !reset is the Compose Spec sequence
+    # override marker (compose v2.24+; Ubuntu apt ships v2.37+).
+    ports: !reset []
+    expose:
+      - "8000"
+    environment:
+      # Connect to the in-compose Postgres with the env-driven password.
+      MEDIA_ENGINE_DB_URL: postgresql+psycopg://media_engine:${POSTGRES_PASSWORD}@postgres:5432/media_engine
+      # Sane prod minimum. Upstream override was 1 GB (dev-friendly).
+      MEDIA_ENGINE_MIN_FREE_GB: "10"
+      MEDIA_ENGINE_MAX_UPLOAD_MB: ${MEDIA_ENGINE_MAX_UPLOAD_MB:-2048}
+      # Anchor the config dir so the mounted secrets.env (below) lands
+      # at the path EngineConfig.load looks at.
+      MEDIA_ENGINE_CONFIG_DIR: /home/engine/.config/media_engine
+      # NOTE on HF_HOME / MEDIA_ENGINE_MODELS_DIR:
+      #   Both are intentionally unset. EngineConfig auto-exports
+      #   HF_HOME from models_dir, which defaults to
+      #   /var/lib/media_engine/models (under PERMANENT_STORE). Setting
+      #   either here would override the Settings → Storage UI's view
+      #   of where models live.
+      # NOTE on API keys (ANTHROPIC / GEMINI / OPENAI / HF_TOKEN):
+      #   These live in the mounted secrets.env, NOT here. The runtime
+      #   secrets loader auto-exports them into os.environ before
+      #   BaseSettings parsing.
+    volumes:
+      # Mount secrets.env read-write so the Settings UI can rotate keys
+      # in place. The host file is chmod 0600 + chowned to the engine
+      # user's uid by bootstrap.sh.
+      - ../../deploy/hetzner/secrets.env:/home/engine/.config/media_engine/secrets.env:rw
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../../deploy/hetzner/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      MEDIA_ENGINE_DOMAIN: ${MEDIA_ENGINE_DOMAIN}
+      MEDIA_ENGINE_ACME_EMAIL: ${MEDIA_ENGINE_ACME_EMAIL}
+    depends_on:
+      engine:
+        condition: service_healthy
+
+volumes:
+  caddy-data:
+  caddy-config:

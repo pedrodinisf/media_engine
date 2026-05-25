@@ -1,0 +1,153 @@
+# media_engine — Hetzner single-VPS build.
+#
+# Wraps the upstream four-stage build (see infra/docker/Dockerfile)
+# with the full Linux-viable extras superset baked in plus Playwright
+# chromium installed as the unprivileged `engine` user. Image is
+# self-contained: no model downloads or browser downloads at runtime,
+# so cold-start is deterministic.
+#
+# Build via the compose override only:
+#   docker compose -f infra/docker/docker-compose.yaml \
+#                  -f deploy/hetzner/docker-compose.override.yaml \
+#                  --project-directory . build engine
+
+# syntax=docker/dockerfile:1.7
+
+ARG PYTHON_VERSION=3.11
+ARG NODE_VERSION=22
+
+# ─────────────────────────────────────────────────────────────────────
+# Stage 1: ui-build — SvelteKit SPA (identical to upstream)
+# ─────────────────────────────────────────────────────────────────────
+FROM node:${NODE_VERSION}-bookworm-slim AS ui-build
+
+RUN corepack enable
+WORKDIR /work
+COPY web ./web
+RUN pnpm -C web install --frozen-lockfile \
+    && pnpm -C web build
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Stage 2: builder — Python deps via uv, full Linux extras superset
+# ─────────────────────────────────────────────────────────────────────
+FROM python:${PYTHON_VERSION}-slim AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.5.5 /uv /usr/local/bin/uv
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+COPY pyproject.toml uv.lock README.md ./
+COPY media_engine ./media_engine
+COPY alembic.ini ./alembic.ini
+
+ENV UV_LINK_MODE=copy
+
+# Full Linux extras superset (matches the Hetzner deployment plan):
+#   api postgres search           — transport + cache + search
+#   acquire-url                   — yt-dlp + playwright (chromium installed in stage 3)
+#   diarize embed chunk           — local CPU model backends
+#   vlm-cloud vlm-local mcp       — cloud SDKs + MCP transport
+#   ocr classify document         — image + PDF
+# Explicitly skipped:
+#   transcribe-mlx llm-mlx        — Apple Silicon only (won't install on Linux)
+#   live                          — pynput needs X server; signal fallback works headless
+RUN uv sync --no-dev --frozen \
+        --extra api \
+        --extra postgres \
+        --extra search \
+        --extra acquire-url \
+        --extra diarize \
+        --extra embed \
+        --extra chunk \
+        --extra vlm-cloud \
+        --extra vlm-local \
+        --extra mcp \
+        --extra ocr \
+        --extra classify \
+        --extra document
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Stage 3: api-only — Python runtime + Playwright chromium baked
+# ─────────────────────────────────────────────────────────────────────
+FROM python:${PYTHON_VERSION}-slim AS api-only
+
+# Runtime apt packages:
+#   ffmpeg / libpq5 / curl / ca-certificates — inherited from upstream
+#   Plus the Debian bookworm runtime libs Playwright's chromium needs.
+#   We install them by name (rather than `playwright install-deps`)
+#   because the latter shells out to apt at image-build time as root
+#   even when invoked from inside the venv, and we want the apt step
+#   to live in a single, auditable RUN.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libpq5 \
+        curl \
+        ca-certificates \
+        libnss3 \
+        libnspr4 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libgbm1 \
+        libpango-1.0-0 \
+        libcairo2 \
+        libasound2 \
+        fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --shell /bin/bash engine
+WORKDIR /home/engine/app
+
+COPY --from=builder --chown=engine:engine /build /home/engine/app
+
+# NOTE: do NOT set HF_HOME here. Since commit 60238c6, EngineConfig.load
+# auto-exports HF_HOME from `models_dir` (default
+# {permanent_store}/models). Setting it manually would silently
+# override the runtime behavior the Web UI Settings panel expects.
+ENV PATH="/home/engine/app/.venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    MEDIA_ENGINE_LOG_FORMAT=json \
+    MEDIA_ENGINE_PERMANENT_STORE=/var/lib/media_engine \
+    PLAYWRIGHT_BROWSERS_PATH=/home/engine/.cache/ms-playwright
+
+VOLUME ["/var/lib/media_engine"]
+
+USER engine
+
+# Bake the chromium browser into the image (~170 MB) so cold start
+# doesn't require network. install-deps is NOT used — we installed
+# the apt packages by name above as root.
+RUN python -m playwright install chromium
+
+EXPOSE 8000
+
+# start-period is bumped vs upstream's 10s — sentence-transformers,
+# pyannote, and CLIP imports add several seconds to cold boot.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/ready || exit 1
+
+CMD ["med", "api", "start", "--host", "0.0.0.0", "--port", "8000"]
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Stage 4: runtime — api-only + SPA dist tree (default target)
+# ─────────────────────────────────────────────────────────────────────
+FROM api-only AS runtime
+
+COPY --from=ui-build --chown=engine:engine \
+     /work/media_engine/web/dist \
+     /home/engine/app/media_engine/web/dist

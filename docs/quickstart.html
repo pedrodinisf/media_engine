@@ -1485,6 +1485,7 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
     <a class="tool-btn" href="../README.md">Readme</a>
     <a class="tool-btn" href="architecture.md">Arch</a>
     <a class="tool-btn" href="deployment.md">Deploy</a>
+    <a class="tool-btn" href="Hetzner_Deployment_Handbook.md">Hetzner</a>
   </div>
 </header>
 
@@ -2447,7 +2448,7 @@ Output as Markdown headings. Be concise.</pre>
      ──────────────────────────────────────────────────────────── -->
 <section class="fade" id="deployment">
   <div class="eyebrow">DEPLOYMENT <span class="id">011 · SHAPES</span></div>
-  <h2 class="section-title">Same engine, six deployment models.</h2>
+  <h2 class="section-title">Same engine, seven deployment models.</h2>
   <p class="section-lede">
     The engine is single-process by design; the async surface bounds parallelism with resource semaphores. Scale horizontally by sharing one Postgres + permanent_store across multiple stateless replicas. Multi-tenant: one process per namespace, tokens scoped accordingly.
   </p>
@@ -2461,6 +2462,7 @@ Output as Markdown headings. Be concise.</pre>
       <tr><td class="cmd">CLI (warm)</td><td class="cmd">med daemon start</td><td class="when">Local development with hot models. CLI commands transparently route through the daemon.</td></tr>
       <tr><td class="cmd">REST</td><td class="cmd">med api start</td><td class="when">Service integration, web frontends, async job pattern with SSE event streams.</td></tr>
       <tr><td class="cmd">Compose</td><td class="cmd">docker compose up</td><td class="when">Single-host production. Engine container + <code class="inline">pgvector/pgvector:pg16</code> sidecar, named volumes.</td></tr>
+      <tr><td class="cmd">Hetzner VPS</td><td class="cmd">bash deploy/hetzner/bootstrap.sh</td><td class="when">Single-VPS one-shot on Hetzner Cloud (Ubuntu 22.04/24.04). Caddy + Let's Encrypt, Postgres/pgvector, full Linux extras superset, mounted operator secrets, UFW + fail2ban + unattended-upgrades. See the <a href="Hetzner_Deployment_Handbook.md">Hetzner Deployment Handbook</a>.</td></tr>
       <tr><td class="cmd">Helm</td><td class="cmd">helm install ... infra/helm/media-engine</td><td class="when">Kubernetes. ConfigMap + Secret + PVC + Service + Ingress + Deployment with liveness/readiness probes.</td></tr>
       <tr><td class="cmd">Terraform</td><td class="cmd">module "media-engine" { ... }</td><td class="when">Composable into a larger cluster module. Wraps the bundled chart via <code class="inline">helm_release</code>.</td></tr>
     </tbody>

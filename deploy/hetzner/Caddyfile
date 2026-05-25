@@ -1,0 +1,34 @@
+# media_engine — Caddyfile for the Hetzner single-VPS deploy.
+#
+# One site block. TLS via automatic Let's Encrypt (HTTP-01 challenge —
+# requires port 80 reachable from the public Internet). SSE endpoints
+# are matched first and routed through a buffer-free reverse_proxy;
+# everything else falls into the default handler with compression.
+#
+# Critical: the `encode` directive is scoped INSIDE the default handle
+# block, NOT at the site level. Encoding wraps streamed responses in a
+# compression frame which breaks SSE (Caddy issue #6293).
+
+{$MEDIA_ENGINE_DOMAIN} {
+    tls {$MEDIA_ENGINE_ACME_EMAIL}
+
+    # Long-lived event streams. Per-job and global engine event bus.
+    # `flush_interval -1` disables buffering — Caddy flushes after each
+    # write so SSE frames reach the browser in real time.
+    @sse path /jobs/*/events /events/stream
+    handle @sse {
+        reverse_proxy engine:8000 {
+            flush_interval -1
+            transport http {
+                read_timeout 24h
+                write_timeout 24h
+            }
+        }
+    }
+
+    # Everything else (UI, REST, /health, /ready, uploads, etc.).
+    handle {
+        encode zstd gzip
+        reverse_proxy engine:8000
+    }
+}
