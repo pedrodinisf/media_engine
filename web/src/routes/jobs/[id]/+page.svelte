@@ -6,6 +6,21 @@
 
   type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
+  /**
+   * Mirror of media_engine/api/jobs.py::_classify_error — the dict
+   * persisted into Job.error when a submission/op raises. Older code
+   * referenced this as `failure_envelope` and never matched the server
+   * field name (B-011 p0): every failed job rendered "No failure
+   * recorded" even when the error was there.
+   */
+  type JobError = {
+    error_class: string;
+    message: string;
+    retryable: boolean;
+    suggested_action: string | null;
+    traceback: string | null;
+  };
+
   type Job = {
     id: string;
     status: JobStatus;
@@ -14,7 +29,7 @@
     started_at: string | null;
     finished_at: string | null;
     op_run_ids: string[];
-    failure_envelope?: unknown;
+    error?: JobError | null;
   };
 
   type OperationRunRef = {
@@ -33,7 +48,19 @@
   let error: string | null = $state(null);
   let activeTab: 'events' | 'op_runs' | 'outputs' | 'failure' = $state('events');
   let events: SSEEvent[] = $state([]);
+  let showTraceback = $state(false);
   const jobId = $derived($page.params.id ?? '');
+
+  // A job is in a terminal state if no further events will arrive. Used
+  // by the Events tab to swap the indefinite "Waiting for events…"
+  // placeholder for a one-shot "no events were recorded" message when
+  // the engine bailed before emitting op_started (B-012 p1) — e.g. an
+  // input-kind validation failure rejects the submission before any
+  // op_run row is created.
+  const isTerminal = $derived.by(() => {
+    const s = detail?.job.status;
+    return s === 'failed' || s === 'completed' || s === 'cancelled';
+  });
 
   async function refresh(currentJobId: string): Promise<void> {
     try {
@@ -157,7 +184,19 @@
 
 <section class="p-4 rounded" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
   {#if activeTab === 'events'}
-    {#if events.length === 0}
+    {#if events.length === 0 && isTerminal}
+      <p class="text-xs italic" style="color: var(--text-muted);">
+        No events were recorded for this job.
+        {#if detail?.job.status === 'failed'}
+          The engine rejected the submission before any op started —
+          check the <button
+            type="button"
+            class="underline"
+            onclick={() => (activeTab = 'failure')}
+          >Failure tab</button> for the reason.
+        {/if}
+      </p>
+    {:else if events.length === 0}
       <p class="text-xs italic" style="color: var(--text-muted);">
         Waiting for events…
       </p>
@@ -200,11 +239,42 @@
       {/if}
     {/if}
   {:else if activeTab === 'failure'}
-    {#if detail?.job.failure_envelope}
-      <pre
-        class="font-mono text-xs whitespace-pre-wrap p-3 rounded"
-        style="background: var(--bg-deep); border: 1px solid var(--border-warm); color: var(--text-primary);"
-      >{JSON.stringify(detail.job.failure_envelope, null, 2)}</pre>
+    {#if detail?.job.error}
+      {@const err = detail.job.error}
+      <div class="space-y-3">
+        <div class="flex items-start gap-2 flex-wrap">
+          <span
+            class="font-mono text-xs px-2 py-0.5 rounded"
+            style="background: var(--accent-red-soft); color: var(--accent-red); border: 1px solid rgba(220, 38, 38, 0.35);"
+          >{err.error_class}</span>
+          <span
+            class="font-mono text-xs px-2 py-0.5 rounded"
+            style="background: var(--bg-page); color: var(--text-muted); border: 1px solid var(--border-light);"
+          >{err.retryable ? 'retryable' : 'not retryable'}</span>
+        </div>
+        <p class="text-sm font-mono whitespace-pre-wrap" style="color: var(--text-primary);">
+          {err.message}
+        </p>
+        {#if err.suggested_action}
+          <p
+            class="text-xs p-3 rounded"
+            style="background: var(--accent-amber-soft); color: var(--accent-amber); border: 1px solid var(--accent-amber-line);"
+          >
+            <strong>Suggestion:</strong> {err.suggested_action}
+          </p>
+        {/if}
+        {#if err.traceback}
+          <details bind:open={showTraceback}>
+            <summary class="text-xs cursor-pointer" style="color: var(--text-secondary);">
+              {showTraceback ? 'Hide' : 'Show'} traceback
+            </summary>
+            <pre
+              class="font-mono text-xs whitespace-pre-wrap p-3 rounded mt-2 max-h-[50vh] overflow-y-auto"
+              style="background: var(--bg-deep); border: 1px solid var(--border-warm); color: var(--text-secondary);"
+            >{err.traceback}</pre>
+          </details>
+        {/if}
+      </div>
     {:else}
       <p class="text-xs italic" style="color: var(--text-muted);">No failure recorded.</p>
     {/if}

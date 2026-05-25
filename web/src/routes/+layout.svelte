@@ -53,6 +53,25 @@
   });
 
   let isSetupRoute = $derived($page.url.pathname.startsWith(`${base}/setup`));
+
+  // Pulled from /health (unauthenticated) so the banner always tracks
+  // the running engine's `media_engine.__version__` instead of drifting
+  // when the wheel ships ahead of the SPA. Falls back to a sentinel
+  // when the engine is unreachable (e.g. dev preview, network blip) so
+  // the header still renders.
+  let engineVersion = $state('…');
+  onMount(() => {
+    // /health is unauthenticated + served at the FastAPI root, not under
+    // the SvelteKit base path ('/ui') — fetch the bare path.
+    void fetch('/health')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (body && typeof body.version === 'string') engineVersion = body.version;
+      })
+      .catch(() => {
+        engineVersion = '?';
+      });
+  });
 </script>
 
 <div class="min-h-screen flex flex-col">
@@ -62,7 +81,7 @@
   >
     <a href={isSetupRoute ? `${base}/setup` : `${base}/`} class="flex items-baseline gap-2 whitespace-nowrap text-text-inverse hover:no-underline">
       <span class="font-mono text-sm font-semibold tracking-wider">media_engine</span>
-      <span class="text-xs opacity-60 font-mono">v0.6.0</span>
+      <span class="text-xs opacity-60 font-mono">v{engineVersion}</span>
     </a>
 
     {#if !isSetupRoute}
