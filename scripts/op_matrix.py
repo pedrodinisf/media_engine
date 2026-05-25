@@ -553,21 +553,82 @@ async def run_matrix(
     # Pre-compute doctor report to gate ops that have no working backend
     doc = diagnose()
     unavailable_ops = {op.op_name for op in doc.ops if op.overall == "unavailable"}
-    # Map of op_name → first working backend name, used as a backend=
-    # override when the static default is unavailable but an alternative
-    # works (router ops). This exercises the engine through a viable
-    # path; the bug in the default routing is surfaced separately by
-    # doctor's per-backend status.
-    backend_override: dict[str, str] = {}
+
+    # When doctor flags the static `default_backend` as unavailable but a
+    # router alternative works, we want to steer through the alternative
+    # so the matrix tests "does this op run end-to-end" (doctor already
+    # surfaces "does the default route work" separately).
+    #
+    # Original implementation forced ``backend=<alt>`` directly. After
+    # B-008 added router model/backend consistency validation (commit
+    # e967e95), forcing ``backend`` while leaving the default ``model``
+    # untouched fails the new consistency check — backend=vllm-mlx +
+    # model=gemini-2.5-pro is intentionally rejected by the engine.
+    #
+    # Correct shape: override the ``model`` param to one whose router
+    # picks the working backend. The router's own ``select_backend()``
+    # is our oracle — we probe candidate model ids and pick the first
+    # one that routes to the available backend. This generalises across
+    # all three current router ops (intelligence.extract, frames.analyze,
+    # video.multimodal) without per-op hardcoding.
+    # Candidate model ids per task shape. Order matters within each
+    # list — first match against the working alt backend wins.
+    PROBE_TEXT_MODELS: tuple[str, ...] = (
+        "mlx-community/Qwen2.5-7B-Instruct-4bit",
+        "claude-opus-4-7",
+        "gemini-2.5-flash",
+    )
+    PROBE_VISION_MODELS: tuple[str, ...] = (
+        "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
+        "gemini-2.5-pro",
+    )
+
+    # Vision-shaped input kinds — ops that take any of these need a
+    # vision-language model, not a plain text LLM. The router itself
+    # only checks a model-id prefix, so it'd happily route a text mlx
+    # model to a vision backend; the load would then fail at runtime.
+    VISION_KINDS = {"frameset", "image", "video"}
+
+    def _candidate_models_for(op_cls: type[Operation]) -> tuple[str, ...]:
+        kinds = {k.value if hasattr(k, "value") else str(k) for k in op_cls.input_kinds}
+        if kinds & VISION_KINDS:
+            return PROBE_VISION_MODELS
+        return PROBE_TEXT_MODELS
+
+    model_override: dict[str, str] = {}
     for op_report in doc.ops:
         if (
-            op_report.default_backend_status == "unavailable"
-            and op_report.overall == "ok"
+            op_report.default_backend_status != "unavailable"
+            or op_report.overall != "ok"
         ):
-            for b in op_report.backends:
-                if b.overall == "ok":
-                    backend_override[op_report.op_name] = b.backend_name
-                    break
+            continue
+        # Find the alt backend doctor says is working.
+        alt_backend: str | None = next(
+            (b.backend_name for b in op_report.backends if b.overall == "ok"),
+            None,
+        )
+        if alt_backend is None:
+            continue
+        # Probe candidate models; first one whose router agrees with
+        # the working alt wins. Candidate set is scoped to text vs
+        # vision based on op.input_kinds so we don't dispatch a text
+        # mlx model into a vision-language backend.
+        op_cls = OpRegistry.get(op_report.op_name)
+        params_model_cls = op_cls.params_model
+        for candidate in _candidate_models_for(op_cls):
+            try:
+                # Most ops accept extra ignored fields; we just need a
+                # params instance whose `model` is the candidate.
+                params_inst = params_model_cls.model_construct(model=candidate)
+            except Exception:
+                continue
+            try:
+                routed = op_cls().select_backend(params_inst)
+            except Exception:
+                continue
+            if routed == alt_backend:
+                model_override[op_report.op_name] = candidate
+                break
 
     ops = OpRegistry.list_all()
     if op_filter is not None:
@@ -603,11 +664,13 @@ async def run_matrix(
 
         assert inputs is not None and params is not None
         # If doctor flagged the static default as broken but an
-        # alternative works, steer through the alternative — the matrix
-        # is testing "does this op run end-to-end at all", not "does
-        # the default route work" (doctor covers that).
-        if op_cls.name in backend_override:
-            params = {**params, "backend": backend_override[op_cls.name]}
+        # alternative works, steer through the alternative by swapping
+        # the model param to one whose router picks the working
+        # backend. See PROBE_MODELS above for the design rationale —
+        # B-008 router consistency check rules out the older
+        # backend-only override.
+        if op_cls.name in model_override:
+            params = {**params, "model": model_override[op_cls.name]}
         t0 = datetime.now(UTC)
         status, reason, output_ids = await run_one(engine, op_cls, inputs, params)
         elapsed_ms = (datetime.now(UTC) - t0).total_seconds() * 1000
