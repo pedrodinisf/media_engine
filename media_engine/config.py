@@ -79,7 +79,26 @@ class EngineConfig(BaseSettings):
     @classmethod
     def load(cls, config_file: Path | None = None) -> EngineConfig:
         """Load config from a TOML file (default ``~/.config/media_engine/config.toml``),
-        then merge environment variables on top."""
+        then merge environment variables on top.
+
+        Before the BaseSettings constructor runs, ``secrets.env`` (if
+        present in the config dir) is exported into ``os.environ`` so
+        operator-managed secrets are visible both to ``MEDIA_ENGINE_*``
+        settings parsing and to downstream ``BackendRequirements`` env
+        probes.
+        """
+        # Local import: avoid a runtime <-> top-level config cycle.
+        from media_engine.runtime.secrets import load_secrets
+
+        # Resolve config_dir from env first — the secrets file lives
+        # there, and we need to read it BEFORE the BaseSettings ctor
+        # runs (otherwise it can't see env vars sourced from the
+        # file). Honors the same MEDIA_ENGINE_CONFIG_DIR override as
+        # the eventual EngineConfig field.
+        env_config_dir = os.environ.get("MEDIA_ENGINE_CONFIG_DIR")
+        secrets_dir = Path(env_config_dir) if env_config_dir else _default_config_dir()
+        load_secrets(secrets_dir)
+
         toml_data: dict[str, Any] = {}
         if config_file is None:
             default_toml = _default_config_dir() / "config.toml"
