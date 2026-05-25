@@ -5,6 +5,7 @@
   import { api, ApiError } from '$lib/api/client';
   import type { JobAck } from '$lib/api/client';
   import SchemaForm from '$lib/components/forms/SchemaForm.svelte';
+  import RangeSlider from '$lib/components/forms/RangeSlider.svelte';
   import { initialParams } from '$lib/components/forms/schema';
   import type { ParamsSchema, ParamsValue } from '$lib/components/forms/schema';
 
@@ -66,7 +67,7 @@
   // ValueError. Catch the mistake at the form boundary instead.
   type InputCheck =
     | { status: 'checking' }
-    | { status: 'ok'; kind: string }
+    | { status: 'ok'; kind: string; duration: number | null }
     | { status: 'wrong_kind'; kind: string }
     | { status: 'not_found' }
     | { status: 'error'; detail: string };
@@ -152,10 +153,21 @@
       await Promise.all(
         ids.map(async (id) => {
           try {
-            const art = await api.get<{ kind: string }>(`/artifacts/${id}`);
+            const art = await api.get<{
+              kind: string;
+              metadata?: Record<string, unknown>;
+            }>(`/artifacts/${id}`);
             if (cancelled) return;
+            // Audio artifacts carry duration on `metadata.duration` (set by
+            // ffprobe at ingest). Older artifacts may lack it; the slider
+            // gracefully degrades when null.
+            const rawDuration = art.metadata?.duration;
+            const duration =
+              typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0
+                ? rawDuration
+                : null;
             const next: InputCheck = allowed.has(art.kind.toLowerCase())
-              ? { status: 'ok', kind: art.kind }
+              ? { status: 'ok', kind: art.kind, duration }
               : { status: 'wrong_kind', kind: art.kind };
             inputChecks = { ...inputChecks, [id]: next };
           } catch (e) {
@@ -180,6 +192,41 @@
       clearTimeout(timer);
     };
   });
+
+  // Audio range slider state — surfaces above SchemaForm when:
+  //   * the op is one of audio.transcribe / audio.diarize / audio.transcribe_diarized
+  //   * the first input id resolved as an Audio artifact with known duration
+  // The slider writes into params.start_s / params.end_s. Both null
+  // means "full audio" (engine default — no ffmpeg slice fires).
+  const AUDIO_RANGE_OPS = new Set([
+    'audio.transcribe',
+    'audio.diarize',
+    'audio.transcribe_diarized',
+  ]);
+  const audioInputDuration = $derived.by<number | null>(() => {
+    if (!selectedOp || !AUDIO_RANGE_OPS.has(selectedOp)) return null;
+    for (const id of inputIds()) {
+      const c = inputChecks[id];
+      if (c?.status === 'ok' && c.kind.toLowerCase() === 'audio' && c.duration !== null) {
+        return c.duration;
+      }
+    }
+    return null;
+  });
+  const audioInputResolvedKindMissingDuration = $derived.by<boolean>(() => {
+    if (!selectedOp || !AUDIO_RANGE_OPS.has(selectedOp)) return false;
+    for (const id of inputIds()) {
+      const c = inputChecks[id];
+      if (c?.status === 'ok' && c.kind.toLowerCase() === 'audio' && c.duration === null) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  function onRangeChange(start: number | null, end: number | null): void {
+    params = { ...params, start_s: start, end_s: end };
+  }
 
   // Hard-block submit when any input has a kind mismatch. "Not found"
   // and "error" are surfaced inline but don't block — the engine is the
@@ -399,6 +446,24 @@
             </span>
           {/if}
         </label>
+      {/if}
+
+      {#if audioInputDuration !== null}
+        <RangeSlider
+          duration={audioInputDuration}
+          startValue={(params.start_s as number | null | undefined) ?? null}
+          endValue={(params.end_s as number | null | undefined) ?? null}
+          onChange={onRangeChange}
+        />
+      {:else if audioInputResolvedKindMissingDuration}
+        <p
+          class="mb-3 text-xs italic p-2 rounded"
+          style="color: var(--text-secondary); background: var(--bg-page); border: 1px solid var(--border-light);"
+        >
+          This audio's duration isn't in the catalog metadata — use the numeric
+          <code class="font-mono">start_s</code> / <code class="font-mono">end_s</code>
+          fields below to bound the run to a sub-range.
+        </p>
       {/if}
 
       <SchemaForm
