@@ -42,6 +42,13 @@ class Progress(_BaseEvent):
     fraction: float
     message: str = ""
     phase: str | None = None
+    # Optional telemetry sourced by the heartbeat task (phase="heartbeat")
+    # and surfaced as live gauges in the Web UI. Always None when the
+    # emitter doesn't have the number — never zero-defaulted, so the UI
+    # can tell "no data yet" apart from a true zero reading.
+    available_memory_gb: float | None = None
+    eta_seconds: float | None = None
+    pool_bytes_estimate: int | None = None
 
 
 class ArtifactReady(_BaseEvent):
