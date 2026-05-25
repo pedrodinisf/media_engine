@@ -15,7 +15,7 @@ from media_engine.ops import register_op
 from media_engine.runtime.dag import Pipeline
 from media_engine.runtime.engine import Engine
 
-__version__ = "0.6.1"
+__version__ = "0.6.2"
 
 __all__ = [
     "AnyArtifact",
