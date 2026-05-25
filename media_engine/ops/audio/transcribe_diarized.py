@@ -10,6 +10,7 @@ emits.
 
 from __future__ import annotations
 
+import gc
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -30,6 +31,49 @@ from media_engine.ops import (
     register_op,
 )
 from media_engine.ops.audio._models import DIARIZE_MODELS, WHISPER_MODELS
+
+
+def _release_transcribe_model_cache() -> None:
+    """Drop mlx-whisper's cached model so pyannote has room to load.
+
+    The mlx-whisper backend doesn't use ``ctx.model_pool`` — it leans on
+    ``mlx_whisper.transcribe.ModelHolder``, a module-level singleton
+    that caches whatever was last loaded. That ~3 GB stays resident
+    after the transcribe sub-op returns, so by the time pyannote tries
+    to load (~700 MB resident, ~2 GB peak) the process can hit ~5-6 GB
+    on whisper-medium and OOM on a tight host.
+
+    Called between the two sub-op invocations in ``run``. Free first,
+    load second. Trade-off: a re-invocation of the composite has to
+    re-load whisper (~10-20s cold-cache on Apple Silicon), but the
+    sub-results are cached so the second call usually skips both sub-
+    ops entirely. RAM safety > re-load cost.
+
+    Best-effort and silent on missing optional deps — the composite
+    works with any registered transcribe backend; mlx-whisper specifics
+    only apply when mlx-whisper was the backend that ran.
+    """
+    try:
+        from mlx_whisper.transcribe import ModelHolder  # type: ignore[import-not-found]
+    except ImportError:
+        ModelHolder = None  # type: ignore[assignment]
+    if ModelHolder is not None:
+        ModelHolder.model = None
+        ModelHolder.model_path = None
+
+    # Apple Silicon's unified-memory allocator holds freed tensors
+    # until something prompts a sweep. Explicit clear ensures the
+    # bytes are reclaimable by pyannote on the next allocation.
+    try:
+        import mlx.core as mx  # type: ignore[import]
+        if hasattr(mx, "clear_cache"):
+            mx.clear_cache()
+        elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
+            mx.metal.clear_cache()
+    except ImportError:
+        pass
+
+    gc.collect()
 
 
 class TranscribeDiarizedParams(BaseModel):
@@ -147,6 +191,11 @@ class AudioTranscribeDiarized(Operation):
         transcribe_outs = await ctx.run_op(
             "audio.transcribe", inputs=[audio.id], **transcribe_kwargs
         )
+        # Free the whisper model before pyannote loads. Without this
+        # both stay resident → ~5-6 GB peak on whisper-medium, ~8-10 GB
+        # on large-v3. With it, peak per phase ≈ the larger of the two
+        # models alone. RAM-tight hosts depend on this.
+        _release_transcribe_model_cache()
         diarize_outs = await ctx.run_op(
             "audio.diarize", inputs=[audio.id], **diarize_kwargs
         )
