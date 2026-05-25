@@ -7,11 +7,13 @@
 <meta name="description" content="media_engine — universal media-processing engine. Typed artifacts, capability-named operations, swappable backends, content-addressed caching, async DAG execution. One substrate, six transports, 34 operations." />
 <title>media_engine · universal media-processing · Quick Start &amp; Operations Manual</title>
 <!--
-  Favicon — replicated-spark mark inlined as a data URL. Same geometry
-  as web/static/favicon.svg; embedded here so the static doc is
-  portable (no sibling-file dependency when hosted elsewhere).
+  Favicon — replicated-spark mark inlined as a data URL.
+  Tricolor (green #059669 / red #DC2626 / blue #2563EB) to match the
+  header logo; embedded here so the static doc is portable (no
+  sibling-file dependency when hosted elsewhere). Note: favicons
+  render static — the pulse animation lives on the header SVG only.
 -->
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23059669%22%3E%3Cpath%20d%3D%22M3%2012%20L8%206%20L8%2018%20Z%22%20opacity%3D%221.00%22%2F%3E%3Cpath%20d%3D%22M11%2012%20L16%206%20L16%2018%20Z%22%20opacity%3D%220.55%22%2F%3E%3Cpath%20d%3D%22M19%2012%20L22%209%20L22%2015%20Z%22%20opacity%3D%220.25%22%2F%3E%3C%2Fsvg%3E" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M3%2012%20L8%206%20L8%2018%20Z%22%20fill%3D%22%23059669%22%2F%3E%3Cpath%20d%3D%22M11%2012%20L16%206%20L16%2018%20Z%22%20fill%3D%22%23DC2626%22%2F%3E%3Cpath%20d%3D%22M19%2012%20L22%209%20L22%2015%20Z%22%20fill%3D%22%232563EB%22%2F%3E%3C%2Fsvg%3E" />
 
 <!-- Mermaid for diagrams -->
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
@@ -39,6 +41,9 @@
   --accent-amber-line: rgba(217, 119, 6, 0.25);
   --accent-red:        #DC2626;
   --accent-red-soft:   rgba(220, 38, 38, 0.08);
+  /* Brand-mark blue. Matches saturation of green + red so the three
+   * chevrons in the logo read as a balanced triad on the dark header. */
+  --accent-blue:       #2563EB;
 
   --text-primary:   #2D2D2D;
   --text-secondary: #555D66;
@@ -104,19 +109,22 @@ a:focus-visible { outline: 2px solid var(--accent-green); outline-offset: 2px; b
   text-transform: uppercase;
 }
 /*
- * Brand mark — "replicated spark". Three left-facing chevron pulses
- * tracing a horizontal axis with cascading opacity. Same geometry as
+ * Brand mark — "replicated spark". Three chevrons in green / red /
+ * blue tracing a horizontal axis. Same geometry as
  * web/src/lib/components/brand/Logo.svelte; inline here so the static
- * quickstart page doesn't have an extra HTTP round-trip. Color tracks
- * --accent-green; opacity on each path keeps the silhouette readable.
+ * quickstart page doesn't have an extra HTTP round-trip. Each path
+ * sets its own fill in the SVG markup; the cascading `pulse`
+ * animation on each chevron (offset 0 / 0.3s / 0.6s) gives the
+ * "propagating signal" rhythm — full color when on, fades to ~32%
+ * opacity at the trough.
  */
 .logo .brand-mark {
   display: inline-block;
   width: 22px;
   height: 22px;
-  color: var(--accent-green);
   margin: 0 2px 0 0;
 }
+.logo .brand-mark path { transform-origin: center; }
 .logo .brand-mark path:nth-child(1) { animation: pulse 2.4s infinite; }
 .logo .brand-mark path:nth-child(2) { animation: pulse 2.4s infinite 0.3s; }
 .logo .brand-mark path:nth-child(3) { animation: pulse 2.4s infinite 0.6s; }
@@ -1486,14 +1494,16 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
 <header class="header" role="banner">
   <span class="logo">
     <!--
-      Replicated-spark mark — same shape as web/src/lib/components/brand/Logo.svelte
-      and static/favicon.svg. Each path animates the pulse keyframe with a 0.3s
-      stagger so the three chevrons cascade like a propagating signal.
+      Replicated-spark mark. Three chevrons in green / red / blue —
+      reads as "RGB signal source decomposing into its channels," which
+      is on-theme for a media-processing engine. Each path animates the
+      pulse keyframe with a 0.3s stagger so the colors cascade like a
+      propagating signal.
     -->
-    <svg class="brand-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M3 12 L8 6 L8 18 Z" />
-      <path d="M11 12 L16 6 L16 18 Z" opacity="0.6" />
-      <path d="M19 12 L22 9 L22 15 Z" opacity="0.3" />
+    <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 12 L8 6 L8 18 Z"   fill="var(--accent-green)" />
+      <path d="M11 12 L16 6 L16 18 Z" fill="var(--accent-red)" />
+      <path d="M19 12 L22 9 L22 15 Z" fill="var(--accent-blue)" />
     </svg>
     <span class="name">MEDIA_ENGINE</span>
     <span class="tagline">universal media-processing</span>
