@@ -50,13 +50,31 @@ YAML frontmatter) or pipeline (YAML DAG).
   tracker, retry, events, health
 - `media_engine/profiles/` — profile loader + `Pipeline`
 - `media_engine/cli/`, `daemon/`, `api/`, `mcp/` — adapters (transports)
+- `media_engine/web/` — built SvelteKit SPA (`dist/`) served by `med web
+  start` at `/ui`. Source lives in top-level `web/` and is built via
+  `bash scripts/build_web.sh` (or `pnpm -C web build`).
 - `profiles/` — bundled starter profiles
 - `infra/` — Dockerfile, docker-compose, helm, terraform skeletons
-- `tests/` — unit + per-op + cross-validate
+- `tests/` — Python unit + per-op + cross-validate
+- `web/tests/` — frontend unit (`web/tests/unit/`) + Playwright e2e
+  (`web/tests/e2e/`); see `web/playwright.config.ts`
+- `docs/phase-6-5-bugs.md` — canonical bug ledger (IDs like `B-001`,
+  `B-013` referenced in commits and verify scripts)
+- `docs/web_ui_deferred.md` — Phase 6 v1 deferred items with bring-in
+  triggers
 
 ## Common commands
-- `uv sync` — install
-- `uv run pytest -q` — all tests (922 passing, 29 dep-gated skips)
+- `uv sync` — install (core deps only). Backends live behind extras
+  declared in `pyproject.toml` `[project.optional-dependencies]`
+  (`transcribe-mlx`, `diarize`, `vlm-cloud`, `acquire-url`, `api`,
+  `mcp`, `postgres`, …); install with `uv sync --extra <name>`.
+  `med doctor` reports which extras are currently active per op.
+- `uv run pytest -q` — Python unit + integration suite
+- `pnpm -C web test:unit` — frontend unit (vitest under `web/tests/unit/`)
+- `pnpm -C web test:e2e` — Playwright e2e (`web/tests/e2e/`); requires
+  a built `media_engine/web/dist/` and is also driven by
+  `scripts/verify_b001.sh` / `scripts/verify_settings.sh` against a
+  live `med web start`
 - `uv run pyright media_engine` — strict typecheck
 - `uv run ruff check` / `uv run ruff format` — lint/format
 - `uv run med ops` — list registered operations (34 as of Phase 5)
@@ -75,6 +93,12 @@ YAML frontmatter) or pipeline (YAML DAG).
 - `bash scripts/verify_b001.sh [--headed]` — drive a real Chromium
   through the Job-detail SSE flow against a clean `med web start`.
   Regression gate for B-001 (SSE Events tab); operator-invoked.
+- `bash scripts/verify_settings.sh [--headed]` — sibling of
+  `verify_b001.sh`; regression gate for the Settings (Doctor +
+  Secrets) + B-005 spec against a clean `med web start`.
+- `bash scripts/build_web.sh` (or `pnpm -C web install && pnpm -C web
+  build`) — rebuild the SvelteKit SPA into `media_engine/web/dist/`.
+  CI / `hatch build` runs this first so the wheel ships the dist tree.
 - `uv run med daemon start|status|stop` — warm-engine daemon lifecycle
 - `uv run med profile ls|show|run` — discover / inspect / execute profiles
 - `uv run med acquire <file>` — `acquire.upload` shortcut (local files)
@@ -95,6 +119,10 @@ YAML frontmatter) or pipeline (YAML DAG).
 - `uv run med mcp serve [--allow OP] [--deny OP]` — run the MCP stdio
   server (default policy: read-only — only `search.*` ops exposed)
 - `uv run med api start [--host] [--port]` — boot the FastAPI REST surface
+- `uv run med web start [--host] [--port] [--open]` — same boot as
+  `med api start` plus mounts the built SvelteKit SPA at `/ui`. Primary
+  GUI entrypoint; validates that `media_engine/web/dist/` exists. Use
+  `--open` to auto-launch a browser at `/ui/setup`.
 - `uv run med api token create|ls|revoke` — manage bearer tokens
 - `uv run med db migrate [--db-url]` — alembic upgrade head against the
   configured cache (sqlite or postgres)
@@ -131,27 +159,29 @@ YAML frontmatter) or pipeline (YAML DAG).
 10. Resource-aware: declared resources → `asyncio.Semaphore` (e.g. 1 VLM at a
     time on Apple Silicon).
 
-## Roadmap (after Phase 5)
+## Current state & roadmap
 
-Two post-Phase-5 phases are formalized in
-`~/.claude/plans/goofy-gathering-beaver.md` §12.5 + §12.6 and must be
-respected by future planning:
+Phases are formalized in `~/.claude/plans/goofy-gathering-beaver.md`
+§12.5 + §12.6 and must be respected by future planning.
 
-- **Phase 6 — Local-first Web UI** (commits 39–50, ~3,500 LOC). A
-  SvelteKit/Next.js SPA bundled in the engine container under `/ui`,
-  served by `med web start`. Full GUI parity with the CLI — anything
-  reachable via `med <verb>` is reachable from the UI. Scope:
-  ingestion panel (upload / URL / livestream / batch), run
-  configuration panel (op picker + auto-generated forms from
+**Shipped:**
+
+- **Phase 6 — Local-first Web UI** *(shipped — current version
+  `0.6.1`)*. SvelteKit SPA built into `media_engine/web/dist/` and
+  served by `med web start` at `/ui`. Full GUI parity with the CLI:
+  ingestion (upload / URL / livestream / batch), run configuration
+  (op picker + auto-generated forms from
   `params_model.model_json_schema()` + cost preview + backend
-  selector), job dashboard with SSE live updates, catalog browser
-  with per-kind preview affordances, lineage graph viewer, search +
-  cost ledger surfaces, profile workspace (visual DAG composer +
-  YAML editor + examples library), plugin manager (toggle optional
-  extras + custom op/backend modules), settings (config.toml,
-  resources.yaml, namespace switcher, token CRUD, backend health).
-  The shell stays first-class for power users and CI; the UI is
-  the path of least resistance for everyone else.
+  selector), job dashboard with SSE live updates, catalog browser,
+  lineage graph viewer, search + cost ledger, profile workspace,
+  plugin manager, settings (config.toml, resources.yaml, namespace
+  switcher, token CRUD, backend health). Deferred v1 items are
+  tracked in `docs/web_ui_deferred.md`; bug ledger lives in
+  `docs/phase-6-5-bugs.md`. The shell stays first-class for power
+  users and CI; the UI is the path of least resistance for everyone
+  else.
+
+**Roadmap:**
 
 - **Phase 7 — Acoustic speaker identity** (commits 51–54, ~1,500
   LOC). Extends Phase 5's name-DB `speakers.identify` with voice
