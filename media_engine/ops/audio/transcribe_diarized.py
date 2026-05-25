@@ -33,25 +33,32 @@ from media_engine.ops import (
 from media_engine.ops.audio._models import DIARIZE_MODELS, WHISPER_MODELS
 
 
-def _release_transcribe_model_cache() -> None:
-    """Drop mlx-whisper's cached model so pyannote has room to load.
+def _release_audio_models(ctx: OperationContext | None = None) -> None:
+    """Drop cached audio models (whisper singleton + pyannote pool slots).
 
-    The mlx-whisper backend doesn't use ``ctx.model_pool`` — it leans on
-    ``mlx_whisper.transcribe.ModelHolder``, a module-level singleton
-    that caches whatever was last loaded. That ~3 GB stays resident
-    after the transcribe sub-op returns, so by the time pyannote tries
-    to load (~700 MB resident, ~2 GB peak) the process can hit ~5-6 GB
-    on whisper-medium and OOM on a tight host.
+    Two layers — both best-effort and silent on missing optional deps so
+    the helper works regardless of which backend actually ran:
 
-    Called between the two sub-op invocations in ``run``. Free first,
-    load second. Trade-off: a re-invocation of the composite has to
-    re-load whisper (~10-20s cold-cache on Apple Silicon), but the
-    sub-results are cached so the second call usually skips both sub-
-    ops entirely. RAM safety > re-load cost.
+    * **mlx-whisper** doesn't use ``ctx.model_pool``; it leans on
+      ``mlx_whisper.transcribe.ModelHolder``, a module-level singleton
+      that caches whatever was last loaded (~3 GB for whisper-medium).
+      We null it out so pyannote can load without OOMing on tight hosts
+      (transcribe + pyannote both resident hits ~5-6 GB on medium,
+      ~8-10 GB on large-v3).
+    * **pyannote** does use ``ctx.model_pool`` (key prefix ``pyannote:``).
+      We drop every matching slot so the next caller — the per-frame VLM
+      fan-out in ``video.comprehend`` — gets the full RAM back. When the
+      helper is called *before* pyannote loaded (the audio.transcribe_diarized
+      site below), this is a no-op.
 
-    Best-effort and silent on missing optional deps — the composite
-    works with any registered transcribe backend; mlx-whisper specifics
-    only apply when mlx-whisper was the backend that ran.
+    Apple Silicon's unified-memory allocator holds freed tensors until
+    something prompts a sweep, so we also call ``mx.clear_cache`` + a
+    ``gc.collect`` to make the bytes promptly reclaimable.
+
+    Trade-off: a re-invocation of the composite has to re-load whisper
+    (~10-20s cold-cache on Apple Silicon), but the sub-results are
+    cached so the second call usually skips both sub-ops entirely.
+    RAM safety > re-load cost.
     """
     try:
         from mlx_whisper.transcribe import ModelHolder  # type: ignore[import-not-found]
@@ -61,9 +68,17 @@ def _release_transcribe_model_cache() -> None:
         ModelHolder.model = None
         ModelHolder.model_path = None
 
+    # Drop any pyannote pipelines from the engine's model pool. Keys are
+    # `pyannote:<model>` per backends/diarize/pyannote.py. Cheap no-op
+    # when called from sites where pyannote never loaded.
+    if ctx is not None and ctx.model_pool is not None:
+        for key in list(ctx.model_pool.keys()):
+            if key.startswith("pyannote:"):
+                ctx.model_pool.forget(key)
+
     # Apple Silicon's unified-memory allocator holds freed tensors
     # until something prompts a sweep. Explicit clear ensures the
-    # bytes are reclaimable by pyannote on the next allocation.
+    # bytes are reclaimable by the next allocation.
     try:
         import mlx.core as mx  # type: ignore[import]
         if hasattr(mx, "clear_cache"):
@@ -194,8 +209,10 @@ class AudioTranscribeDiarized(Operation):
         # Free the whisper model before pyannote loads. Without this
         # both stay resident → ~5-6 GB peak on whisper-medium, ~8-10 GB
         # on large-v3. With it, peak per phase ≈ the larger of the two
-        # models alone. RAM-tight hosts depend on this.
-        _release_transcribe_model_cache()
+        # models alone. RAM-tight hosts depend on this. (Pyannote slot
+        # cleanup inside the helper is a no-op here — it hasn't loaded
+        # yet — but matters at the new video.comprehend call site.)
+        _release_audio_models(ctx)
         diarize_outs = await ctx.run_op(
             "audio.diarize", inputs=[audio.id], **diarize_kwargs
         )
