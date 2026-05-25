@@ -44,12 +44,80 @@
     op_runs: OperationRunRef[];
   };
 
+  /**
+   * Heartbeat Progress shape — three optional fields the engine's
+   * runtime/heartbeat task populates on every tick. Mirrors
+   * `media_engine.runtime.events.Progress` since Phase A.1.
+   */
+  type ProgressData = {
+    fraction?: number;
+    message?: string;
+    phase?: string | null;
+    available_memory_gb?: number | null;
+    eta_seconds?: number | null;
+    pool_bytes_estimate?: number | null;
+  };
+
+  type LogLineData = {
+    level: string;
+    source: string;
+    line: string;
+  };
+
   let detail: JobDetail | null = $state(null);
   let error: string | null = $state(null);
-  let activeTab: 'events' | 'op_runs' | 'outputs' | 'failure' = $state('events');
+  let activeTab: 'events' | 'logs' | 'op_runs' | 'outputs' | 'failure' = $state('events');
   let events: SSEEvent[] = $state([]);
   let showTraceback = $state(false);
+  // Latest heartbeat-phase Progress snapshot for the status-header gauges.
+  let lastHeartbeat: ProgressData | null = $state(null);
+  // Per-source filter for the Logs tab; '' = all sources.
+  let logSourceFilter = $state('');
   const jobId = $derived($page.params.id ?? '');
+
+  // Distinct log sources observed in this run, for the filter dropdown.
+  const logSources = $derived.by(() => {
+    const seen = new Set<string>();
+    for (const ev of events) {
+      if (ev.type !== 'log_line') continue;
+      try {
+        const data = JSON.parse(ev.data) as LogLineData;
+        if (data.source) seen.add(data.source);
+      } catch {
+        // ignore
+      }
+    }
+    return Array.from(seen).sort();
+  });
+
+  const filteredLogs = $derived.by(() => {
+    const out: Array<{ source: string; level: string; line: string }> = [];
+    for (const ev of events) {
+      if (ev.type !== 'log_line') continue;
+      try {
+        const data = JSON.parse(ev.data) as LogLineData;
+        if (logSourceFilter && data.source !== logSourceFilter) continue;
+        out.push({ source: data.source, level: data.level, line: data.line });
+      } catch {
+        // ignore malformed frames
+      }
+    }
+    return out;
+  });
+
+  function formatRamGb(gb: number | null | undefined): string {
+    if (gb == null) return '—';
+    return `${gb.toFixed(1)} GB`;
+  }
+
+  function formatEta(seconds: number | null | undefined): string {
+    if (seconds == null) return '—';
+    if (seconds < 1) return '<1s';
+    if (seconds < 60) return `${seconds.toFixed(0)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}m${s.toString().padStart(2, '0')}s`;
+  }
 
   // A job is in a terminal state if no further events will arrive. Used
   // by the Events tab to swap the indefinite "Waiting for events…"
@@ -73,6 +141,18 @@
 
   function appendEvent(ev: SSEEvent): void {
     events = [...events, ev].slice(-500);
+    // Pluck heartbeat Progress events into the status-bar gauges so the
+    // UI doesn't have to scan the full event tail on every render.
+    if (ev.type === 'progress') {
+      try {
+        const data = JSON.parse(ev.data) as ProgressData;
+        if (data.phase === 'heartbeat') {
+          lastHeartbeat = data;
+        }
+      } catch {
+        // ignore malformed frames
+      }
+    }
   }
 
   // SvelteKit reuses this component across same-route navigations
@@ -85,6 +165,7 @@
     events = [];
     detail = null;
     error = null;
+    lastHeartbeat = null;
     void refresh(jobId);
     const close = openSSE(`/jobs/${jobId}/events`, {
       onEvent: (ev) => {
@@ -151,6 +232,30 @@
           finished {new Date(detail.job.finished_at).toLocaleTimeString()}
         </span>
       {/if}
+      <!--
+        Live RAM-free + ETA gauges sourced from the engine's per-run
+        heartbeat task (`media_engine.runtime.heartbeat`). Hidden once
+        the job hits a terminal state so a stale snapshot doesn't
+        misrepresent a finished run.
+      -->
+      {#if lastHeartbeat && !isTerminal}
+        <span
+          class="font-mono px-2 py-0.5 rounded"
+          style="background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border-light);"
+          title="Host RAM available right now (heartbeat-sampled)"
+          data-test="job-ram-gauge"
+        >
+          RAM {formatRamGb(lastHeartbeat.available_memory_gb)}
+        </span>
+        <span
+          class="font-mono px-2 py-0.5 rounded"
+          style="background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border-light);"
+          title="Estimated time remaining (from op.cost_estimate)"
+          data-test="job-eta-gauge"
+        >
+          ETA {formatEta(lastHeartbeat.eta_seconds)}
+        </span>
+      {/if}
     </div>
   {/if}
 </header>
@@ -165,6 +270,7 @@
 <div class="flex gap-1 mb-4 text-sm">
   {#each [
     { id: 'events', label: 'Events' },
+    { id: 'logs', label: 'Logs' },
     { id: 'op_runs', label: 'Op runs' },
     { id: 'outputs', label: 'Outputs' },
     { id: 'failure', label: 'Failure' },
@@ -208,6 +314,54 @@
         {/each}
       </ul>
     {/if}
+  {:else if activeTab === 'logs'}
+    <div class="space-y-2" data-test="job-logs-pane">
+      <div class="flex items-center gap-2 text-xs">
+        <label for="log-source-filter" style="color: var(--text-muted);">Source</label>
+        <select
+          id="log-source-filter"
+          class="px-2 py-1 rounded font-mono text-xs"
+          style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
+          bind:value={logSourceFilter}
+          data-test="job-logs-source-filter"
+        >
+          <option value="">all</option>
+          {#each logSources as src (src)}
+            <option value={src}>{src}</option>
+          {/each}
+        </select>
+        <span style="color: var(--text-muted);">
+          {filteredLogs.length} line{filteredLogs.length === 1 ? '' : 's'}
+        </span>
+      </div>
+      {#if filteredLogs.length === 0}
+        <p class="text-xs italic" style="color: var(--text-muted);">
+          {logSourceFilter
+            ? `No log lines from "${logSourceFilter}" yet.`
+            : isTerminal
+              ? 'No log lines were captured for this run.'
+              : 'Waiting for log output…'}
+        </p>
+      {:else}
+        <ul
+          class="font-mono text-xs leading-snug max-h-[60vh] overflow-y-auto p-2 rounded"
+          style="background: var(--bg-deep); border: 1px solid var(--border-warm);"
+        >
+          {#each filteredLogs as entry, i (i)}
+            <li
+              style="color: {entry.level === 'warn' || entry.level === 'warning'
+                ? 'var(--accent-amber)'
+                : entry.level === 'error' || entry.level === 'critical'
+                  ? 'var(--accent-red)'
+                  : 'var(--text-secondary)'};"
+            >
+              <span style="color: var(--text-muted);">[{entry.source}]</span>
+              {entry.line}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
   {:else if activeTab === 'op_runs'}
     {#if detail?.op_runs && detail.op_runs.length > 0}
       <ul class="font-mono text-xs space-y-1">
