@@ -1,0 +1,59 @@
+# media_engine — Caddyfile for the Hetzner deploy with DNS-01 wildcard.
+#
+# Activated by adding deploy/hetzner/docker-compose.wildcard.yaml to
+# the compose -f chain (see handbook §3.1). Requires a custom Caddy
+# build with caddy-dns/cloudflare (provided by Dockerfile.caddy) and
+# a CLOUDFLARE_API_TOKEN environment variable scoped to
+# Zone:DNS:Edit for the zone serving ${MEDIA_ENGINE_DOMAIN}.
+#
+# Why wildcard: issues one cert that covers ${MEDIA_ENGINE_DOMAIN} +
+# every subdomain (engine.example.com, staging.engine.example.com,
+# grafana.example.com, …). Avoids hitting Let's Encrypt's per-domain
+# rate limit (5 / week) when adding sister apps, and means no public
+# port-80 path is needed for cert issuance (DNS-01 talks to the
+# provider's API, not the Internet-facing server).
+#
+# The SSE-scoping rule (flush_interval -1 on /jobs/*/events and
+# /events/stream) is the same as the HTTP-01 Caddyfile — Caddy
+# issue #6293 cares about encode + streaming, not about which
+# challenge the cert came from.
+
+{
+    email {$MEDIA_ENGINE_ACME_EMAIL}
+    # Global ACME DNS-01 challenge — Cloudflare provider.
+    # Token is read from the env var (which docker-compose pulls from
+    # deploy/hetzner/secrets.env). Token must have Zone:DNS:Edit on
+    # the zone serving MEDIA_ENGINE_DOMAIN; do NOT use the global API
+    # key.
+    acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+}
+
+# Apex / configured domain. The wildcard cert covers this AND every
+# subdomain under it, so additional `*.${MEDIA_ENGINE_DOMAIN}` blocks
+# can be added below without provisioning new certs.
+{$MEDIA_ENGINE_DOMAIN} {
+    # Long-lived event streams. Per-job and global engine event bus.
+    @sse path /jobs/*/events /events/stream
+    handle @sse {
+        reverse_proxy engine:8000 {
+            flush_interval -1
+            transport http {
+                read_timeout 24h
+                write_timeout 24h
+            }
+        }
+    }
+
+    # Everything else (UI, REST, /health, /ready, uploads, etc.).
+    handle {
+        encode zstd gzip
+        reverse_proxy engine:8000
+    }
+}
+
+# Add more subdomains here — each gets the same wildcard cert for free.
+# Example:
+#
+# grafana.{$MEDIA_ENGINE_DOMAIN} {
+#     reverse_proxy grafana:3000
+# }

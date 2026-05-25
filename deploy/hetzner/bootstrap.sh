@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # media_engine — one-shot Hetzner Ubuntu deploy.
 #
-# Idempotent. Safe to re-run. Walks 21 ordered steps:
+# Idempotent. Safe to re-run. Walks 22 ordered steps:
 #   pre-flight → apt → docker daemon → ufw → fail2ban → ssh hardening →
-#   unattended-upgrades → swap → hetzner volume detect → repo → .env →
-#   secrets.env → build → up → wait → migrate → token → doctor → summary.
+#   unattended-upgrades → swap → sysctl hardening → hetzner volume detect →
+#   .env → secrets.env → build → up → wait → migrate → token → doctor → summary.
 #
 # Run as a non-root user with passwordless sudo, from the repo root:
 #   bash deploy/hetzner/bootstrap.sh
@@ -22,6 +22,7 @@ ENV_EXAMPLE="${SCRIPT_DIR}/.env.example"
 SECRETS_EXAMPLE="${SCRIPT_DIR}/secrets.env.example"
 DAEMON_JSON="${SCRIPT_DIR}/daemon.json"
 UU_CONF="${SCRIPT_DIR}/unattended-upgrades.conf"
+SYSCTL_HARDEN="${SCRIPT_DIR}/sysctl-hardening.conf"
 
 # Container's engine user uid (Dockerfile: `useradd --create-home engine`,
 # which on a fresh slim image gets uid 1000). Verified post-build at
@@ -65,7 +66,7 @@ dc() {
 
 # ─── Step 1: pre-flight ─────────────────────────────────────────────
 step_preflight() {
-    log "Step 1/21 — pre-flight"
+    log "Step 1/22 — pre-flight"
 
     if [[ ${EUID} -eq 0 ]]; then
         err "Run as a non-root user with passwordless sudo, not as root."
@@ -103,7 +104,7 @@ step_preflight() {
 
 # ─── Step 2: apt baseline ───────────────────────────────────────────
 step_apt_baseline() {
-    log "Step 2/21 — apt baseline + Docker official repo"
+    log "Step 2/22 — apt baseline + Docker official repo"
 
     # Docker's official repo (avoids docker.io which lags + bundles old compose).
     if ! command -v docker >/dev/null 2>&1; then
@@ -139,7 +140,7 @@ step_apt_baseline() {
 
 # ─── Step 3: docker daemon hardening ────────────────────────────────
 step_docker_daemon() {
-    log "Step 3/21 — docker daemon.json"
+    log "Step 3/22 — docker daemon.json"
     sudo install -m 0644 "${DAEMON_JSON}" /etc/docker/daemon.json
     sudo systemctl restart docker
     ok "daemon.json installed; docker restarted"
@@ -153,7 +154,7 @@ step_docker_daemon() {
 # path is hostile to function definitions, variable scoping, and
 # argument quoting, and the round-trip cost of one re-login is small.
 step_docker_group() {
-    log "Step 4/21 — docker group membership"
+    log "Step 4/22 — docker group membership"
     if ! id -nG "${USER}" | grep -qw docker; then
         sudo usermod -aG docker "${USER}"
         warn "Added '${USER}' to the docker group."
@@ -172,7 +173,7 @@ step_docker_group() {
 
 # ─── Step 5: UFW ────────────────────────────────────────────────────
 step_ufw() {
-    log "Step 5/21 — UFW (host firewall)"
+    log "Step 5/22 — UFW (host firewall)"
     sudo ufw --force default deny incoming >/dev/null
     sudo ufw --force default allow outgoing >/dev/null
     sudo ufw allow 22/tcp >/dev/null
@@ -184,7 +185,7 @@ step_ufw() {
 
 # ─── Step 6: fail2ban ───────────────────────────────────────────────
 step_fail2ban() {
-    log "Step 6/21 — fail2ban"
+    log "Step 6/22 — fail2ban"
     sudo tee /etc/fail2ban/jail.d/sshd-local.conf >/dev/null <<'EOF'
 [sshd]
 enabled  = true
@@ -200,7 +201,7 @@ EOF
 
 # ─── Step 7: SSH hardening ──────────────────────────────────────────
 step_ssh_hardening() {
-    log "Step 7/21 — SSH hardening"
+    log "Step 7/22 — SSH hardening"
     local authkeys="${HOME}/.ssh/authorized_keys"
     if [[ ! -s "${authkeys}" ]]; then
         warn "${authkeys} is empty or missing — SKIPPING ssh hardening to avoid lockout."
@@ -224,7 +225,7 @@ EOF
 
 # ─── Step 8: unattended-upgrades ────────────────────────────────────
 step_unattended_upgrades() {
-    log "Step 8/21 — unattended security upgrades"
+    log "Step 8/22 — unattended security upgrades"
     sudo install -m 0644 "${UU_CONF}" \
         /etc/apt/apt.conf.d/52unattended-upgrades-local
     sudo systemctl enable --now unattended-upgrades >/dev/null
@@ -233,7 +234,7 @@ step_unattended_upgrades() {
 
 # ─── Step 9: swap ───────────────────────────────────────────────────
 step_swap() {
-    log "Step 9/21 — swap (4 GB if absent)"
+    log "Step 9/22 — swap (4 GB if absent)"
     if [[ -n "$(swapon --show --noheadings)" ]]; then
         ok "swap already configured: $(swapon --show --bytes --noheadings | awk '{print $1, $3}')"
     else
@@ -251,9 +252,27 @@ step_swap() {
     ok "vm.swappiness = 10"
 }
 
-# ─── Step 10: Hetzner volume detection (informational) ──────────────
+# ─── Step 10: sysctl hardening drop-in ──────────────────────────────
+# Network spoofing / ICMP / SYN-flood / kernel info-leak / fs protections.
+# Verbatim from `hetzner_vpns/Hardened Hetzner Ubuntu VPS Handbook.md`
+# Appendix B. Conservative defaults — none of these break Docker
+# (which writes its own forwarding/iptables rules on top) or
+# Tailscale (a leaf node doesn't need ip_forward).
+step_sysctl_hardening() {
+    log "Step 10/22 — sysctl hardening drop-in"
+    if [[ ! -f "${SYSCTL_HARDEN}" ]]; then
+        warn "sysctl-hardening.conf missing — skipping (not fatal)"
+        return 0
+    fi
+    sudo install -m 0644 "${SYSCTL_HARDEN}" /etc/sysctl.d/99-hardening.conf
+    # --system re-reads every drop-in, so this is idempotent on re-runs.
+    sudo sysctl --system >/dev/null
+    ok "/etc/sysctl.d/99-hardening.conf applied (RFC 3704 + SYN cookies + BBR + kptr_restrict)"
+}
+
+# ─── Step 11: Hetzner volume detection (informational) ──────────────
 step_hetzner_volume() {
-    log "Step 10/21 — Hetzner Cloud Volume detection"
+    log "Step 11/22 — Hetzner Cloud Volume detection"
     local vols
     vols=$(ls -d /mnt/HC_Volume_* 2>/dev/null || true)
     if [[ -z "${vols}" ]]; then
@@ -272,7 +291,7 @@ step_hetzner_volume() {
 
 # ─── Step 11: disk space check ──────────────────────────────────────
 step_disk_check() {
-    log "Step 11/21 — free disk space"
+    log "Step 12/22 — free disk space"
     local free_gb
     free_gb=$(df -BG --output=avail /var/lib | tail -1 | tr -dc '0-9')
     if [[ "${free_gb}" -lt 20 ]]; then
@@ -285,7 +304,7 @@ step_disk_check() {
 
 # ─── Step 12: .env materialization ──────────────────────────────────
 step_env_file() {
-    log "Step 12/21 — .env (compose-level config)"
+    log "Step 13/22 — .env (compose-level config)"
     if [[ ! -f "${ENV_FILE}" ]]; then
         cp "${ENV_EXAMPLE}" "${ENV_FILE}"
     fi
@@ -345,7 +364,7 @@ step_env_file() {
 
 # ─── Step 13: secrets.env materialization ───────────────────────────
 step_secrets_file() {
-    log "Step 13/21 — secrets.env (API keys, mounted into container)"
+    log "Step 14/22 — secrets.env (API keys, mounted into container)"
     if [[ ! -f "${SECRETS_FILE}" ]]; then
         cp "${SECRETS_EXAMPLE}" "${SECRETS_FILE}"
     fi
@@ -384,7 +403,7 @@ step_secrets_file() {
 
 # ─── Step 14: build engine image ────────────────────────────────────
 step_build() {
-    log "Step 14/21 — build engine image (~10 min cold)"
+    log "Step 15/22 — build engine image (~10 min cold)"
     dc build engine
     ok "engine image built: media_engine:hetzner"
 
@@ -400,7 +419,7 @@ step_build() {
 
 # ─── Step 15: postgres up + wait healthy ────────────────────────────
 step_postgres_up() {
-    log "Step 15/21 — postgres up"
+    log "Step 16/22 — postgres up"
     dc up -d postgres
     local i=0
     while (( i < 60 )); do
@@ -424,14 +443,14 @@ step_postgres_up() {
 
 # ─── Step 16: engine + caddy up ─────────────────────────────────────
 step_engine_caddy_up() {
-    log "Step 16/21 — engine + caddy up"
+    log "Step 17/22 — engine + caddy up"
     dc up -d engine caddy
     ok "engine + caddy started"
 }
 
 # ─── Step 17: wait for TLS + /ready ─────────────────────────────────
 step_wait_ready() {
-    log "Step 17/21 — waiting for https://${MEDIA_ENGINE_DOMAIN}/ready"
+    log "Step 18/22 — waiting for https://${MEDIA_ENGINE_DOMAIN}/ready"
     log "  (Let's Encrypt HTTP-01 issuance can take 30–90s on first run)"
     local i=0
     while (( i < 150 )); do
@@ -454,14 +473,14 @@ step_wait_ready() {
 
 # ─── Step 18: alembic migrate ───────────────────────────────────────
 step_migrate() {
-    log "Step 18/21 — alembic migrate (cache schema)"
+    log "Step 19/22 — alembic migrate (cache schema)"
     dc exec -T engine med db migrate
     ok "alembic upgrade head complete"
 }
 
 # ─── Step 19: bootstrap bearer token ────────────────────────────────
 step_token() {
-    log "Step 19/21 — minting bootstrap bearer token"
+    log "Step 20/22 — minting bootstrap bearer token"
     # `med api token create` plain mode: secret on stdout, context on
     # stderr. dc exec -T avoids TTY allocation so stdout is clean.
     BOOTSTRAP_TOKEN="$(dc exec -T engine med api token create --label bootstrap 2>/dev/null | tail -1)"
@@ -475,7 +494,7 @@ step_token() {
 
 # ─── Step 20: doctor matrix ─────────────────────────────────────────
 step_doctor() {
-    log "Step 20/21 — med doctor matrix"
+    log "Step 21/22 — med doctor matrix"
     local report
     report="$(dc exec -T engine med doctor --json 2>/dev/null || true)"
     if [[ -z "${report}" ]]; then
@@ -504,7 +523,7 @@ step_doctor() {
 
 # ─── Step 21: final summary ─────────────────────────────────────────
 step_summary() {
-    log "Step 21/21 — done"
+    log "Step 22/22 — done"
     cat <<EOF
 
 ══════════════════════════════════════════════════════════════════════
@@ -554,6 +573,7 @@ main() {
     step_ssh_hardening
     step_unattended_upgrades
     step_swap
+    step_sysctl_hardening
     step_hetzner_volume
     step_disk_check
     step_env_file

@@ -8,6 +8,46 @@
 
 ---
 
+## 0. Before you run bootstrap.sh — base hardening
+
+This deploy is the **application layer**. The **base-OS layer** (SSH
+ciphers, sysctl drop-in, persistent journald, auditd, off-site
+restic backups, Tailscale to close public SSH) lives in a separate
+generic guide:
+
+> [`hetzner_vpns/Hardened Hetzner Ubuntu VPS Handbook.md`](../../hetzner_vpns/Hardened%20Hetzner%20Ubuntu%20VPS%20Handbook.md)
+> &nbsp;— a 15-phase walkthrough that turns a brand-new Hetzner
+> Ubuntu VPS into a hardened public-facing host.
+
+**Recommended order for a production deploy:**
+
+| Phase | What | When to skip |
+|---|---|---|
+| 0–10 | Local SSH key, provisioning choices, non-root user, UFW, fail2ban, unattended-upgrades, sysctl, audit logging, Caddy install, Docker install | Never. The bootstrap script defensively re-asserts UFW/fail2ban/unattended-upgrades/Docker, but the SSH cipher hardening + sysctl drop-in are not negotiable on a public-Internet box. |
+| 11 (dev tooling) | zsh / starship / mise / modern CLI | Skip for an app-only host. |
+| 12 (Claude Code) | Native or APT install | Skip unless you SSH into this VPS to develop. |
+| 13 (Tailscale) | Closes public SSH entirely | **Highly recommended.** See §8 below for the short version. |
+| 14 (restic backups) | Off-site backup to a *different* vendor | **Highly recommended.** See §7.3 below. |
+
+**The bootstrap script is idempotent against pre-applied
+hardening.** It checks each requirement before touching it: UFW rules
+that already exist aren't re-added, fail2ban jails already present
+aren't re-installed, etc. Running the generic handbook first and then
+`bash deploy/hetzner/bootstrap.sh` produces the same end state as
+running bootstrap alone — the only difference is that the generic
+handbook adds deeper hardening (sysctl drop-in via
+`/etc/sysctl.d/99-hardening.conf`, Mozilla "modern" SSH cipher
+profile, persistent journald, auditd, Lynis cadence) that bootstrap
+doesn't.
+
+If you skip the generic handbook, `bootstrap.sh` step 10
+(`step_sysctl_hardening`) still installs `99-hardening.conf` from
+`deploy/hetzner/sysctl-hardening.conf` — verbatim from the generic
+handbook's Appendix B — so the minimum sysctl floor is always in
+place.
+
+---
+
 ## 1. What you're about to deploy
 
 ```
@@ -111,6 +151,71 @@ docker group, the script exits cleanly and prints `newgrp docker` or
 re-login as the next step. Re-run; the second pass continues from
 where the first left off.
 
+## 3.1. TLS — HTTP-01 single-cert (default) vs. DNS-01 wildcard
+
+The default path uses **HTTP-01**: Caddy provisions one Let's Encrypt
+cert for `${MEDIA_ENGINE_DOMAIN}` on first boot, using port 80 for
+the ACME challenge. Simple, zero config beyond the prompt for the
+domain + ACME email, and no third-party account required.
+
+When to switch to **DNS-01 wildcard**:
+
+- You're going to host more than one subdomain on this VPS (e.g.
+  `engine.example.com` + `staging.engine.example.com` +
+  `grafana.example.com`). HTTP-01 issues one cert per name, hitting
+  Let's Encrypt's 5-certs-per-domain-per-week rate limit fast when
+  you're iterating on staging.
+- You want cert issuance to work without port 80 being reachable
+  (e.g. you've moved SSH + the engine behind Tailscale, or the host
+  is behind a strict firewall).
+- You're already on Cloudflare DNS for the zone.
+
+**Opt-in switch** (Cloudflare DNS provider — other providers ship
+their own plugins, see <https://caddyserver.com/docs/modules/>):
+
+1. Create a Cloudflare API token at
+   <https://dash.cloudflare.com/profile/api-tokens> →
+   **Create Token** → **Custom token** → grant **Zone:DNS:Edit**
+   on the **specific zone** serving `${MEDIA_ENGINE_DOMAIN}`. Do
+   *not* use the global API key.
+2. Add the token to `deploy/hetzner/secrets.env`:
+   ```bash
+   CLOUDFLARE_API_TOKEN=<paste-token-here>
+   ```
+3. Activate the wildcard compose override:
+   ```bash
+   docker compose \
+       --env-file deploy/hetzner/.env \
+       -f infra/docker/docker-compose.yaml \
+       -f deploy/hetzner/docker-compose.override.yaml \
+       -f deploy/hetzner/docker-compose.wildcard.yaml \
+       up -d --build caddy
+   ```
+   The first build takes ~2 min (xcaddy + caddy-dns/cloudflare).
+   Subsequent rebuilds are cached.
+4. Make it persistent: edit `deploy/hetzner/_lib.sh` and add
+   `-f "${REPO_ROOT}/deploy/hetzner/docker-compose.wildcard.yaml"`
+   to the `dc()` function's `-f` chain. Every wrapper (`update.sh`,
+   `backup.sh`, `restore.sh`, …) then picks it up automatically.
+
+Files involved:
+
+- `deploy/hetzner/Dockerfile.caddy` — `caddy:2-builder` + xcaddy +
+  `caddy-dns/cloudflare`, copied into a slim `caddy:2-alpine` runtime.
+- `deploy/hetzner/Caddyfile.wildcard` — same SSE-scoping as the
+  default Caddyfile but with `acme_dns cloudflare {env.…}` at the
+  global level. Add extra subdomain blocks at the bottom — they all
+  share the wildcard cert with no extra issuance.
+- `deploy/hetzner/docker-compose.wildcard.yaml` — swaps the
+  `caddy:2-alpine` image for `media_engine-caddy:wildcard`, mounts
+  `Caddyfile.wildcard`, sources `secrets.env` for
+  `CLOUDFLARE_API_TOKEN`.
+
+Reverting is one `docker compose up -d caddy` away — drop the extra
+`-f` line and the stock `caddy:2-alpine` image takes over again
+(certs in the `caddy-data` volume are preserved across either
+direction).
+
 ## 4. What the script did, in order
 
 | # | Step | Reversal |
@@ -124,18 +229,19 @@ where the first left off.
 | 7 | SSH hardening config (drop-in 99-) — *only if authorized_keys non-empty* | `sudo rm /etc/ssh/sshd_config.d/99-media-engine-hardening.conf && systemctl reload ssh` |
 | 8 | Unattended security upgrades | `sudo rm /etc/apt/apt.conf.d/52unattended-upgrades-local` |
 | 9 | Swap: 4 GB `/swapfile`, `vm.swappiness=10` | `sudo swapoff /swapfile && rm /swapfile`, edit `/etc/fstab` |
-| 10 | Hetzner Volume detection (informational) | n/a |
-| 11 | Refuse if <20 GB free at `/var/lib` | n/a |
-| 12 | Materialize `.env` (interactive prompts) | edit / delete `deploy/hetzner/.env` |
-| 13 | Materialize `secrets.env` (chmod 600, chown to engine uid) | edit / delete `deploy/hetzner/secrets.env` |
-| 14 | Build `media_engine:hetzner` image | `docker image rm media_engine:hetzner` |
-| 15 | Bring Postgres up, wait healthy | `dc down postgres` |
-| 16 | Bring engine + Caddy up | `dc down engine caddy` |
-| 17 | Poll `https://$DOMAIN/ready` up to 5 min (covers Let's Encrypt issuance) | n/a |
-| 18 | `med db migrate` | n/a (idempotent) |
-| 19 | Mint a bootstrap bearer token | `med api token revoke <id>` |
-| 20 | Print `med doctor` matrix with color coding | n/a |
-| 21 | Print final summary | n/a |
+| 10 | Install `/etc/sysctl.d/99-hardening.conf` (RFC 3704 + SYN cookies + BBR + kptr_restrict + fs protections) | `sudo rm /etc/sysctl.d/99-hardening.conf && sysctl --system` |
+| 11 | Hetzner Volume detection (informational) | n/a |
+| 12 | Refuse if <20 GB free at `/var/lib` | n/a |
+| 13 | Materialize `.env` (interactive prompts) | edit / delete `deploy/hetzner/.env` |
+| 14 | Materialize `secrets.env` (chmod 600, chown to engine uid) | edit / delete `deploy/hetzner/secrets.env` |
+| 15 | Build `media_engine:hetzner` image | `docker image rm media_engine:hetzner` |
+| 16 | Bring Postgres up, wait healthy | `dc down postgres` |
+| 17 | Bring engine + Caddy up | `dc down engine caddy` |
+| 18 | Poll `https://$DOMAIN/ready` up to 5 min (covers Let's Encrypt issuance) | n/a |
+| 19 | `med db migrate` | n/a (idempotent) |
+| 20 | Mint a bootstrap bearer token | `med api token revoke <id>` |
+| 21 | Print `med doctor` matrix with color coding | n/a |
+| 22 | Print final summary | n/a |
 
 ## 5. Verifying the deploy
 
@@ -226,7 +332,7 @@ docker logs -f $(docker ps -q -f name=engine)
 journalctl -u docker --since '15 minutes ago'
 ```
 
-### Backups
+### Backups (§7.2.1 — local snapshot)
 
 ```bash
 bash deploy/hetzner/backup.sh
@@ -239,21 +345,128 @@ Writes `deploy/hetzner/backups/<UTC-timestamp>/` containing:
 - `secrets.env` (chmod 600)
 - `engine-version.txt`
 
-**This is local-only.** For offsite, set up rclone once and add a
-cron:
+**This is local-only.** Hetzner snapshots (configured at instance
+creation in §1's prerequisites) cover most "I broke it myself"
+recovery, but they live in Hetzner's control plane — they don't
+survive an account compromise or region loss. Add an **off-site**
+copy to a *different vendor*.
+
+### §7.2.2 — Off-site backup with restic + Backblaze B2
+
+Adopt the recipe from the generic handbook
+([`hetzner_vpns/Hardened Hetzner Ubuntu VPS Handbook.md`](../../hetzner_vpns/Hardened%20Hetzner%20Ubuntu%20VPS%20Handbook.md)
+§14) verbatim. Restic does encrypted, deduplicated, incremental
+snapshots — typical bandwidth + storage cost is "a couple of euros
+a year" for a single-VPS workload.
+
+**Why Backblaze B2 instead of Hetzner Storage Box:** Storage Box is
+cheaper but it's still Hetzner. An off-site copy must live with a
+*different vendor* than the VPS to defend against vendor-side
+incidents. B2 is S3-compatible, ~$6/TB/month, independent of
+Hetzner.
+
+**One-time setup, on the VPS as your sudo user:**
 
 ```bash
-# /etc/cron.d/media_engine_backup
-30 4 * * *  deploy  cd /home/deploy/media_engine && \
-            bash deploy/hetzner/backup.sh >> /var/log/media_engine_backup.log 2>&1 && \
-            rclone copy --quiet \
-              "$(ls -td deploy/hetzner/backups/* | head -1)" \
-              hetzner-sb:media_engine/$(date -u +%Y/%m/%d)/
+sudo apt-get install -y restic
+
+# Write the env file. Lives in /root because the systemd unit runs as root.
+sudo install -m 0600 /dev/stdin /root/.restic.env <<'EOF'
+export RESTIC_REPOSITORY="b2:<your-bucket-name>:/media_engine"
+export B2_ACCOUNT_ID="<key-id>"
+export B2_ACCOUNT_KEY="<application-key>"
+# CRITICAL: store this in your password manager too. Lose it → backups unrecoverable.
+export RESTIC_PASSWORD="<long-random-passphrase>"
+EOF
+
+# Initialize the repo (one-time).
+sudo bash -c 'source /root/.restic.env && restic init'
 ```
 
-Pair with a weekly purge that keeps the last 14 dirs. Hetzner
-Storage Box pricing is ~€4/TB/month; a single deploy's nightly
-backups for a year run a euro or two.
+**Backup script** (writes the local snapshot via `backup.sh` first,
+then pushes it + the engine-store + Postgres into restic):
+
+```bash
+sudo install -m 0700 /dev/stdin /usr/local/bin/media_engine-restic.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+source /root/.restic.env
+
+# Take a fresh local backup first — this captures pg_dump + tarballs
+# atomically, so restic's snapshot sees a consistent state.
+cd /home/deploy/media_engine
+sudo -u deploy bash deploy/hetzner/backup.sh
+
+# Push the latest backup dir + a few host paths that aren't in the
+# compose volumes (caddy state, fail2ban DB, etc.).
+LATEST="$(ls -td deploy/hetzner/backups/* | head -1)"
+
+restic backup \
+    --exclude-caches \
+    --exclude '/var/lib/docker/overlay2' \
+    --exclude '/var/lib/docker/buildkit' \
+    --exclude '/var/cache' \
+    --exclude '/tmp' \
+    "$LATEST" \
+    /etc/caddy \
+    /var/lib/caddy 2>/dev/null || true
+
+# Retention: 7 daily, 4 weekly, 12 monthly. Tune to taste.
+restic forget --prune \
+    --keep-daily 7 \
+    --keep-weekly 4 \
+    --keep-monthly 12
+EOF
+```
+
+**Systemd timer** — daily at 03:30 UTC with a 30-min jitter so a
+fleet of VPSes doesn't hit B2 simultaneously:
+
+```bash
+sudo install -m 0644 /dev/stdin /etc/systemd/system/media_engine-restic.service <<'EOF'
+[Unit]
+Description=media_engine off-site restic backup
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/media_engine-restic.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+EOF
+
+sudo install -m 0644 /dev/stdin /etc/systemd/system/media_engine-restic.timer <<'EOF'
+[Unit]
+Description=Daily media_engine restic backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now media_engine-restic.timer
+sudo systemctl list-timers --no-pager | grep media_engine
+```
+
+**Restore a single file (test this monthly):**
+
+```bash
+sudo bash -c 'source /root/.restic.env && \
+    restic snapshots && \
+    restic restore latest --target /tmp/restore-test --include /etc/caddy/Caddyfile'
+diff -u /tmp/restore-test/etc/caddy/Caddyfile /etc/caddy/Caddyfile
+```
+
+If the diff is empty, the off-site path works. **Schedule a
+quarterly full-restore test on your calendar** — an untested backup
+has a coin-flip success rate when you actually need it.
 
 ### Restoring
 
@@ -308,6 +521,75 @@ bash deploy/hetzner/doctor.sh --op intelligence.extract
 | API | **Bearer tokens** on every non-public endpoint | `/health` + `/ready` + `/ui/*` open; everything else 401 without a valid token. Tokens stored as sha256 in the cache DB; secrets never recoverable. |
 | Docker daemon | **`daemon.json`**: log rotation (10 MB × 3), `live-restore`, `userland-proxy: false` | Prevents log-disk-fill runaway; container survives daemon restart; cleaner iptables. |
 | Secrets | **`secrets.env`** chmod 0600, chowned to engine uid, mounted read-write | Auto-loaded into `os.environ` by `EngineConfig.load`. Settings UI rotates in place. Independently backuppable. |
+| Kernel | **`/etc/sysctl.d/99-hardening.conf`** (RFC 3704 reverse-path filter, SYN cookies, BBR, kptr_restrict, fs protections) | Installed by `bootstrap.sh` step 10. Verbatim from the generic handbook's Appendix B. |
+| SSH attack surface | **Tailscale** (strongly recommended — see §8.1) | Closes public-port-22 entirely. Brute-force attempts go to zero; future OpenSSH CVEs stop mattering for this host. |
+
+### 8.1. Tailscale — close public SSH entirely (strongly recommended)
+
+Defense-in-depth tops out at "make the front door not exist." This
+step takes ~3 minutes and is the single biggest reduction in attack
+surface in the whole stack. Skip only if you absolutely need to SSH
+from networks you can't put on a tailnet.
+
+**On the VPS, as your sudo user:**
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --ssh
+```
+
+The second command prints a URL — open it on your Mac, authenticate
+against your tailnet (create one free at <https://tailscale.com> if
+you don't have one), and the VPS joins. `--ssh` enables Tailscale
+SSH, which authenticates against your tailnet identity in addition
+to (or instead of) your SSH key.
+
+**On your Mac:** install the Tailscale app from
+<https://tailscale.com/download/mac>, sign into the same tailnet.
+Then edit `~/.ssh/config`:
+
+```sshconfig
+Host hetzner
+    HostName <vps-tailscale-name>     # e.g. media-engine.tail-XXXX.ts.net
+    User <YOUR-USERNAME>
+    IdentityFile ~/.ssh/id_ed25519_hetzner
+```
+
+Confirm `ssh hetzner` works over the tailnet, then close the public
+SSH path on both layers:
+
+```bash
+# On the VPS:
+sudo ufw delete allow 22/tcp
+sudo ufw status
+
+# Also remove the SSH rule from the Hetzner Cloud Firewall in the
+# Console (Firewalls → your rule set → delete the TCP/22 inbound).
+
+# Add the Tailscale CGNAT range to fail2ban's ignoreip so your own
+# clients don't get jailed by a fumbled retry:
+sudo sed -i 's|^ignoreip = .*|ignoreip = 127.0.0.1/8 ::1 100.64.0.0/10|' \
+    /etc/fail2ban/jail.d/sshd-local.conf 2>/dev/null || \
+sudo install -m 0644 /dev/stdin /etc/fail2ban/jail.d/sshd-local.conf <<'EOF'
+[sshd]
+enabled  = true
+port     = ssh
+backend  = systemd
+maxretry = 3
+findtime = 10m
+bantime  = 1h
+ignoreip = 127.0.0.1/8 ::1 100.64.0.0/10
+EOF
+sudo systemctl restart fail2ban
+```
+
+Result: `nmap -Pn -p- <SERVER-IP>` from anywhere outside your
+tailnet shows only `80/tcp` and `443/tcp` open. SSH bruteforce
+attempts go from thousands per hour to zero.
+
+For the full version with all caveats (subnet routing, exit nodes,
+`tailscale ip -4` to find the assigned address, etc.) see Phase 13
+of [`hetzner_vpns/Hardened Hetzner Ubuntu VPS Handbook.md`](../../hetzner_vpns/Hardened%20Hetzner%20Ubuntu%20VPS%20Handbook.md).
 
 ### Setting the Hetzner Cloud Firewall (manual or CLI)
 
@@ -518,10 +800,14 @@ sudo systemctl reload ssh
 | `_lib.sh` | Shared `dc()`, `log()`, `require_env`. Sourced by the wrappers. |
 | `Dockerfile.hetzner` | Override Dockerfile — full extras + chromium baked. |
 | `docker-compose.override.yaml` | Caddy + secrets mount + drops public :8000. |
-| `Caddyfile` | SSE-scoped reverse proxy with auto-TLS. |
+| `Caddyfile` | Default: SSE-scoped reverse proxy with HTTP-01 single-cert TLS. |
+| `Caddyfile.wildcard` | Opt-in: same shape but DNS-01 wildcard via Cloudflare (see §3.1). |
+| `Dockerfile.caddy` | Custom Caddy build (caddy:2-builder + xcaddy + caddy-dns/cloudflare). |
+| `docker-compose.wildcard.yaml` | Opt-in override swapping Caddy to the wildcard build (§3.1). |
 | `init/01-vector.sql` | `CREATE EXTENSION vector` — Postgres init step. |
 | `daemon.json` | Docker daemon hardening. |
 | `unattended-upgrades.conf` | Security-only auto-patching. |
+| `sysctl-hardening.conf` | `/etc/sysctl.d/99-hardening.conf` drop-in installed by step 10. |
 | `.env.example` / `.env` | Compose-level config (domain, ACME email, Postgres pw, upload cap). |
 | `secrets.env.example` / `secrets.env` | API keys + tokens, mounted into the container. |
 | `backups/<timestamp>/` | Created by `backup.sh`. |

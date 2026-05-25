@@ -1,0 +1,39 @@
+# Opt-in compose override: swap the Caddy service from the stock
+# caddy:2-alpine image (HTTP-01 single-cert) to a custom build that
+# includes the caddy-dns/cloudflare plugin (DNS-01 wildcard cert).
+#
+# Apply with:
+#   docker compose \
+#       --env-file deploy/hetzner/.env \
+#       -f infra/docker/docker-compose.yaml \
+#       -f deploy/hetzner/docker-compose.override.yaml \
+#       -f deploy/hetzner/docker-compose.wildcard.yaml \
+#       up -d --build caddy
+#
+# Or persistently by editing deploy/hetzner/_lib.sh's dc() wrapper to
+# add `-f deploy/hetzner/docker-compose.wildcard.yaml` to the chain
+# (so update.sh + backup.sh + every other wrapper picks it up).
+#
+# Prerequisites — see handbook §3.1:
+#   1. A Cloudflare-managed zone for MEDIA_ENGINE_DOMAIN.
+#   2. CLOUDFLARE_API_TOKEN in deploy/hetzner/secrets.env, scoped to
+#      Zone:DNS:Edit for that one zone (NEVER the global API key).
+#   3. DNS A/AAAA + wildcard records pointing the zone at this VPS.
+
+services:
+  caddy:
+    # Swap image → local build.
+    image: media_engine-caddy:wildcard
+    build:
+      context: ../../deploy/hetzner
+      dockerfile: Dockerfile.caddy
+    volumes:
+      # Replace the default Caddyfile with the wildcard variant.
+      - ../../deploy/hetzner/Caddyfile.wildcard:/etc/caddy/Caddyfile:ro
+    environment:
+      # CLOUDFLARE_API_TOKEN is pulled from secrets.env via env_file so
+      # it never appears in `docker inspect` output.
+      MEDIA_ENGINE_DOMAIN: ${MEDIA_ENGINE_DOMAIN}
+      MEDIA_ENGINE_ACME_EMAIL: ${MEDIA_ENGINE_ACME_EMAIL}
+    env_file:
+      - ../../deploy/hetzner/secrets.env

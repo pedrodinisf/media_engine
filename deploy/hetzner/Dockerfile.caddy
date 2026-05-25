@@ -1,0 +1,25 @@
+# Custom Caddy build with the caddy-dns/cloudflare plugin baked in.
+#
+# Why: the default `caddy:2-alpine` image used in
+# docker-compose.override.yaml only supports HTTP-01 (one cert per
+# subdomain, issued on demand). For an operator who wants a single
+# *wildcard* cert covering ${MEDIA_ENGINE_DOMAIN} + all its subdomains,
+# Caddy needs the DNS-01 challenge — which requires the provider's
+# plugin to live inside the binary.
+#
+# This Dockerfile uses the official `caddy:2-builder` stage to compile
+# Caddy with the Cloudflare plugin via xcaddy, then copies the binary
+# into the slim `caddy:2-alpine` runtime image. Resulting image stays
+# small (~50 MB) and survives `docker compose pull` because compose
+# rebuilds from this file.
+#
+# Activated by adding deploy/hetzner/docker-compose.wildcard.yaml to
+# the compose -f chain. See docs/Hetzner_Deployment_Handbook.md §3.1
+# for the operator path.
+
+FROM caddy:2-builder AS builder
+RUN xcaddy build \
+    --with github.com/caddy-dns/cloudflare
+
+FROM caddy:2-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
