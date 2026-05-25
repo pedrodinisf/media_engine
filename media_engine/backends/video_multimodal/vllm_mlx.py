@@ -40,6 +40,7 @@ from media_engine.ops.video.multimodal import (
     build_multimodal_analysis_artifact,
 )
 from media_engine.runtime.events import Progress
+from media_engine.runtime.log_pump import attach_file_tail
 
 BACKEND_NAME = "vllm-mlx"
 BACKEND_VERSION = "1.0.0"
@@ -249,21 +250,40 @@ class VllmMlxVideoMultimodalBackend(Backend):
         # 2. Ensure the server is serving the requested model.
         base_url = _ensure_server(ctx, params.model, port, run_id)
 
-        # 3. Base64 frames + OpenAI chat call.
-        _emit(ctx, run_id, 0.5, "encoding frames + generating")
-        messages = _build_messages(ctx, reduced, params)
-        async with httpx.AsyncClient(timeout=600.0) as client:
-            resp = await client.post(
-                f"{base_url}/v1/chat/completions",
-                json={
-                    "model": params.model,
-                    "messages": messages,
-                    "temperature": params.temperature,
-                    "max_tokens": params.max_tokens,
-                },
+        # Tail the detached vllm-mlx server's log file from this point
+        # forward — the server itself is owned by ServerManager (long-
+        # lived across CLI invocations, log captured to a file rather
+        # than a pipe), so a file-tail is the only way to surface its
+        # output without breaking the detached lifecycle.
+        log_handle = None
+        if ctx.server_manager is not None:
+            log_handle = attach_file_tail(
+                str(ctx.server_manager.log_path(_SERVER_NAME)),
+                source="vllm-mlx",
+                emit=ctx.emit,
+                op_run_id=run_id,
             )
-            resp.raise_for_status()
-            body: dict[str, Any] = resp.json()
+
+        try:
+            # 3. Base64 frames + OpenAI chat call.
+            _emit(ctx, run_id, 0.5, "encoding frames + generating")
+            messages = _build_messages(ctx, reduced, params)
+            async with httpx.AsyncClient(timeout=600.0) as client:
+                resp = await client.post(
+                    f"{base_url}/v1/chat/completions",
+                    json={
+                        "model": params.model,
+                        "messages": messages,
+                        "temperature": params.temperature,
+                        "max_tokens": params.max_tokens,
+                    },
+                )
+                resp.raise_for_status()
+                body: dict[str, Any] = resp.json()
+        finally:
+            if log_handle is not None:
+                log_handle.cancel()
+                await log_handle.aclose()
 
         text = (
             body.get("choices", [{}])[0]

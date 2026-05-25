@@ -141,11 +141,12 @@ async def test_extract_emits_progress_events(
     events: list[object] = []
     op_ctx.emit = events.append  # type: ignore[method-assign]
     await extract.run([video_artifact], ExtractAudioParams(), op_ctx)
-    # ffmpeg may produce 0+ progress lines depending on duration / verbosity;
-    # the contract is "best-effort", not "exactly N". We just assert no crash
-    # and that any emitted events are Progress instances.
-    from media_engine.runtime.events import Progress
-    assert all(isinstance(e, Progress) for e in events)
+    # ffmpeg may produce 0+ Progress lines depending on duration / verbosity,
+    # plus an interleaved stream of LogLine events (Phase A.3 ffmpeg wire-in).
+    # The contract is "best-effort", not "exactly N". We just assert no crash
+    # and that every emitted event is one of the two expected kinds.
+    from media_engine.runtime.events import LogLine, Progress
+    assert all(isinstance(e, Progress | LogLine) for e in events)
 
 
 def test_cost_estimate_scales_with_duration(

@@ -33,6 +33,7 @@ from media_engine.ops import (
 )
 from media_engine.runtime.events import Progress
 from media_engine.runtime.ffprobe import probe
+from media_engine.runtime.log_pump import LinePump
 
 _TIME_RE = re.compile(rb"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
 
@@ -143,6 +144,12 @@ class VideoExtractAudio(Operation):
             ]
             duration = video.duration
             run_id = uuid4().hex
+            log_pump = LinePump(
+                source="ffmpeg",
+                emit=ctx.emit,
+                op_run_id=run_id,
+                job_id=None,
+            )
             try:
                 proc = subprocess.Popen(
                     cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
@@ -156,6 +163,13 @@ class VideoExtractAudio(Operation):
                         artifact_id=derived_id,
                         emit=ctx.emit,
                     )
+                    # Surface the raw stderr to the Web UI Logs tab too —
+                    # ffmpeg's status lines plus the rare error message
+                    # both go through here.
+                    with contextlib.suppress(Exception):
+                        log_pump.push(
+                            "info", line.decode("utf-8", errors="replace")
+                        )
                 proc.wait()
                 if proc.returncode != 0:
                     raise RuntimeError(

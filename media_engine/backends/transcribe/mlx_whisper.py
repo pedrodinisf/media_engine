@@ -34,6 +34,7 @@ from media_engine.ops.audio.transcribe import (
 )
 from media_engine.runtime.audio_slice import maybe_slice_audio
 from media_engine.runtime.events import Progress
+from media_engine.runtime.log_pump import attach_logger
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     pass
@@ -168,9 +169,21 @@ class MlxWhisperTranscribeBackend(Backend):
             ctx=ctx,
         )
 
-        result = await asyncio.to_thread(
-            _run_transcribe_sync, sliced_path, params
+        # Bridge the mlx-whisper python logger → LogLine for the Web UI
+        # Logs tab. Must detach in finally so handlers don't accumulate
+        # across runs.
+        log_token = attach_logger(
+            "mlx_whisper",
+            source="mlx-whisper",
+            emit=ctx.emit,
+            op_run_id=run_id,
         )
+        try:
+            result = await asyncio.to_thread(
+                _run_transcribe_sync, sliced_path, params
+            )
+        finally:
+            log_token.detach()
 
         text: str = str(result.get("text", ""))
         segments_raw = list(result.get("segments", []))

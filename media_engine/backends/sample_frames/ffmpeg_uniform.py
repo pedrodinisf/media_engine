@@ -13,8 +13,8 @@ their original indices for timestamp reconstruction.
 
 from __future__ import annotations
 
+import asyncio
 import shutil
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -36,12 +36,15 @@ from media_engine.backends import (
 )
 from media_engine.ops import CostEstimate, OperationContext
 from media_engine.ops.video.sample_frames import SampleFramesParams
+from media_engine.runtime.log_pump import attach_subprocess
 
 BACKEND_NAME = "ffmpeg-uniform"
 BACKEND_VERSION = "1.0.0"
 
+_FFMPEG_TIMEOUT_S = 300.0
 
-def _run_ffmpeg_extract(
+
+async def _run_ffmpeg_extract(
     *,
     ffmpeg_path: str,
     input_path: Path,
@@ -50,6 +53,8 @@ def _run_ffmpeg_extract(
     max_w: int,
     max_h: int,
     quality: int,
+    ctx: OperationContext,
+    run_id: str,
 ) -> None:
     cmd = [
         ffmpeg_path,
@@ -60,13 +65,32 @@ def _run_ffmpeg_extract(
         "-q:v", str(quality),
         str(output_pattern),
     ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    # Live-stream stdout/stderr to the Web UI Logs tab; the same lines
+    # also accumulate in `stderr_bytes` below for the failure envelope.
+    log_handle = attach_subprocess(
+        proc, source="ffmpeg", emit=ctx.emit, op_run_id=run_id
+    )
     try:
-        subprocess.run(cmd, capture_output=True, check=True, timeout=300)
-    except subprocess.CalledProcessError as e:
-        stderr = e.stderr.decode(errors="replace").strip()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=_FFMPEG_TIMEOUT_S)
+        except TimeoutError as e:
+            proc.kill()
+            await proc.wait()
+            raise RuntimeError(
+                f"ffmpeg sample_frames timed out after {_FFMPEG_TIMEOUT_S:.0f}s"
+            ) from e
+    finally:
+        await log_handle.aclose()
+    if proc.returncode != 0:
         raise RuntimeError(
-            f"ffmpeg sample_frames failed: {stderr or '(no stderr)'}"
-        ) from e
+            f"ffmpeg sample_frames failed (exit {proc.returncode}); "
+            "see Logs tab for stderr."
+        )
 
 
 @register_backend
@@ -118,10 +142,11 @@ class FfmpegUniformBackend(Backend):
             ]
 
         # Extract into a fresh subdir of the workdir.
-        scratch = ctx.workdir / f"frames-{uuid4().hex}"
+        scratch_uuid = uuid4().hex
+        scratch = ctx.workdir / f"frames-{scratch_uuid}"
         scratch.mkdir(parents=True, exist_ok=True)
         try:
-            _run_ffmpeg_extract(
+            await _run_ffmpeg_extract(
                 ffmpeg_path=ffmpeg_path,
                 input_path=video.path,
                 output_pattern=scratch / "frame_%05d.jpg",
@@ -129,6 +154,8 @@ class FfmpegUniformBackend(Backend):
                 max_w=params.max_width,
                 max_h=params.max_height,
                 quality=params.quality,
+                ctx=ctx,
+                run_id=scratch_uuid,
             )
             frame_files = sorted(scratch.glob("frame_*.jpg"))
             frame_ids: list[str] = []

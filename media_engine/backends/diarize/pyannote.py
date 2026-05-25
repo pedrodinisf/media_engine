@@ -32,6 +32,7 @@ from media_engine.ops.audio.diarize import (
 )
 from media_engine.runtime.audio_slice import maybe_slice_audio
 from media_engine.runtime.events import Progress
+from media_engine.runtime.log_pump import attach_logger
 
 BACKEND_NAME = "pyannote"
 BACKEND_VERSION = "1.0.0"
@@ -166,39 +167,51 @@ class PyannoteDiarizeBackend(Backend):
         run_id = uuid4().hex
         _emit_progress(ctx, run_id, 0.05, "loading model")
 
-        cache_key = f"pyannote:{params.model}"
-        pipeline = await asyncio.to_thread(
-            ctx.model_pool.get_or_load,
-            cache_key,
-            lambda: _load_pipeline_sync(params.model),
-        ) if ctx.model_pool is not None else await asyncio.to_thread(
-            _load_pipeline_sync, params.model
+        # Bridge the pyannote python logger → LogLine for the Web UI
+        # Logs tab. Must detach in finally so handlers don't accumulate
+        # across runs.
+        log_token = attach_logger(
+            "pyannote",
+            source="pyannote",
+            emit=ctx.emit,
+            op_run_id=run_id,
         )
+        try:
+            cache_key = f"pyannote:{params.model}"
+            pipeline = await asyncio.to_thread(
+                ctx.model_pool.get_or_load,
+                cache_key,
+                lambda: _load_pipeline_sync(params.model),
+            ) if ctx.model_pool is not None else await asyncio.to_thread(
+                _load_pipeline_sync, params.model
+            )
 
-        _emit_progress(ctx, run_id, 0.30, "embedding")
+            _emit_progress(ctx, run_id, 0.30, "embedding")
 
-        sliced_path = await asyncio.to_thread(
-            maybe_slice_audio,
-            str(audio.path),
-            start_s=params.start_s,
-            end_s=params.end_s,
-            ctx=ctx,
-        )
+            sliced_path = await asyncio.to_thread(
+                maybe_slice_audio,
+                str(audio.path),
+                start_s=params.start_s,
+                end_s=params.end_s,
+                ctx=ctx,
+            )
 
-        diarization = await asyncio.to_thread(
-            _run_diarize_sync,
-            pipeline,
-            sliced_path,
-            num_speakers=params.num_speakers,
-            min_speakers=params.min_speakers,
-            max_speakers=params.max_speakers,
-        )
+            diarization = await asyncio.to_thread(
+                _run_diarize_sync,
+                pipeline,
+                sliced_path,
+                num_speakers=params.num_speakers,
+                min_speakers=params.min_speakers,
+                max_speakers=params.max_speakers,
+            )
 
-        _emit_progress(ctx, run_id, 0.85, "clustering done")
+            _emit_progress(ctx, run_id, 0.85, "clustering done")
 
-        segments, num_speakers = _diarization_to_segments(diarization)
+            segments, num_speakers = _diarization_to_segments(diarization)
 
-        _emit_progress(ctx, run_id, 1.0, f"{num_speakers} speakers detected")
+            _emit_progress(ctx, run_id, 1.0, f"{num_speakers} speakers detected")
+        finally:
+            log_token.detach()
 
         return [
             build_diarization_artifact(

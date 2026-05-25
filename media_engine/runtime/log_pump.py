@@ -42,8 +42,14 @@ MAX_LINES_PER_RUN = 5000
 
 
 @dataclass
-class _LinePump:
-    """Tracks per-source dedup + truncation state shared by stream pumps."""
+class LinePump:
+    """Tracks per-source dedup + truncation state shared by stream pumps.
+
+    Exposed publicly so backends that already iterate stdout/stderr inline
+    (e.g. `ops/video/extract_audio.py`, which parses ffmpeg `time=` for
+    Progress) can push the same lines as `LogLine` events without a
+    second subprocess.
+    """
 
     source: str
     emit: Callable[[Event], None]
@@ -95,7 +101,7 @@ class _LinePump:
 async def _drain_stream(
     stream: asyncio.StreamReader | None,
     *,
-    pump: _LinePump,
+    pump: LinePump,
     level: str,
 ) -> None:
     if stream is None:
@@ -123,9 +129,19 @@ async def _drain_stream(
 
 @dataclass
 class SubprocessLogHandle:
-    """Awaitable handle returned by `attach_subprocess`."""
+    """Awaitable handle returned by `attach_subprocess` / `attach_file_tail`."""
 
     tasks: list[asyncio.Task[None]]
+
+    def cancel(self) -> None:
+        """Cancel the underlying pump tasks.
+
+        Subprocess pumps end naturally on stream EOF; only file-tail pumps
+        (no natural end) need an explicit cancel before `aclose()`.
+        """
+        for t in self.tasks:
+            if not t.done():
+                t.cancel()
 
     async def aclose(self) -> None:
         """Wait for the stream pumps to drain. Call in `finally`."""
@@ -155,7 +171,7 @@ def attach_subprocess(
     (ffmpeg, vllm) write progress to stderr; flagging every line as a
     warning would be noise. Callers can override per-backend.
     """
-    pump = _LinePump(
+    pump = LinePump(
         source=source, emit=emit, op_run_id=op_run_id, job_id=job_id
     )
     tasks: list[asyncio.Task[None]] = []
@@ -174,13 +190,84 @@ def attach_subprocess(
     return SubprocessLogHandle(tasks=tasks)
 
 
+async def _tail_file(
+    path: str,
+    *,
+    pump: LinePump,
+    level: str,
+    poll_interval: float,
+) -> None:
+    """Tail a growing log file from the current end, pushing new lines."""
+    from pathlib import Path
+
+    p = Path(path)
+    # Start at current EOF — we don't want to replay history; the caller
+    # opted-in for *new* output from when they attached.
+    try:
+        offset = p.stat().st_size if p.exists() else 0
+    except OSError:
+        offset = 0
+    leftover = ""
+    while True:
+        try:
+            await asyncio.sleep(poll_interval)
+        except asyncio.CancelledError:
+            raise
+        if not p.exists():
+            continue
+        try:
+            with p.open("rb") as h:
+                h.seek(offset)
+                chunk = h.read()
+                offset = h.tell()
+        except OSError:
+            continue
+        if not chunk:
+            continue
+        text = leftover + chunk.decode("utf-8", errors="replace")
+        lines = text.split("\n")
+        # Preserve a trailing partial line for the next poll.
+        leftover = lines.pop() if lines and not text.endswith("\n") else ""
+        for piece in lines:
+            # Split on \r so tqdm frames surface as separate lines.
+            for sub in piece.split("\r"):
+                pump.push(level, sub)
+
+
+def attach_file_tail(
+    path: str,
+    *,
+    source: str,
+    emit: Callable[[Event], None],
+    op_run_id: str,
+    job_id: str | None = None,
+    level: str = "info",
+    poll_interval: float = 0.25,
+) -> SubprocessLogHandle:
+    """Tail a growing log file, emitting one `LogLine` per appended line.
+
+    For backends whose subprocess is detached (e.g. the long-lived
+    vllm-mlx server managed by `ServerManager`, which writes to a log
+    file rather than a pipe so it survives across CLI invocations).
+    Returns a `SubprocessLogHandle`; cancel + await the task in
+    `finally` exactly like `attach_subprocess`.
+    """
+    pump = LinePump(
+        source=source, emit=emit, op_run_id=op_run_id, job_id=job_id
+    )
+    task = asyncio.create_task(
+        _tail_file(path, pump=pump, level=level, poll_interval=poll_interval)
+    )
+    return SubprocessLogHandle(tasks=[task])
+
+
 class _EventLoggingHandler(logging.Handler):
     """`logging.Handler` that forwards records to a `LogLine` pump."""
 
     def __init__(
         self,
         *,
-        pump: _LinePump,
+        pump: LinePump,
     ) -> None:
         super().__init__()
         self._pump = pump
@@ -223,7 +310,7 @@ def attach_logger(
     `tests/test_runtime_log_pump.py` exercises 100 sequential runs and
     asserts handler count stays bounded.
     """
-    pump = _LinePump(
+    pump = LinePump(
         source=source, emit=emit, op_run_id=op_run_id, job_id=job_id
     )
     handler = _EventLoggingHandler(pump=pump)
