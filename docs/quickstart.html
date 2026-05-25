@@ -4,8 +4,14 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="light" />
-<meta name="description" content="framepulse — the media engine. Typed artifacts, capability-named operations, swappable backends, content-addressed caching, async DAG execution. One substrate, six transports, 34 operations." />
-<title>framepulse · the media engine · Quick Start &amp; Operations Manual</title>
+<meta name="description" content="media_engine — universal media-processing engine. Typed artifacts, capability-named operations, swappable backends, content-addressed caching, async DAG execution. One substrate, six transports, 34 operations." />
+<title>media_engine · universal media-processing · Quick Start &amp; Operations Manual</title>
+<!--
+  Favicon — replicated-spark mark inlined as a data URL. Same geometry
+  as web/static/favicon.svg; embedded here so the static doc is
+  portable (no sibling-file dependency when hosted elsewhere).
+-->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22%23059669%22%3E%3Cpath%20d%3D%22M3%2012%20L8%206%20L8%2018%20Z%22%20opacity%3D%221.00%22%2F%3E%3Cpath%20d%3D%22M11%2012%20L16%206%20L16%2018%20Z%22%20opacity%3D%220.55%22%2F%3E%3Cpath%20d%3D%22M19%2012%20L22%209%20L22%2015%20Z%22%20opacity%3D%220.25%22%2F%3E%3C%2Fsvg%3E" />
 
 <!-- Mermaid for diagrams -->
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
@@ -86,7 +92,7 @@ a:focus-visible { outline: 2px solid var(--accent-green); outline-offset: 2px; b
 }
 .logo {
   display: flex;
-  align-items: baseline;
+  align-items: center;          /* center the SVG with the wordmark */
   gap: 8px;
   white-space: nowrap;
 }
@@ -97,15 +103,23 @@ a:focus-visible { outline: 2px solid var(--accent-green); outline-offset: 2px; b
   letter-spacing: 2.5px;
   text-transform: uppercase;
 }
-.logo .dot {
+/*
+ * Brand mark — "replicated spark". Three left-facing chevron pulses
+ * tracing a horizontal axis with cascading opacity. Same geometry as
+ * web/src/lib/components/brand/Logo.svelte; inline here so the static
+ * quickstart page doesn't have an extra HTTP round-trip. Color tracks
+ * --accent-green; opacity on each path keeps the silhouette readable.
+ */
+.logo .brand-mark {
   display: inline-block;
-  width: 6px; height: 6px;
-  background: var(--accent-green);
-  border-radius: 50%;
-  margin: 0 4px 1px 0;
-  vertical-align: middle;
-  animation: pulse 2.4s infinite;
+  width: 22px;
+  height: 22px;
+  color: var(--accent-green);
+  margin: 0 2px 0 0;
 }
+.logo .brand-mark path:nth-child(1) { animation: pulse 2.4s infinite; }
+.logo .brand-mark path:nth-child(2) { animation: pulse 2.4s infinite 0.3s; }
+.logo .brand-mark path:nth-child(3) { animation: pulse 2.4s infinite 0.6s; }
 .logo .tagline {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1471,14 +1485,24 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
 <!-- HEADER -->
 <header class="header" role="banner">
   <span class="logo">
-    <span class="dot"></span><span class="name">FRAMEPULSE</span>
-    <span class="tagline">the media engine</span>
+    <!--
+      Replicated-spark mark — same shape as web/src/lib/components/brand/Logo.svelte
+      and static/favicon.svg. Each path animates the pulse keyframe with a 0.3s
+      stagger so the three chevrons cascade like a propagating signal.
+    -->
+    <svg class="brand-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M3 12 L8 6 L8 18 Z" />
+      <path d="M11 12 L16 6 L16 18 Z" opacity="0.6" />
+      <path d="M19 12 L22 9 L22 15 Z" opacity="0.3" />
+    </svg>
+    <span class="name">MEDIA_ENGINE</span>
+    <span class="tagline">universal media-processing</span>
   </span>
   <nav class="header-stats" aria-label="Build status">
-    <span class="stat-pill">PHASE <b>4/5</b></span>
-    <span class="stat-pill"><b>31</b> OPS</span>
-    <span class="stat-pill"><b>30</b> BACKENDS</span>
-    <span class="stat-pill"><b>702</b> TESTS</span>
+    <span class="stat-pill">PHASE <b>6.6</b></span>
+    <span class="stat-pill"><b>34</b> OPS</span>
+    <span class="stat-pill"><b>30+</b> BACKENDS</span>
+    <span class="stat-pill"><b>998</b> TESTS</span>
   </nav>
   <span class="header-spacer"></span>
   <div class="header-actions">
@@ -1514,10 +1538,10 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
      001 — OVERVIEW
      ──────────────────────────────────────────────────────────── -->
 <section class="hero fade" id="overview">
-  <div class="eyebrow">OVERVIEW <span class="id">001 · FRAMEPULSE</span></div>
+  <div class="eyebrow">OVERVIEW <span class="id">001 · MEDIA_ENGINE</span></div>
   <h1>Typed media pipelines that survive <em>every interface</em>.</h1>
   <p class="hero-lede">
-    framepulse is a universal media-processing engine. Hand it a video, audio
+    <code class="inline">media_engine</code> is a universal media-processing engine. Hand it a video, audio
     file, image, URL, document, or live stream &mdash; pull back typed
     artifacts (transcripts, frame analyses, structured extractions,
     embeddings, summaries, search results) through one cache-coherent
@@ -1572,8 +1596,8 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
 <span class="fn">brew</span> install uv ffmpeg
 
 <span class="cmt"># 2. Clone and sync — minute one</span>
-<span class="fn">git</span> clone https://github.com/&lt;you&gt;/framepulse.git
-<span class="kw">cd</span> framepulse
+<span class="fn">git</span> clone https://github.com/&lt;you&gt;/media_engine.git
+<span class="kw">cd</span> media_engine
 <span class="fn">uv sync</span> <span class="flag">--extra</span> api <span class="flag">--extra</span> mcp <span class="flag">--extra</span> transcribe-mlx <span class="flag">--extra</span> embed
 
 <span class="cmt"># 3. Sanity check — 34 capability-named ops + the dep matrix for this machine</span>
@@ -1592,7 +1616,7 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
         <span class="hint">yt-dlp · streams sha256 · ffprobe-classifies</span>
       </header>
       <div class="tour-body">
-        <p class="desc">Hand framepulse any URL <strong>yt-dlp can resolve</strong> (YouTube, Vimeo, direct HLS, m3u8 playlist, raw <code class="inline">.mp4</code>) or a local file. The engine streams the bytes through sha256 as they land, calls <code class="inline">ffprobe</code> to classify the kind (Video / Audio / Image), and lands the file in the sha256-sharded permanent store. Stdout is just the id.</p>
+        <p class="desc">Hand <code class="inline">media_engine</code> any URL <strong>yt-dlp can resolve</strong> (YouTube, Vimeo, direct HLS, m3u8 playlist, raw <code class="inline">.mp4</code>) or a local file. The engine streams the bytes through sha256 as they land, calls <code class="inline">ffprobe</code> to classify the kind (Video / Audio / Image), and lands the file in the sha256-sharded permanent store. Stdout is just the id.</p>
         <div class="code-block">
           <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; first real download</span></div>
 <pre><span class="cmt"># A short public-domain test clip (Wikimedia · Big Buck Bunny, ~10 MB)</span>
@@ -1738,7 +1762,7 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
       <h3>What it is</h3>
       <h4>A universal substrate for typed media processing.</h4>
       <p>
-        Hand framepulse any media artifact &mdash; a video, an audio file, an
+        Hand <code class="inline">media_engine</code> any media artifact &mdash; a video, an audio file, an
         image, a URL, a PDF, a live HLS stream &mdash; and pull back typed
         outputs through one cache-coherent engine. <strong>Thirty-one
         capability-named operations</strong> apply uniformly across every
@@ -1786,7 +1810,7 @@ footer .build span b { color: var(--text-primary); font-weight: 700; }
         incompatible with the next. Each new pipeline is a new program.
       </p>
       <p>
-        framepulse factors all of that into one substrate. <strong>New media
+        <code class="inline">media_engine</code> factors all of that into one substrate. <strong>New media
         tools become profiles (YAML data), not new programs (code).</strong>
         The same op catalog answers from a shell, an HTTP request, an MCP
         tool call from an AI agent, or a Python <code class="inline">import</code>.
@@ -2152,14 +2176,14 @@ flowchart TD
       <div class="code-block">
         <div class="code-header"><div class="code-dots"><span class="code-dot r"></span><span class="code-dot y"></span><span class="code-dot g"></span></div><span class="code-title"><span class="code-lang">bash</span> &middot; register with Claude Code</span></div>
 <pre><span class="cmt"># default: read-only (search.* only)</span>
-<span class="fn">claude</span> mcp add framepulse <span class="str">"med mcp serve"</span>
+<span class="fn">claude</span> mcp add media_engine <span class="str">"med mcp serve"</span>
 
 <span class="cmt"># expose specific writeful ops</span>
-<span class="fn">claude</span> mcp add framepulse \
+<span class="fn">claude</span> mcp add media_engine \
     <span class="str">"med mcp serve --allow audio.transcribe --allow intelligence.summarize"</span>
 
 <span class="cmt"># or open everything (trusted local-only setups)</span>
-<span class="fn">claude</span> mcp add framepulse <span class="str">"med mcp serve --allow '*'"</span></pre>
+<span class="fn">claude</span> mcp add media_engine <span class="str">"med mcp serve --allow '*'"</span></pre>
       </div>
     </div>
 
@@ -2904,7 +2928,7 @@ Output as Markdown headings. Be concise.</pre>
 </main>
 
 <footer>
-  <span class="brand">FRAMEPULSE &middot; v0.6.2</span>
+  <span class="brand">MEDIA_ENGINE &middot; v0.6.2</span>
   <div class="build">
     <span>BUILD <b>PHASE 6.5 COMPLETE / 7</b></span>
     <span>COMMITS <b>70+</b></span>
