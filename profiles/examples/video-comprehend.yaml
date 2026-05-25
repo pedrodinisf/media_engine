@@ -1,0 +1,30 @@
+profile_schema_version: "1.0"
+name: video-comprehend
+kind: pipeline
+description: >
+  Full video understanding in one node. Samples frames at the requested
+  fps, runs per-frame VLM analysis, runs a speaker-diarized transcript,
+  merges both timelines, and hands the result to ONE SOTA-LLM call that
+  produces a structured Analysis. Tune ``style`` for the content shape
+  (general / explainer / lecture / interview / tutorial) and
+  ``output_kind`` for structured-JSON vs prose Markdown.
+
+  Defaults assume an Apple-Silicon host with the ``transcribe-mlx``,
+  ``diarize``, and a vllm-mlx VLM available locally. On other hardware
+  swap ``vlm_model`` to a gemini-prefixed id; the op auto-routes the
+  per-frame fan-out through the cloud backend.
+inputs:
+  - { name: source, kind: video }
+graph:
+  - id: result
+    op: video.comprehend
+    inputs: { in: source }
+    params:
+      fps: 1.0
+      max_frames: 240
+      vlm_model: mlx-community/Qwen2-VL-7B-Instruct-4bit
+      transcribe_model: mlx-community/whisper-medium-mlx
+      synth_model: gemini-2.5-pro
+      style: general
+      output_kind: structured
+outputs: [result]
