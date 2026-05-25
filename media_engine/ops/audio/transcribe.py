@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -37,6 +37,24 @@ class TranscribeParams(BaseModel):
     language: str | None = None  # None = auto-detect
     temperature: float = 0.0
     word_timestamps: bool = True
+    # Optional [start_s, end_s) sub-range. Both None → transcribe the full
+    # input. The backend ffmpeg-slices to a temp file before invoking
+    # mlx-whisper; the slice change propagates into the artifact id hash
+    # naturally so a range run gets its own cache key.
+    start_s: float | None = Field(default=None, ge=0.0)
+    end_s: float | None = Field(default=None, ge=0.0)
+
+    @model_validator(mode="after")
+    def _check_range(self) -> TranscribeParams:
+        if (
+            self.start_s is not None
+            and self.end_s is not None
+            and self.end_s <= self.start_s
+        ):
+            raise ValueError(
+                f"end_s must be > start_s (got start={self.start_s}, end={self.end_s})"
+            )
+        return self
 
 
 @register_op

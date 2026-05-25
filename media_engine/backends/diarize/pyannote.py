@@ -30,6 +30,7 @@ from media_engine.ops.audio.diarize import (
     DiarizeParams,
     build_diarization_artifact,
 )
+from media_engine.runtime.audio_slice import maybe_slice_audio
 from media_engine.runtime.events import Progress
 
 BACKEND_NAME = "pyannote"
@@ -154,10 +155,18 @@ class PyannoteDiarizeBackend(Backend):
 
         _emit_progress(ctx, run_id, 0.30, "embedding")
 
+        sliced_path = await asyncio.to_thread(
+            maybe_slice_audio,
+            str(audio.path),
+            start_s=params.start_s,
+            end_s=params.end_s,
+            ctx=ctx,
+        )
+
         diarization = await asyncio.to_thread(
             _run_diarize_sync,
             pipeline,
-            str(audio.path),
+            sliced_path,
             num_speakers=params.num_speakers,
             min_speakers=params.min_speakers,
             max_speakers=params.max_speakers,

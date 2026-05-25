@@ -32,6 +32,7 @@ from media_engine.ops.audio.transcribe import (
     TranscribeParams,
     build_transcript_artifact,
 )
+from media_engine.runtime.audio_slice import maybe_slice_audio
 from media_engine.runtime.events import Progress
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -157,8 +158,18 @@ class MlxWhisperTranscribeBackend(Backend):
         derived_id_for_progress: str | None = None
         _emit_segment_progress(ctx, run_id, derived_id_for_progress, 0.0, "loading model")
 
+        # ffmpeg-slice the audio if start_s / end_s were set; otherwise
+        # this is a no-op returning the original path (no subprocess).
+        sliced_path = await asyncio.to_thread(
+            maybe_slice_audio,
+            str(audio.path),
+            start_s=params.start_s,
+            end_s=params.end_s,
+            ctx=ctx,
+        )
+
         result = await asyncio.to_thread(
-            _run_transcribe_sync, str(audio.path), params
+            _run_transcribe_sync, sliced_path, params
         )
 
         text: str = str(result.get("text", ""))

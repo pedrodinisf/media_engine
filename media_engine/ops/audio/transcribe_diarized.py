@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -45,6 +45,25 @@ class TranscribeDiarizedParams(BaseModel):
     num_speakers: int | None = None
     transcribe_backend: str | None = None  # default backend if unset
     diarize_backend: str | None = None
+    # Forwarded to both audio.transcribe + audio.diarize sub-op calls in
+    # run() — each sub-op slices the audio independently. Two ffmpeg copy
+    # calls per composite run when a range is set; stream-copy is
+    # sub-second, the trade-off buys clean cache semantics (each sub-op
+    # gets its own derived artifact id).
+    start_s: float | None = Field(default=None, ge=0.0)
+    end_s: float | None = Field(default=None, ge=0.0)
+
+    @model_validator(mode="after")
+    def _check_range(self) -> TranscribeDiarizedParams:
+        if (
+            self.start_s is not None
+            and self.end_s is not None
+            and self.end_s <= self.start_s
+        ):
+            raise ValueError(
+                f"end_s must be > start_s (got start={self.start_s}, end={self.end_s})"
+            )
+        return self
 
 
 def _align_speakers(
@@ -115,6 +134,15 @@ class AudioTranscribeDiarized(Operation):
             diarize_kwargs["num_speakers"] = params.num_speakers
         if params.diarize_backend is not None:
             diarize_kwargs["backend"] = params.diarize_backend
+
+        # Forward the sub-range to both sub-ops so each derives its own
+        # content-addressed artifact id from the same time window.
+        if params.start_s is not None:
+            transcribe_kwargs["start_s"] = params.start_s
+            diarize_kwargs["start_s"] = params.start_s
+        if params.end_s is not None:
+            transcribe_kwargs["end_s"] = params.end_s
+            diarize_kwargs["end_s"] = params.end_s
 
         transcribe_outs = await ctx.run_op(
             "audio.transcribe", inputs=[audio.id], **transcribe_kwargs
