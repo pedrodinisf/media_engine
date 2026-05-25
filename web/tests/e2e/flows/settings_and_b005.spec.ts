@@ -46,6 +46,101 @@ test('Settings → Doctor renders the dep matrix', async ({ page }) => {
   await expect(page.locator('text=audio.transcribe').first()).toBeVisible();
 });
 
+test('Brand: replicated-spark logo renders in the header', async ({ page }) => {
+  await page.goto(`${baseURL}/ui/`);
+  // The Logo component carries data-testid="brand-logo" + an aria-hidden
+  // SVG with three <path> children (cascading opacity pulses).
+  const logo = page.locator('[data-testid="brand-logo"]');
+  await expect(logo).toBeVisible({ timeout: 5_000 });
+  await expect(logo.locator('path')).toHaveCount(3);
+});
+
+test('Settings: "Visibility" tab replaces "Catalog gate"', async ({ page }) => {
+  await page.goto(`${baseURL}/ui/settings`);
+  // Renamed tab is clickable + present.
+  await page.getByRole('button', { name: 'Visibility', exact: true }).click();
+  // Tab content reads as op/backend visibility now, not the old name.
+  await expect(page.getByText('Op & backend visibility')).toBeVisible({
+    timeout: 5_000,
+  });
+  // The old name must NOT appear anywhere on the page.
+  await expect(page.getByText('Catalog gate')).toHaveCount(0);
+});
+
+test('Run panel: audio.transcribe model field is a <select> (curated dropdown)', async ({ page }) => {
+  await page.goto(`${baseURL}/ui/run`);
+  await page.getByRole('button', { name: 'audio.transcribe', exact: true }).click();
+  // Wait for the form to render — there are multiple <select> elements
+  // (backend + language + model). Find the one whose options include
+  // the whisper variants.
+  const modelSelect = page.locator('select').filter({
+    hasText: 'mlx-community/whisper-large-v3-mlx',
+  });
+  await expect(modelSelect).toBeVisible({ timeout: 5_000 });
+  // The curated set ships 6 variants — assert at least 4 to allow for
+  // future additions without breaking the spec.
+  const options = await modelSelect.locator('option').count();
+  expect(options).toBeGreaterThanOrEqual(4);
+});
+
+test('Run panel: range slider renders when an Audio artifact is the input', async ({ page }) => {
+  // Ingest a small wav so the test env has a known Audio artifact id.
+  // sample_speech.wav (~30s) is the smallest seedable in the repo.
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const fixture = path.resolve(
+    process.cwd(), '..', 'tests', 'fixtures', 'sample_speech.wav',
+  );
+  let audioBuffer: Buffer;
+  try {
+    audioBuffer = await fs.readFile(fixture);
+  } catch {
+    test.skip(true, `fixture missing: ${fixture}`);
+    return;
+  }
+  const upload = await page.request.post(`${baseURL}/acquire/upload`, {
+    headers: { Authorization: `Bearer ${token}` },
+    multipart: {
+      file: {
+        name: 'sample_speech.wav',
+        mimeType: 'audio/wav',
+        buffer: audioBuffer,
+      },
+      commit: 'true',
+    },
+  });
+  expect(upload.ok()).toBeTruthy();
+  const { job_id: jobId } = await upload.json();
+
+  // Poll the job until it completes — acquire.upload is fast (< 5s).
+  let artifactId: string | null = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const r = await page.request.get(`${baseURL}/jobs/${jobId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await r.json();
+    if (body.job?.status === 'completed' && body.job.output_artifact_ids?.length) {
+      artifactId = body.job.output_artifact_ids[0];
+      break;
+    }
+    if (body.job?.status === 'failed') {
+      throw new Error(`acquire.upload failed: ${JSON.stringify(body.job.error)}`);
+    }
+    await new Promise((res) => setTimeout(res, 250));
+  }
+  expect(artifactId).toBeTruthy();
+
+  // Drive the Run panel with that artifact id.
+  await page.goto(`${baseURL}/ui/run`);
+  await page.getByRole('button', { name: 'audio.transcribe', exact: true }).click();
+  await page.locator('input[placeholder*="a-3c1f"]').fill(artifactId!);
+
+  // Slider renders above SchemaForm once the inputCheck resolves the
+  // Audio kind + duration. mm:ss labels live next to the handles.
+  await expect(page.getByText('Time range')).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByRole('button', { name: 'Use full range' })).toBeVisible();
+});
+
 test('Settings → Secrets lists the catalog and round-trips a save', async ({ page }) => {
   await page.goto(`${baseURL}/ui/settings`);
   await page.getByRole('button', { name: 'Secrets' }).click();
