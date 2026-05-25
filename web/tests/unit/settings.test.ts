@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { formatBytes, isRevoked, type TokenInfo } from '$lib/api/settings';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  formatBytes,
+  getConfigFiles,
+  getDoctor,
+  isRevoked,
+  listSecrets,
+  putSecrets,
+  type TokenInfo,
+} from '$lib/api/settings';
+import { api } from '$lib/api/client';
 
 describe('formatBytes', () => {
   it('renders zero / negative / NaN as "0 B"', () => {
@@ -50,5 +59,50 @@ describe('isRevoked', () => {
     // Even an empty string would be truthy in JS; we use strict null
     // so the server's "null" sentinel is the *only* not-revoked state.
     expect(isRevoked({ ...baseline, revoked_at: '' })).toBe(true);
+  });
+});
+
+describe('Settings REST client (Doctor / Secrets / Config files)', () => {
+  it('getDoctor() encodes the op filter into ?op=', async () => {
+    const spy = vi.spyOn(api, 'get').mockResolvedValueOnce({ summary: {}, ops: [] });
+    await getDoctor('intelligence.');
+    expect(spy).toHaveBeenCalledWith('/settings/doctor?op=intelligence.');
+    spy.mockRestore();
+  });
+
+  it('getDoctor() omits ?op= when no filter is passed', async () => {
+    const spy = vi.spyOn(api, 'get').mockResolvedValueOnce({ summary: {}, ops: [] });
+    await getDoctor();
+    expect(spy).toHaveBeenCalledWith('/settings/doctor');
+    spy.mockRestore();
+  });
+
+  it('listSecrets() targets /settings/secrets', async () => {
+    const spy = vi.spyOn(api, 'get').mockResolvedValueOnce({ items: [], file_path: '' });
+    await listSecrets();
+    expect(spy).toHaveBeenCalledWith('/settings/secrets');
+    spy.mockRestore();
+  });
+
+  it('putSecrets() wraps updates under the `updates` key', async () => {
+    const spy = vi
+      .spyOn(api, 'put')
+      .mockResolvedValueOnce({ items: [], file_path: '', written: [] });
+    await putSecrets({ GEMINI_API_KEY: 'abc', HF_TOKEN: null });
+    expect(spy).toHaveBeenCalledWith('/settings/secrets', {
+      updates: { GEMINI_API_KEY: 'abc', HF_TOKEN: null },
+    });
+    spy.mockRestore();
+  });
+
+  it('getConfigFiles() targets /settings/config-files', async () => {
+    const spy = vi.spyOn(api, 'get').mockResolvedValueOnce({
+      config_toml: { path: '', exists: false, content: '', is_masked: false },
+      resources_yaml: { path: '', exists: false, content: '', is_masked: false },
+      secrets_env: { path: '', exists: false, content: '', is_masked: true },
+    });
+    await getConfigFiles();
+    expect(spy).toHaveBeenCalledWith('/settings/config-files');
+    spy.mockRestore();
   });
 });

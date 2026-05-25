@@ -9,6 +9,7 @@ heavier — selection, schema validation, op execution — happens behind
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
@@ -156,10 +157,17 @@ class RunPreviewResponse(BaseModel):
     ``estimate_seconds_local`` field is the wall-clock proxy for local
     ops; ``estimate_cost_cents`` is non-null only for cloud-billable
     backends.
+
+    ``embedded`` is set when the op has no Backend layer at all
+    (composite / fan-out ops like ``intelligence.summarize`` or
+    ``audio.transcribe_diarized``). The UI uses this flag to render
+    "(composite)" instead of "—" in the cost-preview backend field,
+    which is the B-005 fix.
     """
 
     op: str
     backend: str | None
+    embedded: bool = False
     estimate_seconds_local: float
     estimate_cost_cents: float
     estimate_tokens_in: int
@@ -294,6 +302,62 @@ class BackendDetail(BackendSummary):
     health: str
 
 
+class SecretInfo(BaseModel):
+    """Status of a known secret env-var.
+
+    The ``value`` is never returned — only whether the env var is set and
+    where the value came from (shell, file, or unset). The Web UI surfaces
+    "set" / "unset" as a status icon; the user can overwrite the value by
+    posting a new one via ``PUT /settings/secrets``.
+    """
+
+    name: str
+    label: str
+    category: str
+    used_by: str
+    url: str = ""
+    set: bool
+    source: Literal["shell", "file", "unset"]
+
+
+class SecretsListResponse(BaseModel):
+    items: list[SecretInfo]
+    file_path: str
+
+
+class SecretsUpdateRequest(BaseModel):
+    # ``None`` deletes the key (UI sends None for explicit "clear"); ""
+    # also deletes for symmetry with the file-format behaviour.
+    updates: dict[str, str | None]
+
+
+class SecretsUpdateResponse(BaseModel):
+    items: list[SecretInfo]
+    file_path: str
+    written: list[str]
+
+
+class ConfigFileView(BaseModel):
+    """A read-only view of a config file.
+
+    ``exists`` is the only "you should display this" signal; ``content``
+    is empty when the file is missing or the operator hasn't created it
+    yet. Secret-bearing files (``secrets.env``) are returned with values
+    masked so the file viewer doesn't leak the raw keys.
+    """
+
+    path: str
+    exists: bool
+    content: str
+    is_masked: bool = False
+
+
+class ConfigFilesResponse(BaseModel):
+    config_toml: ConfigFileView
+    resources_yaml: ConfigFileView
+    secrets_env: ConfigFileView
+
+
 router = APIRouter()
 
 
@@ -360,6 +424,13 @@ def post_run_preview(
 
     # Resolve backend the same way Engine.run does.
     backend_name = body.backend or op_cls().select_backend(params_model) or op_cls.default_backend
+    # An op with no registered Backend layer (composite / fan-out) gets
+    # an empty backend list — flag it so the UI can render "(composite)"
+    # instead of "—" in the cost preview (B-005 p1).
+    is_embedded = (
+        op_cls.default_backend is None
+        and not BackendRegistry.for_op(op_cls.name)
+    )
 
     try:
         estimate = state.engine.estimate_op_cost(
@@ -375,6 +446,7 @@ def post_run_preview(
     return RunPreviewResponse(
         op=body.op,
         backend=backend_name,
+        embedded=is_embedded,
         estimate_seconds_local=estimate.local_seconds,
         estimate_cost_cents=estimate.cloud_cents,
         estimate_tokens_in=estimate.tokens_in,
@@ -1095,6 +1167,168 @@ def get_backend_endpoint(
         version=backend.version,
         requires=backend.requires.model_dump(),
         health=backend.health(),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+# /settings/* — operator-managed engine surfaces
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/settings/doctor")
+def get_settings_doctor(
+    state: Annotated[AppState, Depends(get_state)],
+    _: Annotated[ApiTokenInfo, Depends(require_token)],
+    op: Annotated[str | None, Query()] = None,
+) -> dict[str, object]:
+    """Run the same dep-matrix walk as ``med doctor`` and return JSON.
+
+    Re-evaluated on every call — env vars, importable packages, and
+    binaries can change while the engine is up (secrets edit, brew
+    install). The Web UI's Doctor tab refreshes on demand; we don't
+    cache.
+    """
+    # Token used only to gate access; the doctor walks the registry, not
+    # namespaced data.
+    del state
+    from media_engine.runtime.doctor import diagnose
+
+    return diagnose(op_filter=op).to_dict()
+
+
+def _secret_info_rows(config_dir: Path) -> tuple[list[SecretInfo], str]:
+    """Build the SecretInfo rows for a given config dir.
+
+    Combines the static KNOWN_SECRETS catalog with the actual env state
+    so the UI can render "set / unset" badges. ``source`` is best-effort
+    — if a key is set AND present in the file we report "file" (the
+    UI's edit path wrote it); otherwise "shell".
+    """
+    from media_engine.runtime.secrets import (
+        KNOWN_SECRETS,
+        read_secrets,
+        secrets_path,
+    )
+
+    file_contents = read_secrets(config_dir)
+    rows: list[SecretInfo] = []
+    for entry in KNOWN_SECRETS:
+        name = entry["name"]
+        env_value = os.environ.get(name)
+        is_set = bool(env_value)
+        if not is_set:
+            source: Literal["shell", "file", "unset"] = "unset"
+        elif name in file_contents and file_contents[name] == env_value:
+            source = "file"
+        else:
+            source = "shell"
+        rows.append(
+            SecretInfo(
+                name=name,
+                label=entry["label"],
+                category=entry["category"],
+                used_by=entry["used_by"],
+                url=entry.get("url", ""),
+                set=is_set,
+                source=source,
+            )
+        )
+    return rows, str(secrets_path(config_dir))
+
+
+@router.get("/settings/secrets", response_model=SecretsListResponse)
+def get_settings_secrets(
+    state: Annotated[AppState, Depends(get_state)],
+    _: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> SecretsListResponse:
+    """List the known secret env-vars + whether each is set.
+
+    Values are never returned. The UI shows status badges and provides
+    a write-only input for updates.
+    """
+    rows, file_path = _secret_info_rows(state.engine.config.config_dir)
+    return SecretsListResponse(items=rows, file_path=file_path)
+
+
+@router.put("/settings/secrets", response_model=SecretsUpdateResponse)
+def put_settings_secrets(
+    body: SecretsUpdateRequest,
+    state: Annotated[AppState, Depends(get_state)],
+    _: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> SecretsUpdateResponse:
+    """Persist secret env-vars to ``{config_dir}/secrets.env``.
+
+    Also exports the new values into the running process's ``os.environ``
+    (``load_secrets(override=True)``) so backends that read the env at
+    call-time see them immediately. Backends that snapshot env at import
+    or boot will still need a process restart — the UI shows a banner
+    pointing this out.
+    """
+    from media_engine.runtime.secrets import load_secrets, write_secrets
+
+    config_dir = state.engine.config.config_dir
+    try:
+        write_secrets(config_dir, body.updates)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+
+    # Apply deletions immediately too — write_secrets removes the key
+    # from the file, but the running process still has it in os.environ.
+    for key, value in body.updates.items():
+        if value is None or value == "":
+            os.environ.pop(key, None)
+
+    touched = load_secrets(config_dir, override=True)
+    rows, file_path = _secret_info_rows(config_dir)
+    return SecretsUpdateResponse(items=rows, file_path=file_path, written=touched)
+
+
+_SECRET_FILE_VALUE_PATTERN = re.compile(
+    r"^([A-Z_][A-Z0-9_]*)=(.*)$", re.MULTILINE
+)
+
+
+def _mask_secret_file(body: str) -> str:
+    """Replace each KEY=VALUE pair with KEY=<set> for read-only display."""
+    return _SECRET_FILE_VALUE_PATTERN.sub(
+        lambda m: f"{m.group(1)}=<set>", body
+    )
+
+
+def _read_config_file(path: Path, *, mask: bool = False) -> ConfigFileView:
+    if not path.exists():
+        return ConfigFileView(path=str(path), exists=False, content="", is_masked=mask)
+    try:
+        body = path.read_text(encoding="utf-8")
+    except OSError as e:
+        return ConfigFileView(
+            path=str(path), exists=True, content=f"<read error: {e}>", is_masked=mask
+        )
+    if mask:
+        body = _mask_secret_file(body)
+    return ConfigFileView(path=str(path), exists=True, content=body, is_masked=mask)
+
+
+@router.get("/settings/config-files", response_model=ConfigFilesResponse)
+def get_settings_config_files(
+    state: Annotated[AppState, Depends(get_state)],
+    _: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> ConfigFilesResponse:
+    """Return the three operator-facing config files for read-only display.
+
+    Inline editing for ``config.toml`` and ``resources.yaml`` lands
+    in v1.x; this endpoint just lets the Web UI show the operator
+    *what's there* without making them ``cat`` the file in a shell.
+    Values inside ``secrets.env`` are masked so the file viewer can't
+    leak credentials.
+    """
+    config_dir = state.engine.config.config_dir
+    from media_engine.runtime.secrets import secrets_path
+
+    return ConfigFilesResponse(
+        config_toml=_read_config_file(config_dir / "config.toml"),
+        resources_yaml=_read_config_file(config_dir / "resources.yaml"),
+        secrets_env=_read_config_file(secrets_path(config_dir), mask=True),
     )
 
 

@@ -153,6 +153,110 @@ export function storageGC(
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Doctor — op→backend→requirements matrix (mirrors `med doctor --json`)
+// ─────────────────────────────────────────────────────────────────
+
+export type DoctorRequirement = {
+  kind: 'env' | 'binary' | 'service' | 'hardware' | 'memory';
+  name: string;
+  status: 'ok' | 'missing' | 'degraded';
+  detail: string;
+};
+
+export type DoctorBackend = {
+  op_name: string;
+  backend_name: string;
+  backend_version: string;
+  requirements: DoctorRequirement[];
+  overall: 'ok' | 'degraded' | 'unavailable';
+};
+
+export type DoctorOp = {
+  op_name: string;
+  op_version: string;
+  input_kinds: string[];
+  output_kinds: string[];
+  default_backend: string | null;
+  has_router: boolean;
+  embedded: boolean;
+  backends: DoctorBackend[];
+  overall: 'ok' | 'degraded' | 'unavailable';
+  default_backend_status: 'ok' | 'degraded' | 'unavailable' | null;
+};
+
+export type DoctorReport = {
+  summary: { ok: number; degraded: number; unavailable: number };
+  ops: DoctorOp[];
+};
+
+export function getDoctor(opFilter?: string): Promise<DoctorReport> {
+  const qs = opFilter ? `?op=${encodeURIComponent(opFilter)}` : '';
+  return api.get<DoctorReport>(`/settings/doctor${qs}`);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Secrets — known env-vars + write path
+// ─────────────────────────────────────────────────────────────────
+
+export type SecretInfo = {
+  name: string;
+  label: string;
+  category: string;
+  used_by: string;
+  url: string;
+  set: boolean;
+  source: 'shell' | 'file' | 'unset';
+};
+
+export type SecretsListResponse = {
+  items: SecretInfo[];
+  file_path: string;
+};
+
+export type SecretsUpdateResponse = {
+  items: SecretInfo[];
+  file_path: string;
+  written: string[];
+};
+
+export function listSecrets(): Promise<SecretsListResponse> {
+  return api.get<SecretsListResponse>('/settings/secrets');
+}
+
+/**
+ * Apply a batch of secret-env updates. ``null`` (or empty string) deletes
+ * the key. The server persists to `~/.config/media_engine/secrets.env`
+ * (chmod 0600) and exports into the running process's env so backends
+ * that read env at call-time see the change immediately. Backends that
+ * snapshot env at import / boot still need a process restart — the UI
+ * surfaces that caveat as a banner.
+ */
+export function putSecrets(updates: Record<string, string | null>): Promise<SecretsUpdateResponse> {
+  return api.put<SecretsUpdateResponse>('/settings/secrets', { updates });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Config files — read-only viewers
+// ─────────────────────────────────────────────────────────────────
+
+export type ConfigFileView = {
+  path: string;
+  exists: boolean;
+  content: string;
+  is_masked: boolean;
+};
+
+export type ConfigFilesResponse = {
+  config_toml: ConfigFileView;
+  resources_yaml: ConfigFileView;
+  secrets_env: ConfigFileView;
+};
+
+export function getConfigFiles(): Promise<ConfigFilesResponse> {
+  return api.get<ConfigFilesResponse>('/settings/config-files');
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Formatting helpers
 // ─────────────────────────────────────────────────────────────────
 

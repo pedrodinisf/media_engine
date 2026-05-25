@@ -14,33 +14,51 @@
     createToken,
     formatBytes,
     getCatalog,
+    getConfigFiles,
+    getDoctor,
     isRevoked,
     listBackends,
     listExtras,
+    listSecrets,
     listTokens,
     putCatalog,
+    putSecrets,
     revokeToken,
     storageGC,
     storageStats,
     type BackendSummary,
     type CatalogResponse,
+    type ConfigFilesResponse,
+    type DoctorOp,
+    type DoctorReport,
     type ExtraRow,
     type GCResponse,
+    type SecretInfo,
     type StorageStats,
     type TokenInfo,
   } from '$lib/api/settings';
 
-  type Tab = 'tokens' | 'backends' | 'extras' | 'catalog' | 'storage' | 'config';
+  type Tab =
+    | 'doctor'
+    | 'secrets'
+    | 'extras'
+    | 'backends'
+    | 'catalog'
+    | 'tokens'
+    | 'storage'
+    | 'config';
   const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
-    { id: 'tokens', label: 'Tokens' },
+    { id: 'doctor', label: 'Doctor' },
+    { id: 'secrets', label: 'Secrets' },
+    { id: 'extras', label: 'Extras' },
     { id: 'backends', label: 'Backends' },
-    { id: 'extras', label: 'Plugins · Extras' },
-    { id: 'catalog', label: 'Plugins · Catalog' },
+    { id: 'catalog', label: 'Catalog gate' },
+    { id: 'tokens', label: 'Tokens' },
     { id: 'storage', label: 'Storage' },
-    { id: 'config', label: 'Config' },
+    { id: 'config', label: 'Config files' },
   ];
 
-  let activeTab = $state<Tab>('tokens');
+  let activeTab = $state<Tab>('doctor');
   let error = $state<string | null>(null);
 
   // ─────────────── Tokens ───────────────
@@ -260,8 +278,121 @@
     }
   }
 
+  // ─────────────── Doctor ───────────────
+  let doctorReport = $state<DoctorReport | null>(null);
+  let doctorLoading = $state(false);
+  let doctorExpanded = $state<Set<string>>(new Set());
+  let doctorFilter = $state<'all' | 'unavailable'>('all');
+
+  async function refreshDoctor(): Promise<void> {
+    doctorLoading = true;
+    try {
+      doctorReport = await getDoctor();
+    } catch (e) {
+      error = e instanceof ApiError ? e.detail : String(e);
+    } finally {
+      doctorLoading = false;
+    }
+  }
+
+  function toggleDoctorRow(name: string): void {
+    const next = new Set(doctorExpanded);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    doctorExpanded = next;
+  }
+
+  function overallIcon(s: string | null | undefined): string {
+    switch (s) {
+      case 'ok': return '🟢';
+      case 'degraded': return '🟡';
+      case 'unavailable': return '🔴';
+      default: return '⚪';
+    }
+  }
+
+  function reqStatusIcon(s: string): string {
+    switch (s) {
+      case 'ok': return '✓';
+      case 'degraded': return '~';
+      case 'missing': return '✗';
+      default: return '?';
+    }
+  }
+
+  const visibleDoctorOps = $derived.by<DoctorOp[]>(() => {
+    if (!doctorReport) return [];
+    if (doctorFilter === 'unavailable') {
+      return doctorReport.ops.filter((o) => o.overall === 'unavailable');
+    }
+    return doctorReport.ops;
+  });
+
+  // ─────────────── Secrets ───────────────
+  let secrets = $state<SecretInfo[]>([]);
+  let secretsFilePath = $state<string>('');
+  let secretsLoading = $state(false);
+  let secretEdits = $state<Record<string, string>>({});
+  let secretSaving = $state<Record<string, boolean>>({});
+  let secretsSavedAt = $state<number | null>(null);
+
+  async function refreshSecrets(): Promise<void> {
+    secretsLoading = true;
+    try {
+      const r = await listSecrets();
+      secrets = r.items;
+      secretsFilePath = r.file_path;
+    } catch (e) {
+      error = e instanceof ApiError ? e.detail : String(e);
+    } finally {
+      secretsLoading = false;
+    }
+  }
+
+  async function saveSecret(name: string, value: string | null): Promise<void> {
+    secretSaving = { ...secretSaving, [name]: true };
+    try {
+      const r = await putSecrets({ [name]: value });
+      secrets = r.items;
+      secretsFilePath = r.file_path;
+      secretEdits = { ...secretEdits, [name]: '' };
+      secretsSavedAt = Date.now();
+    } catch (e) {
+      error = e instanceof ApiError ? e.detail : String(e);
+    } finally {
+      secretSaving = { ...secretSaving, [name]: false };
+    }
+  }
+
+  const secretsByCategory = $derived.by<Map<string, SecretInfo[]>>(() => {
+    const out = new Map<string, SecretInfo[]>();
+    for (const s of secrets) {
+      const list = out.get(s.category) ?? [];
+      list.push(s);
+      out.set(s.category, list);
+    }
+    return out;
+  });
+
+  // ─────────────── Config files (read-only) ───────────────
+  let configFiles = $state<ConfigFilesResponse | null>(null);
+  let configFilesLoading = $state(false);
+
+  async function refreshConfigFiles(): Promise<void> {
+    configFilesLoading = true;
+    try {
+      configFiles = await getConfigFiles();
+    } catch (e) {
+      error = e instanceof ApiError ? e.detail : String(e);
+    } finally {
+      configFilesLoading = false;
+    }
+  }
+
   // ─────────────── Tab activation: lazy-load ───────────────
   let loaded = $state<Record<Tab, boolean>>({
+    doctor: false,
+    secrets: false,
     tokens: false,
     backends: false,
     extras: false,
@@ -275,16 +406,22 @@
     if (loaded[tab]) return;
     loaded = { ...loaded, [tab]: true };
     switch (tab) {
+      case 'doctor': void refreshDoctor(); break;
+      case 'secrets': void refreshSecrets(); break;
       case 'tokens': void refreshTokens(); break;
       case 'backends': void refreshBackends(); break;
       case 'extras': void refreshExtras(); break;
       case 'catalog': void refreshCatalog(); break;
       case 'storage': void refreshStats(); break;
-      case 'config': void refreshConfig(); break;
+      case 'config': {
+        void refreshConfig();
+        void refreshConfigFiles();
+        break;
+      }
     }
   }
 
-  onMount(() => activate('tokens'));
+  onMount(() => activate('doctor'));
 
   const visibleCatalogOps = $derived.by(() => {
     if (!catalog) return [] as string[];
@@ -334,6 +471,211 @@
     class="mb-3 text-xs p-2 rounded"
     style="color: var(--accent-red); background: var(--accent-red-soft); border: 1px solid rgba(220, 38, 38, 0.25);"
   >{error}</p>
+{/if}
+
+<!-- ─────────────── DOCTOR ─────────────── -->
+{#if activeTab === 'doctor'}
+  <section class="p-4 rounded mb-3" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
+    <div class="flex items-end justify-between mb-3 flex-wrap gap-2">
+      <div>
+        <h2 class="text-xs font-semibold uppercase" style="color: var(--text-muted);">
+          Dependency map — what works on this machine
+        </h2>
+        <p class="text-xs mt-1" style="color: var(--text-secondary);">
+          Mirror of <code class="font-mono">med doctor</code>. Re-evaluated on every refresh.
+          A 🔴 op has no working backend; fix by adding the missing
+          <button type="button" class="underline" onclick={() => activate('secrets')}>secret</button>
+          or installing the missing
+          <button type="button" class="underline" onclick={() => activate('extras')}>extra</button>.
+        </p>
+      </div>
+      <div class="flex items-end gap-2">
+        <label class="text-xs" style="color: var(--text-secondary);">
+          <span class="block mb-1">filter</span>
+          <select
+            bind:value={doctorFilter}
+            class="px-2 py-1 rounded text-xs font-mono"
+            style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
+          >
+            <option value="all">all ops</option>
+            <option value="unavailable">unavailable only</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          onclick={() => void refreshDoctor()}
+          disabled={doctorLoading}
+          class="px-3 py-1.5 rounded text-xs font-semibold disabled:opacity-50"
+          style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
+        >{doctorLoading ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+    </div>
+
+    {#if doctorReport}
+      <div class="flex gap-3 mb-3 text-xs font-mono">
+        <span style="color: var(--accent-green);">🟢 ok: {doctorReport.summary.ok}</span>
+        <span style="color: var(--accent-amber);">🟡 degraded: {doctorReport.summary.degraded}</span>
+        <span style="color: var(--accent-red);">🔴 unavailable: {doctorReport.summary.unavailable}</span>
+      </div>
+    {/if}
+
+    {#if doctorLoading && !doctorReport}
+      <p class="text-xs italic" style="color: var(--text-muted);">Loading…</p>
+    {:else if doctorReport}
+      <table class="w-full text-sm">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--border-soft); color: var(--text-muted); font-size: 11px; text-transform: uppercase;">
+            <th class="text-left px-2 py-1 font-semibold">op</th>
+            <th class="text-left px-2 py-1 font-semibold">default backend</th>
+            <th class="text-left px-2 py-1 font-semibold">status</th>
+            <th class="text-right px-2 py-1 font-semibold">details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each visibleDoctorOps as op (op.op_name)}
+            {@const expanded = doctorExpanded.has(op.op_name)}
+            <tr style="border-bottom: 1px solid var(--border-soft);">
+              <td class="px-2 py-1 text-xs font-mono">{op.op_name}</td>
+              <td class="px-2 py-1 text-xs font-mono" style="color: var(--text-secondary);">
+                {#if op.embedded}
+                  <span style="color: var(--text-muted);">(composite)</span>
+                {:else if op.default_backend}
+                  {op.default_backend}{op.has_router ? ' (router)' : ''}
+                {:else}
+                  —
+                {/if}
+              </td>
+              <td class="px-2 py-1 text-xs font-mono">
+                {overallIcon(op.overall)} {op.overall}
+              </td>
+              <td class="px-2 py-1 text-right">
+                <button
+                  type="button"
+                  onclick={() => toggleDoctorRow(op.op_name)}
+                  class="px-2 py-0.5 rounded text-xs font-mono"
+                  style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
+                >{expanded ? '−' : '+'}</button>
+              </td>
+            </tr>
+            {#if expanded}
+              <tr>
+                <td colspan="4" class="px-2 py-2" style="background: var(--bg-page);">
+                  {#if op.backends.length === 0}
+                    <p class="text-xs italic" style="color: var(--text-muted);">
+                      Embedded op — no Backend layer; delegates at run time.
+                    </p>
+                  {:else}
+                    {#each op.backends as b (b.backend_name)}
+                      <div class="mb-2">
+                        <div class="text-xs font-mono mb-1">
+                          {overallIcon(b.overall)}
+                          <strong>{b.backend_name}</strong>
+                          <span style="color: var(--text-muted);">v{b.backend_version}</span>
+                        </div>
+                        <ul class="ml-4 text-xs font-mono">
+                          {#each b.requirements as r (r.kind + r.name)}
+                            <li style="color: {r.status === 'ok' ? 'var(--text-secondary)' : 'var(--accent-red)'};">
+                              <span style="color: var(--text-muted);">{r.kind}:</span>
+                              {reqStatusIcon(r.status)} {r.name}
+                              {#if r.detail}
+                                <span style="color: var(--text-muted);">— {r.detail}</span>
+                              {/if}
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                    {/each}
+                  {/if}
+                </td>
+              </tr>
+            {/if}
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </section>
+{/if}
+
+<!-- ─────────────── SECRETS ─────────────── -->
+{#if activeTab === 'secrets'}
+  <section class="p-4 rounded" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
+    <h2 class="text-xs font-semibold uppercase" style="color: var(--text-muted);">
+      Secret env-vars
+    </h2>
+    <p class="text-xs mt-1 mb-3" style="color: var(--text-secondary);">
+      Persisted to <code class="font-mono">{secretsFilePath || '~/.config/media_engine/secrets.env'}</code>
+      (chmod 0600). The engine exports the file into <code class="font-mono">os.environ</code> at
+      boot; saving here also exports into the running process so backends that read env at
+      call-time pick it up immediately. Backends that snapshot env at import time still need
+      a restart — restart with <code class="font-mono">med daemon stop && med daemon start</code>
+      or just <code class="font-mono">med web start</code> again.
+    </p>
+
+    {#if secretsLoading && secrets.length === 0}
+      <p class="text-xs italic" style="color: var(--text-muted);">Loading…</p>
+    {:else}
+      {#each [...secretsByCategory.entries()] as [category, rows] (category)}
+        <h3 class="text-xs font-semibold mt-4 mb-2" style="color: var(--text-secondary);">{category}</h3>
+        <div class="rounded" style="border: 1px solid var(--border-soft);">
+          {#each rows as row (row.name)}
+            <div class="p-3" style="border-bottom: 1px solid var(--border-soft);">
+              <div class="flex items-start justify-between gap-3 mb-1 flex-wrap">
+                <div>
+                  <div class="text-xs font-mono font-semibold">
+                    {row.set ? '🟢' : '⚪'} {row.name}
+                  </div>
+                  <div class="text-xs" style="color: var(--text-secondary);">{row.label}</div>
+                </div>
+                <div class="text-xs font-mono" style="color: var(--text-muted);">
+                  source: {row.source}
+                </div>
+              </div>
+              <div class="text-xs mb-2" style="color: var(--text-muted);">
+                used by: {row.used_by}
+                {#if row.url}
+                  · <a href={row.url} target="_blank" rel="noopener" class="underline">get one</a>
+                {/if}
+              </div>
+              <div class="flex gap-2 items-center">
+                <input
+                  type="password"
+                  bind:value={secretEdits[row.name]}
+                  placeholder={row.set ? '••• (set — type to overwrite)' : 'paste secret value'}
+                  class="flex-1 px-2 py-1 rounded text-xs font-mono"
+                  style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <button
+                  type="button"
+                  onclick={() => void saveSecret(row.name, secretEdits[row.name] ?? null)}
+                  disabled={!secretEdits[row.name] || secretSaving[row.name]}
+                  class="px-3 py-1 rounded text-xs font-semibold disabled:opacity-50"
+                  style="background: var(--accent-green); color: var(--text-inverse);"
+                >{secretSaving[row.name] ? '…' : 'Save'}</button>
+                {#if row.set && row.source === 'file'}
+                  <button
+                    type="button"
+                    onclick={() => void saveSecret(row.name, null)}
+                    disabled={secretSaving[row.name]}
+                    class="px-3 py-1 rounded text-xs font-mono disabled:opacity-50"
+                    style="background: var(--bg-page); color: var(--accent-red); border: 1px solid rgba(220, 38, 38, 0.35);"
+                  >Clear</button>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/each}
+
+      {#if secretsSavedAt}
+        <p class="mt-3 text-xs" style="color: var(--accent-green);">
+          Saved. Restart the engine if a backend still reports missing —
+          some clients snapshot env at import time.
+        </p>
+      {/if}
+    {/if}
+  </section>
 {/if}
 
 <!-- ─────────────── TOKENS ─────────────── -->
@@ -722,9 +1064,38 @@
     {/if}
     <p class="mt-4 text-xs" style="color: var(--text-muted);">
       The full <code class="font-mono">EngineConfig</code> + <code class="font-mono">resources.yaml</code>
-      content lives outside this UI today; run <code class="font-mono">med config</code> in your shell to
-      see the merged values. Inline editors land in v1.x — <code class="font-mono">MEDIA_ENGINE_*</code> env vars
-      are owned by the deploy.
+      content is shown below (read-only). Inline editing lands in v1.x —
+      <code class="font-mono">MEDIA_ENGINE_*</code> env vars are owned by the deploy;
+      secrets live in the Secrets tab.
     </p>
   </section>
+
+  {#if configFilesLoading && !configFiles}
+    <p class="text-xs italic mt-3" style="color: var(--text-muted);">Loading config files…</p>
+  {:else if configFiles}
+    {#each [
+      { key: 'config_toml', label: 'config.toml', view: configFiles.config_toml },
+      { key: 'resources_yaml', label: 'resources.yaml', view: configFiles.resources_yaml },
+      { key: 'secrets_env', label: 'secrets.env (values masked)', view: configFiles.secrets_env },
+    ] as block (block.key)}
+      <section class="p-4 rounded mt-3" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-semibold uppercase" style="color: var(--text-muted);">
+            {block.label}
+          </h2>
+          <code class="text-xs font-mono" style="color: var(--text-muted);">{block.view.path}</code>
+        </div>
+        {#if !block.view.exists}
+          <p class="text-xs italic" style="color: var(--text-muted);">
+            File does not exist. Defaults are used.
+          </p>
+        {:else}
+          <pre
+            class="text-xs font-mono p-3 rounded overflow-x-auto max-h-[40vh]"
+            style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-soft);"
+          >{block.view.content}</pre>
+        {/if}
+      </section>
+    {/each}
+  {/if}
 {/if}

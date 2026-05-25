@@ -35,6 +35,7 @@
   type RunPreview = {
     op: string;
     backend: string | null;
+    embedded: boolean;
     estimate_seconds_local: number;
     estimate_cost_cents: number;
     estimate_tokens_in: number;
@@ -286,7 +287,14 @@
             <span style="color: var(--text-muted);">Estimating…</span>
           {:else if preview}
             <div>
-              <span style="color: var(--text-muted);">backend:</span> {preview.backend ?? '—'}
+              <span style="color: var(--text-muted);">backend:</span>
+              {#if preview.backend}
+                {preview.backend}
+              {:else if preview.embedded}
+                <span style="color: var(--text-muted);">(composite — chosen at run time)</span>
+              {:else}
+                —
+              {/if}
             </div>
             <div>
               <span style="color: var(--text-muted);">cost:</span>

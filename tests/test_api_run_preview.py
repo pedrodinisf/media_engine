@@ -130,3 +130,44 @@ def test_run_preview_requires_token(client: TestClient) -> None:
         json={"op": "audio.transcribe", "inputs": [], "params": {}},
     )
     assert r.status_code == 401
+
+
+# ─────────────────────────────────────────────────────────────────
+# B-005 regression — composite ops carry `embedded: true`
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_run_preview_marks_composite_op_as_embedded(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """``intelligence.summarize`` has no Backend layer; the preview must
+    expose ``embedded: true`` so the UI can render "(composite)" instead
+    of "—" (B-005 p1)."""
+    r = client.post(
+        "/run/preview",
+        json={
+            "op": "intelligence.summarize",
+            "inputs": [],
+            "params": {"focus": "key actions"},
+        },
+        headers=auth,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["backend"] is None
+    assert body["embedded"] is True
+
+
+def test_run_preview_non_embedded_op_reports_false(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    """Ops with a Backend layer must keep ``embedded: false`` so the UI
+    keeps showing the backend name (not "(composite)")."""
+    r = client.post(
+        "/run/preview",
+        json={"op": "audio.transcribe", "inputs": [], "params": {}},
+        headers=auth,
+    )
+    body = r.json()
+    assert body["embedded"] is False
+    assert body["backend"] is not None
