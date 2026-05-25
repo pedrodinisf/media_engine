@@ -45,6 +45,8 @@ from media_engine.runtime.events import (
     OpStarted,
     build_op_failed,
 )
+from media_engine.runtime.hardware import available_memory_gb
+from media_engine.runtime.heartbeat import heartbeat
 from media_engine.runtime.lineage import LineageNode
 from media_engine.runtime.model_pool import ModelPool
 from media_engine.runtime.resources import (
@@ -313,6 +315,12 @@ class Engine:
             cache=self.cache,
         )
 
+        # Cost is computed PRE-run so the heartbeat task has an initial
+        # ETA the moment OpStarted fires. The same value feeds the post-
+        # run cache/cost-ledger writes below — one estimator call, two
+        # consumers.
+        cost = op.cost_estimate(resolved_inputs, params_model)
+
         started_at = datetime.now(UTC)
         self.event_bus.emit(
             OpStarted(
@@ -330,6 +338,17 @@ class Engine:
         async def _attempt() -> list[AnyArtifact]:
             return await op.run(resolved_inputs, params_model, ctx)
 
+        heartbeat_task = asyncio.create_task(
+            heartbeat(
+                emit=self.event_bus.emit,
+                op_run_id=op_run_id,
+                job_id=event_job_id,
+                eta_seconds_initial=cost.local_seconds,
+                pool_bytes=self.model_pool.total_bytes_estimate,
+                available_memory_gb=available_memory_gb,
+            )
+        )
+
         try:
             raw_outputs = await with_retry(_attempt, policy=retry_policy)
         except BaseException as exc:  # noqa: BLE001 -- envelope, then re-raise
@@ -338,13 +357,14 @@ class Engine:
             )
             raise
         finally:
+            heartbeat_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat_task
             # Workdir cleanup is best-effort; failures shouldn't mask op errors.
             with contextlib.suppress(Exception):
                 self.storage.cleanup_workdir(op_run_id)
         finished_at = datetime.now(UTC)
         duration = (finished_at - started_at).total_seconds()
-
-        cost = op.cost_estimate(resolved_inputs, params_model)
         run_id = self.cache.record_run(
             op_name=op_name,
             op_version=op_class.version,
