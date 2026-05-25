@@ -120,6 +120,15 @@ export function putCatalog(
 export type StorageStats = {
   permanent_store: string;
   workdir: string;
+  /** Effective models cache directory (defaults to permanent_store/models).
+   *  Settable via MEDIA_ENGINE_MODELS_DIR or config.toml. */
+  models_dir: string;
+  /** Free GiB on the volume that holds models_dir. Critical on Apple
+   *  Silicon — a near-full internal SSD here is what causes MLX swap-
+   *  thrash freezes. */
+  models_free_gb: number;
+  /** Effective HF_HOME the engine exported at boot (or operator-set). */
+  hf_home: string;
   namespace: string;
   total_bytes: number;
   free_gb: number;

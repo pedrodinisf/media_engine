@@ -1089,8 +1089,25 @@
 
       <div class="mt-3 text-xs font-mono" style="color: var(--text-muted);">
         permanent: {stats.permanent_store}<br />
-        workdir: {stats.workdir}
+        workdir: {stats.workdir}<br />
+        models_dir: {stats.models_dir}
+        <span style="color: {stats.models_free_gb < 10 ? 'var(--accent-red)' : 'var(--text-muted)'};">
+          ({stats.models_free_gb.toFixed(1)} GB free)
+        </span><br />
+        HF_HOME: {stats.hf_home || '(unset — engine will default to models_dir/huggingface)'}
       </div>
+      {#if stats.models_free_gb < 10}
+        <div
+          class="mt-3 p-3 rounded text-xs"
+          style="background: var(--accent-red-soft); color: var(--accent-red); border: 1px solid rgba(220, 38, 38, 0.35);"
+        >
+          <strong>⚠ models_dir volume is nearly full ({stats.models_free_gb.toFixed(1)} GB free).</strong>
+          Apple-Silicon MLX backends load model weights into unified memory; when the SSD that
+          backs this directory fills up, macOS can't swap and the system may hang. Free up space
+          on this volume, or set <code class="font-mono">MEDIA_ENGINE_MODELS_DIR</code> to a
+          path on a larger volume (and restart the engine).
+        </div>
+      {/if}
     {/if}
   </section>
 

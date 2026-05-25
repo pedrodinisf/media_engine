@@ -42,6 +42,19 @@ class EngineConfig(BaseSettings):
     permanent_store: Path = Field(default_factory=_default_permanent_store)
     workdir: Path = Field(default_factory=_default_workdir)
     config_dir: Path = Field(default_factory=_default_config_dir)
+    # Where the engine downloads / caches ML model weights (mlx-whisper,
+    # mlx-lm, sentence-transformers, pyannote). Defaults to
+    # ``{permanent_store}/models`` so model files live on the same volume
+    # as artifacts — keeps them off the internal SSD on machines with a
+    # mounted external. When set, EngineConfig.load auto-exports
+    # ``HF_HOME = models_dir/huggingface`` (if HF_HOME isn't already
+    # set) so every HuggingFace-backed backend shares the same cache.
+    #
+    # Why this matters: MLX uses unified memory + downloads via HF Hub.
+    # An M-series Mac with a near-full internal SSD will thrash + freeze
+    # when the model load triggers swap. Pointing models off the
+    # internal SSD removes the disk pressure half of that failure mode.
+    models_dir: Path | None = None
     # Accept both ``MEDIA_ENGINE_CACHE_DB_URL`` (the canonical field name) and
     # ``MEDIA_ENGINE_DB_URL`` (the shorter alias the plan + IaaC docs use).
     cache_db_url: str | None = Field(
@@ -107,12 +120,35 @@ class EngineConfig(BaseSettings):
         if config_file is not None and config_file.exists():
             with config_file.open("rb") as f:
                 toml_data = tomllib.load(f)
-        return cls(**toml_data)
+        cfg = cls(**toml_data)
+
+        # Auto-export HF_HOME so every HuggingFace-backed backend
+        # (mlx-whisper, mlx-lm, sentence-transformers, pyannote)
+        # caches to the same on-disk location — the resolved
+        # models_dir, which lives off the internal SSD by default.
+        # We only set HF_HOME when the operator hasn't already (env or
+        # secrets.env), so an explicit override always wins.
+        if "HF_HOME" not in os.environ:
+            os.environ["HF_HOME"] = str(cfg.resolve_models_dir() / "huggingface")
+
+        return cfg
 
     def resolve_cache_db_url(self) -> str:
         if self.cache_db_url is not None:
             return self.cache_db_url
         return f"sqlite+pysqlite:///{self.permanent_store / 'cache.db'}"
+
+    def resolve_models_dir(self) -> Path:
+        """Effective models-cache directory.
+
+        Operator-set ``models_dir`` wins; otherwise falls back to a
+        ``models/`` subdirectory of ``permanent_store``. The directory
+        is NOT created lazily here — ``validate_storage`` (and the
+        first HuggingFace download) will create it on demand.
+        """
+        if self.models_dir is not None:
+            return self.models_dir
+        return self.permanent_store / "models"
 
     def validate_storage(self) -> None:
         """Ensure ``permanent_store`` exists and is writable."""

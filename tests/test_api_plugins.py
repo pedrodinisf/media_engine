@@ -226,6 +226,13 @@ def test_storage_stats_empty_namespace(
     assert body["free_gb"] >= 0
     assert "video" in body["by_kind"]
     assert body["by_kind"]["video"]["count"] == 0
+    # Models-dir surface (the Settings → Storage tab consumes these to
+    # warn about a near-full models volume, which is what causes the
+    # MLX-on-Apple-Silicon swap-thrash freeze).
+    assert "models_dir" in body
+    assert body["models_dir"].endswith("/models")
+    assert body["models_free_gb"] >= 0
+    assert "hf_home" in body
 
 
 def test_storage_stats_requires_token(client: TestClient) -> None:

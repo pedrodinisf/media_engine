@@ -16,6 +16,7 @@ entries stay registered, REST + MCP + UI just filter them out. See
 from __future__ import annotations
 
 import importlib.util
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, cast
@@ -207,6 +208,9 @@ def put_plugins_catalog(
 class StorageStats(BaseModel):
     permanent_store: str
     workdir: str
+    models_dir: str
+    models_free_gb: float
+    hf_home: str
     namespace: str
     total_bytes: int
     free_gb: float
@@ -251,9 +255,16 @@ def get_storage_stats(
             )
             slot["count"] += 1
             slot["bytes"] += size
+    models_dir = cfg.resolve_models_dir()
+    # ``free_gb`` walks parents until it finds an existing dir, so an
+    # un-created models_dir on an existing volume reports the volume's
+    # free space — what the operator actually wants to see.
     return StorageStats(
         permanent_store=str(cfg.permanent_store),
         workdir=str(cfg.workdir),
+        models_dir=str(models_dir),
+        models_free_gb=free_gb(models_dir),
+        hf_home=os.environ.get("HF_HOME", ""),
         namespace=token.namespace,
         total_bytes=total,
         free_gb=free_gb(cfg.permanent_store),
