@@ -67,6 +67,15 @@ class OpDoctorReport:
     # runtime based on params (e.g. model prefix). ``None`` for embedded
     # ops with no Backend layer.
     default_backend_status: Overall | None = None
+    # For embedded composites: per-delegate overall status. Empty for
+    # non-composites and for composites whose delegates_to is empty.
+    # Walking this lets the Settings UI render an "intelligence.summarize
+    # is red because intelligence.extract is red" breakdown without
+    # re-doctoring the delegate ops client-side.
+    delegate_overalls: dict[str, Overall] = field(default_factory=lambda: {})  # noqa: PIE807
+    # Free-text notes attached during the walk (e.g. "delegate X not
+    # registered"). Operator-readable; not parsed.
+    notes: list[str] = field(default_factory=lambda: [])  # noqa: PIE807
 
 
 @dataclass
@@ -257,7 +266,21 @@ def _has_custom_router(op_cls: type[Operation]) -> bool:
     return op_cls.select_backend is not Operation.select_backend
 
 
-def check_op(op_cls: type[Operation]) -> OpDoctorReport:
+_OVERALL_PRIORITY: dict[Overall, int] = {"ok": 0, "degraded": 1, "unavailable": 2}
+
+
+def check_op(
+    op_cls: type[Operation],
+    _visited: frozenset[str] = frozenset(),
+) -> OpDoctorReport:
+    """Build the per-op doctor report.
+
+    Embedded composites (no Backend layer but ``delegates_to`` populated)
+    take the *worst* overall of their delegates as their own overall
+    status — closes B-009. ``_visited`` defends against a hypothetical
+    cycle in the delegation graph; none of the current composites cycle
+    but the guard is cheap.
+    """
     backend_names = BackendRegistry.for_op(op_cls.name)
     backend_reports: list[BackendDoctorReport] = []
     for name in backend_names:
@@ -269,6 +292,40 @@ def check_op(op_cls: type[Operation]) -> OpDoctorReport:
             if b.backend_name == op_cls.default_backend:
                 default_backend_status = b.overall
                 break
+
+    embedded = not backend_names
+    delegate_overalls: dict[str, Overall] = {}
+    notes: list[str] = []
+
+    overall = _roll_op(backend_reports, default_backend_status, has_router)
+
+    if embedded and op_cls.delegates_to:
+        # Composite. Recursively check each delegate; our overall is the
+        # worst of theirs. Skip self-references and already-visited nodes
+        # to break any cycle defensively.
+        next_visited = _visited | {op_cls.name}
+        for delegate_name in op_cls.delegates_to:
+            if delegate_name in next_visited:
+                notes.append(
+                    f"delegate {delegate_name!r} skipped (cycle guard)"
+                )
+                continue
+            try:
+                delegate_cls = OpRegistry.get(delegate_name)
+            except (KeyError, LookupError):
+                delegate_overalls[delegate_name] = "unavailable"
+                notes.append(
+                    f"delegate {delegate_name!r} not registered"
+                )
+                continue
+            delegate_report = check_op(delegate_cls, next_visited)
+            delegate_overalls[delegate_name] = delegate_report.overall
+        if delegate_overalls:
+            overall = max(
+                delegate_overalls.values(),
+                key=lambda o: _OVERALL_PRIORITY[o],
+            )
+
     return OpDoctorReport(
         op_name=op_cls.name,
         op_version=op_cls.version,
@@ -276,10 +333,12 @@ def check_op(op_cls: type[Operation]) -> OpDoctorReport:
         output_kinds=[k.value for k in op_cls.output_kinds],
         default_backend=op_cls.default_backend,
         has_router=has_router,
-        embedded=not backend_names,
+        embedded=embedded,
         backends=backend_reports,
-        overall=_roll_op(backend_reports, default_backend_status, has_router),
+        overall=overall,
         default_backend_status=default_backend_status,
+        delegate_overalls=delegate_overalls,
+        notes=notes,
     )
 
 

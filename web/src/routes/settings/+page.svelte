@@ -632,6 +632,38 @@
                     <p class="text-xs italic" style="color: var(--text-muted);">
                       Embedded op — no Backend layer; delegates at run time.
                     </p>
+                    {#if Object.keys(op.delegate_overalls).length > 0}
+                      <!--
+                        Composite breakdown (B-009). Per-delegate overall:
+                        the composite's overall is the worst of these. If
+                        any delegate is red, the composite is red.
+                      -->
+                      <div class="mt-2" data-testid="delegate-breakdown">
+                        <div class="text-xs font-mono mb-1" style="color: var(--text-muted);">
+                          delegates:
+                        </div>
+                        <ul class="ml-4 text-xs font-mono">
+                          {#each Object.entries(op.delegate_overalls) as [name, ov] (name)}
+                            <li
+                              style="color: {ov === 'ok' ? 'var(--text-secondary)' : 'var(--accent-red)'};"
+                              data-testid="delegate-row"
+                              data-delegate-name={name}
+                              data-delegate-overall={ov}
+                            >
+                              {overallIcon(ov)} {name}
+                              <span style="color: var(--text-muted);">— {ov}</span>
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                    {/if}
+                    {#if op.notes.length > 0}
+                      <ul class="ml-4 mt-2 text-xs font-mono" style="color: var(--text-muted);">
+                        {#each op.notes as note, i (i)}
+                          <li>note: {note}</li>
+                        {/each}
+                      </ul>
+                    {/if}
                   {:else}
                     {#each op.backends as b (b.backend_name)}
                       <div class="mb-2">

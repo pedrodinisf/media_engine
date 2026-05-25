@@ -191,6 +191,10 @@ export type DoctorOp = {
   backends: DoctorBackend[];
   overall: 'ok' | 'degraded' | 'unavailable';
   default_backend_status: 'ok' | 'degraded' | 'unavailable' | null;
+  // For embedded composites: per-delegate overall status. Empty for
+  // non-composites. (B-009)
+  delegate_overalls: Record<string, 'ok' | 'degraded' | 'unavailable'>;
+  notes: string[];
 };
 
 export type DoctorReport = {

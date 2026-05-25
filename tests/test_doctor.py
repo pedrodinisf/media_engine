@@ -199,3 +199,151 @@ def test_cli_doctor_op_filter_no_match_exits_2() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["doctor", "--op", "this.op.does.not.exist"])
     assert result.exit_code == 2
+
+
+# ─────────────────────────────────────────────────────────────────
+# B-009 — composites walk delegates_to
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_composite_inherits_delegate_overalls_when_ok() -> None:
+    """Sanity: if the leaf is ok, the composite rolls up to ok."""
+    op_cls = OpRegistry.get("intelligence.summarize")
+    report = check_op(op_cls)
+    assert report.embedded is True
+    assert report.delegate_overalls == {"intelligence.extract": check_op(
+        OpRegistry.get("intelligence.extract")
+    ).overall}
+    # Whatever the leaf is, the composite matches it.
+    assert report.overall == report.delegate_overalls["intelligence.extract"]
+
+
+def test_composite_unavailable_when_delegate_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When every leaf backend is missing deps, the composite is red.
+
+    Monkey-patches BackendRegistry.get to inject a synthetic 'all-deps-
+    missing' backend report so we don't need to actually uninstall mlx-
+    lm / pyannote / etc.
+    """
+    from media_engine.runtime import doctor as doctor_mod
+
+    original_check_backend = doctor_mod.check_backend
+
+    def fake_check_backend(backend_cls: type) -> doctor_mod.BackendDoctorReport:
+        # Mark every backend reachable through this op tree as unavailable.
+        return doctor_mod.BackendDoctorReport(
+            op_name=backend_cls.op_name,
+            backend_name=backend_cls.name,
+            backend_version=backend_cls.version,
+            requirements=[
+                doctor_mod.RequirementCheck(
+                    kind="service",
+                    name="synthetic",
+                    status="missing",
+                    detail="injected by test_doctor",
+                )
+            ],
+            overall="unavailable",
+        )
+
+    monkeypatch.setattr(doctor_mod, "check_backend", fake_check_backend)
+    op_cls = OpRegistry.get("intelligence.summarize")
+    report = doctor_mod.check_op(op_cls)
+    assert report.embedded is True
+    assert report.delegate_overalls == {"intelligence.extract": "unavailable"}
+    assert report.overall == "unavailable"
+    # Cleanup — pytest's monkeypatch handles teardown automatically.
+    del original_check_backend
+
+
+def test_composite_with_unregistered_delegate_records_note() -> None:
+    """If a composite declares a delegate that isn't registered, doctor
+    flags the composite as unavailable and adds a note. Defensive guard
+    against a typo'd delegates_to entry."""
+    from pydantic import BaseModel
+
+    from media_engine.artifacts import Kind
+    from media_engine.ops import Operation, OpRegistry, register_op
+    from media_engine.runtime.doctor import check_op as _check
+
+    class _Params(BaseModel):
+        pass
+
+    class _SyntheticComposite(Operation):
+        name = "test.synthetic_composite_b009"
+        version = "1.0.0"
+        input_kinds = (Kind.MarkdownArtifact,)
+        output_kinds = (Kind.MarkdownArtifact,)
+        params_model = _Params
+        delegates_to = ("test.does_not_exist_b009",)
+
+        async def run(
+            self, inputs: list, params: BaseModel, ctx: object
+        ) -> list:
+            return inputs
+
+    try:
+        register_op(_SyntheticComposite)
+        report = _check(_SyntheticComposite)
+        assert report.overall == "unavailable"
+        assert report.delegate_overalls == {
+            "test.does_not_exist_b009": "unavailable"
+        }
+        assert any("not registered" in n for n in report.notes)
+    finally:
+        OpRegistry._ops.pop(_SyntheticComposite.name, None)
+
+
+def test_composite_cycle_guard() -> None:
+    """A composite that recursively names itself doesn't loop forever."""
+    from pydantic import BaseModel
+
+    from media_engine.artifacts import Kind
+    from media_engine.ops import Operation, OpRegistry, register_op
+    from media_engine.runtime.doctor import check_op as _check
+
+    class _Params(BaseModel):
+        pass
+
+    class _CyclicComposite(Operation):
+        name = "test.cyclic_composite_b009"
+        version = "1.0.0"
+        input_kinds = (Kind.MarkdownArtifact,)
+        output_kinds = (Kind.MarkdownArtifact,)
+        params_model = _Params
+        delegates_to = ("test.cyclic_composite_b009",)
+
+        async def run(
+            self, inputs: list, params: BaseModel, ctx: object
+        ) -> list:
+            return inputs
+
+    try:
+        register_op(_CyclicComposite)
+        # Must terminate.
+        report = _check(_CyclicComposite)
+        # The single delegate is skipped by the cycle guard — there are
+        # no delegate_overalls entries, and a note records the skip.
+        assert any("cycle guard" in n for n in report.notes)
+    finally:
+        OpRegistry._ops.pop(_CyclicComposite.name, None)
+
+
+def test_doctor_dict_round_trip_carries_delegate_fields() -> None:
+    """The JSON surface (consumed by the Settings UI) must include the new
+    fields so the per-op expand block can render the delegate breakdown."""
+    op_cls = OpRegistry.get("audio.transcribe_diarized")
+    report = check_op(op_cls)
+    assert report.embedded is True
+    # The op declares delegates_to=(audio.transcribe, audio.diarize); the
+    # breakdown must populate both entries.
+    assert set(report.delegate_overalls.keys()) == {
+        "audio.transcribe",
+        "audio.diarize",
+    }
+    payload = diagnose(op_filter="audio.transcribe_diarized").to_dict()
+    [composite_dict] = payload["ops"]  # type: ignore[index, assignment]
+    assert "delegate_overalls" in composite_dict
+    assert "notes" in composite_dict
