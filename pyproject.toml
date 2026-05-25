@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 transcribe-mlx = ["mlx-whisper>=0.4"]
-diarize        = ["pyannote.audio>=3.1", "torch>=2.2"]
+diarize        = ["pyannote.audio>=4.0", "torch>=2.2"]
 embed          = ["sentence-transformers>=2.7"]
 chunk          = ["nltk>=3.8"]
 vlm-cloud      = ["google-genai>=0.4", "anthropic>=0.40"]
