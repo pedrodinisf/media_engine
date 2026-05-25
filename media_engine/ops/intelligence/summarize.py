@@ -46,6 +46,12 @@ class SummarizeParams(BaseModel):
     system_prompt: str | None = None
     temperature: float = 0.2
     max_tokens: int = 2048
+    # Optional override for which backend the delegate `intelligence.extract`
+    # call dispatches to. Mirrors ``audio.transcribe_diarized``'s
+    # ``transcribe_backend`` / ``diarize_backend`` pattern. Precedence
+    # in run(): this param > ctx.backend (operator-level --backend on the
+    # composite) > extract's own model-prefix router. B-007.
+    extract_backend: str | None = None
 
 
 def _prompt(focus: str | None) -> str:
@@ -89,16 +95,22 @@ class IntelligenceSummarize(Operation):
                 "intelligence.summarize requires ctx.run_op (call via "
                 "Engine.run, not Operation.run directly)."
             )
-        return await ctx.run_op(
-            "intelligence.extract",
-            inputs=[inputs[0].id],
-            prompt=_prompt(params.focus),
-            schema_def=_SCHEMA,
-            model=params.model,
-            system_prompt=params.system_prompt,
-            temperature=params.temperature,
-            max_tokens=params.max_tokens,
-        )
+        # Forward an operator-supplied backend override into the delegate
+        # call. Precedence: explicit composite param > engine-level
+        # --backend (ctx.backend) > delegate's own model-prefix router.
+        extract_backend = params.extract_backend or ctx.backend
+        extract_kwargs: dict[str, Any] = {
+            "inputs": [inputs[0].id],
+            "prompt": _prompt(params.focus),
+            "schema_def": _SCHEMA,
+            "model": params.model,
+            "system_prompt": params.system_prompt,
+            "temperature": params.temperature,
+            "max_tokens": params.max_tokens,
+        }
+        if extract_backend is not None:
+            extract_kwargs["backend"] = extract_backend
+        return await ctx.run_op("intelligence.extract", **extract_kwargs)
 
     def cost_estimate(
         self, inputs: list[AnyArtifact], params: BaseModel

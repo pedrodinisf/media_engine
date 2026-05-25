@@ -63,6 +63,11 @@ class AnalyzeParams(BaseModel):
     window: int = 1  # transcript segments per analysis window
     classify_labels: list[str] | None = None
     classify_multi_label: bool = False
+    # See SummarizeParams.extract_backend for the precedence rules. B-007.
+    # analyze dispatches directly into the intelligence.extract backend
+    # (not via ctx.run_op) so this override threads straight to
+    # BackendRegistry.get below.
+    extract_backend: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -161,7 +166,11 @@ class IntelligenceAnalyze(Operation):
             )
         load_schema(params.schema_def)  # fail fast on bad schema
 
-        backend_name = _default_backend_for_model(params.model)
+        backend_name = (
+            params.extract_backend
+            or ctx.backend
+            or _default_backend_for_model(params.model)
+        )
         backend = BackendRegistry.get("intelligence.extract", backend_name)()
 
         extract_params = ExtractParams(

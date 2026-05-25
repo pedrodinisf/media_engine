@@ -117,6 +117,163 @@ def test_cost_estimate_delegates() -> None:
     assert est.cloud_cents > 0
 
 
+async def test_summarize_forwards_extract_backend_param(
+    engine: Engine, fake_extract, mocker
+) -> None:
+    """B-007: explicit `extract_backend` composite param routes the delegate
+    `intelligence.extract` call to the chosen backend, overriding the
+    default (which would be selected by model-prefix routing).
+    """
+    from media_engine.backends import (
+        Backend,
+        BackendRegistry,
+        BackendRequirements,
+        register_backend,
+    )
+
+    sentinel: dict[str, int] = {"calls": 0}
+    BackendRegistry.unregister("intelligence.extract", "mlx-lm")
+
+    @register_backend
+    class _FakeExtractAlt(Backend):
+        op_name = "intelligence.extract"
+        name = "mlx-lm"
+        version = "0.0.0-fake-alt"
+        requires = BackendRequirements()
+
+        async def execute(self, inputs, params, ctx):
+            sentinel["calls"] += 1
+            # Delegate to the existing fake so cache/persistence works.
+            return await fake_extract().execute(inputs, params, ctx)
+
+        def cost_estimate(self, inputs, params):
+            from media_engine.ops import CostEstimate
+            return CostEstimate(cloud_cents=0.05)
+
+    try:
+        t = make_transcript(engine)
+        await engine.run(
+            "intelligence.summarize",
+            inputs=[t.id],
+            extract_backend="mlx-lm",
+        )
+        assert sentinel["calls"] == 1
+    finally:
+        BackendRegistry.unregister("intelligence.extract", "mlx-lm")
+        from media_engine.bootstrap import register_all
+        register_all(force=True)
+
+
+async def test_summarize_forwards_ctx_backend_when_param_unset(
+    engine: Engine, fake_extract
+) -> None:
+    """B-007: when no explicit `extract_backend` is set, the engine-level
+    `--backend` (ctx.backend on the composite) is forwarded to the delegate.
+    """
+    from media_engine.backends import (
+        Backend,
+        BackendRegistry,
+        BackendRequirements,
+        register_backend,
+    )
+
+    sentinel: dict[str, int] = {"calls": 0}
+    BackendRegistry.unregister("intelligence.extract", "mlx-lm")
+
+    @register_backend
+    class _FakeExtractAlt(Backend):
+        op_name = "intelligence.extract"
+        name = "mlx-lm"
+        version = "0.0.0-fake-alt"
+        requires = BackendRequirements()
+
+        async def execute(self, inputs, params, ctx):
+            sentinel["calls"] += 1
+            return await fake_extract().execute(inputs, params, ctx)
+
+        def cost_estimate(self, inputs, params):
+            from media_engine.ops import CostEstimate
+            return CostEstimate(cloud_cents=0.05)
+
+    try:
+        t = make_transcript(engine)
+        # Pass --backend on the composite itself — the engine preserves
+        # it in ctx.backend (per the _resolve_backend tweak), and the
+        # composite's run() reads ctx.backend when no explicit
+        # extract_backend param is set.
+        await engine.run(
+            "intelligence.summarize", inputs=[t.id], backend="mlx-lm"
+        )
+        assert sentinel["calls"] == 1
+    finally:
+        BackendRegistry.unregister("intelligence.extract", "mlx-lm")
+        from media_engine.bootstrap import register_all
+        register_all(force=True)
+
+
+async def test_summarize_explicit_param_beats_ctx_backend(
+    engine: Engine, fake_extract
+) -> None:
+    """B-007 precedence: explicit param > ctx.backend > delegate default."""
+    from media_engine.backends import (
+        Backend,
+        BackendRegistry,
+        BackendRequirements,
+        register_backend,
+    )
+
+    explicit_calls = {"n": 0}
+    ctx_calls = {"n": 0}
+    BackendRegistry.unregister("intelligence.extract", "claude")
+    BackendRegistry.unregister("intelligence.extract", "mlx-lm")
+
+    @register_backend
+    class _FakeExplicit(Backend):
+        op_name = "intelligence.extract"
+        name = "claude"
+        version = "0.0.0-fake-explicit"
+        requires = BackendRequirements()
+
+        async def execute(self, inputs, params, ctx):
+            explicit_calls["n"] += 1
+            return await fake_extract().execute(inputs, params, ctx)
+
+        def cost_estimate(self, inputs, params):
+            from media_engine.ops import CostEstimate
+            return CostEstimate(cloud_cents=0.05)
+
+    @register_backend
+    class _FakeCtx(Backend):
+        op_name = "intelligence.extract"
+        name = "mlx-lm"
+        version = "0.0.0-fake-ctx"
+        requires = BackendRequirements()
+
+        async def execute(self, inputs, params, ctx):
+            ctx_calls["n"] += 1
+            return await fake_extract().execute(inputs, params, ctx)
+
+        def cost_estimate(self, inputs, params):
+            from media_engine.ops import CostEstimate
+            return CostEstimate(cloud_cents=0.05)
+
+    try:
+        t = make_transcript(engine)
+        await engine.run(
+            "intelligence.summarize",
+            inputs=[t.id],
+            backend="mlx-lm",  # ctx.backend
+            extract_backend="claude",  # explicit — wins
+        )
+        assert explicit_calls["n"] == 1
+        assert ctx_calls["n"] == 0
+    finally:
+        BackendRegistry.unregister("intelligence.extract", "claude")
+        BackendRegistry.unregister("intelligence.extract", "mlx-lm")
+        from media_engine.bootstrap import register_all
+        register_all(force=True)
+
+
 @pytest.mark.needs_gemini
 @pytest.mark.skipif(not GENAI_AVAILABLE, reason="google-genai not installed")
 async def test_real_gemini_smoke(engine: Engine) -> None:

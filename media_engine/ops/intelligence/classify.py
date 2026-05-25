@@ -48,6 +48,8 @@ class ClassifyParams(BaseModel):
     system_prompt: str | None = None
     temperature: float = 0.0
     max_tokens: int = 1024
+    # See SummarizeParams.extract_backend for the precedence rules. B-007.
+    extract_backend: str | None = None
 
     @field_validator("labels")
     @classmethod
@@ -107,16 +109,19 @@ class IntelligenceClassify(Operation):
                 "intelligence.classify requires ctx.run_op (call via "
                 "Engine.run, not Operation.run directly)."
             )
-        return await ctx.run_op(
-            "intelligence.extract",
-            inputs=[inputs[0].id],
-            prompt=_prompt(params.labels, params.multi_label),
-            schema_def=_SCHEMA,
-            model=params.model,
-            system_prompt=params.system_prompt,
-            temperature=params.temperature,
-            max_tokens=params.max_tokens,
-        )
+        extract_backend = params.extract_backend or ctx.backend
+        extract_kwargs: dict[str, Any] = {
+            "inputs": [inputs[0].id],
+            "prompt": _prompt(params.labels, params.multi_label),
+            "schema_def": _SCHEMA,
+            "model": params.model,
+            "system_prompt": params.system_prompt,
+            "temperature": params.temperature,
+            "max_tokens": params.max_tokens,
+        }
+        if extract_backend is not None:
+            extract_kwargs["backend"] = extract_backend
+        return await ctx.run_op("intelligence.extract", **extract_kwargs)
 
     def cost_estimate(
         self, inputs: list[AnyArtifact], params: BaseModel

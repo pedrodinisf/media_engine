@@ -631,7 +631,14 @@ class Engine:
         default = op_class.default_backend
         if not registered and default is None:
             # No backend layer for this op (logic embedded in Operation).
-            return (None, None)
+            # We still pass ``requested`` through into ``ctx.backend`` so
+            # embedded composites (intelligence.summarize, …) can forward
+            # an operator-level ``--backend`` into their delegate calls
+            # via ``ctx.run_op(..., backend=ctx.backend)``. backend_version
+            # stays None — there's no backend class to introspect — which
+            # is fine: the version field on the cache row is informational
+            # for composites (records_cost=False usually). B-007.
+            return (requested, None)
         # Precedence: explicit backend= > op.select_backend(params) (e.g.
         # model-prefix dispatch) > default_backend. The result is the
         # single source of truth — cache key, ctx.backend, cost ledger and
