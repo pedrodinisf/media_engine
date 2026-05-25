@@ -55,12 +55,26 @@ def test_validate_storage_fails_clearly_on_unwritable(monkeypatch: pytest.Monkey
 # ─────────────────────────────────────────────────────────────────
 
 
-def test_resolve_models_dir_defaults_to_permanent_store_subdir(tmp_path: Path) -> None:
+def test_resolve_models_dir_defaults_to_permanent_store_subdir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Defensive: an operator who exports MEDIA_ENGINE_MODELS_DIR in
+    # their shell (Pedro's external-SSD layout, for example) would
+    # otherwise see this test fall through to the env value and fail.
+    # The fallback path under test is purely the "neither constructor
+    # arg nor env var set" branch, so clear both before constructing.
+    monkeypatch.delenv("MEDIA_ENGINE_MODELS_DIR", raising=False)
     cfg = EngineConfig(permanent_store=tmp_path / "store")
     assert cfg.resolve_models_dir() == tmp_path / "store" / "models"
 
 
-def test_resolve_models_dir_explicit_wins(tmp_path: Path) -> None:
+def test_resolve_models_dir_explicit_wins(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Same defensive delenv as above — constructor kwargs beat env
+    # vars in pydantic-settings, so this test would pass either way,
+    # but explicit is better than relying on precedence.
+    monkeypatch.delenv("MEDIA_ENGINE_MODELS_DIR", raising=False)
     cfg = EngineConfig(
         permanent_store=tmp_path / "store",
         models_dir=tmp_path / "models_override",
