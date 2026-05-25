@@ -212,6 +212,12 @@ async def test_real_gemini_smoke(engine: Engine, sample_png: Path) -> None:
         inputs=[img.id],
         labels=["a screenshot of text", "a photo of a dog"],
         backend="gemini",
+        # Must override the default model — ImageClassifyParams.model
+        # defaults to "ViT-B-32" (open-clip CLIP arch), which the
+        # Gemini API rejects with `unexpected model name format`.
+        # The gemini backend wants a real Gemini model id; pin one
+        # explicitly so this smoke is internally consistent.
+        model="gemini-2.5-flash",
     )
     assert isinstance(analysis, Analysis)
     assert analysis.data["top"] in analysis.data["labels"]

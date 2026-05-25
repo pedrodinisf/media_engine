@@ -18,6 +18,24 @@ from media_engine.runtime.secrets import KNOWN_SECRETS, read_secrets, secrets_pa
 
 @pytest.fixture
 def api_engine(tmp_path: Path) -> Iterator[Engine]:
+    # Tests in this module exercise PUT /settings/secrets, which calls
+    # load_secrets(override=True) and writes directly into os.environ
+    # bypassing pytest's monkeypatch tracking. Snapshot the keys it
+    # could touch and restore on teardown so a write in one test
+    # doesn't leak a fake GEMINI_API_KEY into the rest of the suite —
+    # which would silently mask later real-API smoke tests with
+    # `API_KEY_INVALID` from Google.
+    import os
+    SECRET_KEYS = (
+        "GEMINI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "HF_TOKEN",
+        "MEDIA_ENGINE_FULLTEXT_DB_URL",
+        "MEDIA_ENGINE_SEMANTIC_DB_URL",
+    )
+    env_snapshot = {k: os.environ.get(k) for k in SECRET_KEYS}
+
     cfg = EngineConfig(
         permanent_store=tmp_path / "store",
         workdir=tmp_path / "work",
@@ -25,8 +43,15 @@ def api_engine(tmp_path: Path) -> Iterator[Engine]:
         cache_db_url=f"sqlite+pysqlite:///{tmp_path / 'cache.db'}",
         min_free_gb=0,
     )
-    with Engine.open_quick(cfg) as e:
-        yield e
+    try:
+        with Engine.open_quick(cfg) as e:
+            yield e
+    finally:
+        for k, v in env_snapshot.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 @pytest.fixture
