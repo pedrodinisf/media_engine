@@ -64,10 +64,21 @@
     line: string;
   };
 
+  type LogEntry = { source: string; level: string; line: string };
+
   let detail: JobDetail | null = $state(null);
   let error: string | null = $state(null);
   let activeTab: 'events' | 'logs' | 'op_runs' | 'outputs' | 'failure' = $state('events');
   let events: SSEEvent[] = $state([]);
+  // Logs live in their own buffer (cap 2000) so heavy stdout traffic from
+  // ffmpeg / vllm-mlx doesn't push valuable Progress / op_completed events
+  // off the 500-event SSE tail.
+  let logs: LogEntry[] = $state([]);
+  let logScrollEl: HTMLElement | null = $state(null);
+  // Auto-scroll the Logs tab to the bottom when new entries arrive — but
+  // only if the user is already at the bottom (so scrolling up to inspect
+  // an earlier line pauses the auto-scroll).
+  let autoScrollLogs = $state(true);
   let showTraceback = $state(false);
   // Latest heartbeat-phase Progress snapshot for the status-header gauges.
   let lastHeartbeat: ProgressData | null = $state(null);
@@ -78,31 +89,15 @@
   // Distinct log sources observed in this run, for the filter dropdown.
   const logSources = $derived.by(() => {
     const seen = new Set<string>();
-    for (const ev of events) {
-      if (ev.type !== 'log_line') continue;
-      try {
-        const data = JSON.parse(ev.data) as LogLineData;
-        if (data.source) seen.add(data.source);
-      } catch {
-        // ignore
-      }
+    for (const entry of logs) {
+      if (entry.source) seen.add(entry.source);
     }
     return Array.from(seen).sort();
   });
 
   const filteredLogs = $derived.by(() => {
-    const out: Array<{ source: string; level: string; line: string }> = [];
-    for (const ev of events) {
-      if (ev.type !== 'log_line') continue;
-      try {
-        const data = JSON.parse(ev.data) as LogLineData;
-        if (logSourceFilter && data.source !== logSourceFilter) continue;
-        out.push({ source: data.source, level: data.level, line: data.line });
-      } catch {
-        // ignore malformed frames
-      }
-    }
-    return out;
+    if (!logSourceFilter) return logs;
+    return logs.filter((e) => e.source === logSourceFilter);
   });
 
   function formatRamGb(gb: number | null | undefined): string {
@@ -140,6 +135,17 @@
   }
 
   function appendEvent(ev: SSEEvent): void {
+    if (ev.type === 'log_line') {
+      // Logs land in their own bounded buffer so they can't crowd Progress
+      // events off the 500-event SSE tail. 2000 ≈ one full vllm-mlx boot.
+      try {
+        const data = JSON.parse(ev.data) as LogLineData;
+        logs = [...logs, { source: data.source, level: data.level, line: data.line }].slice(-2000);
+      } catch {
+        // ignore malformed frames
+      }
+      return;
+    }
     events = [...events, ev].slice(-500);
     // Pluck heartbeat Progress events into the status-bar gauges so the
     // UI doesn't have to scan the full event tail on every render.
@@ -155,6 +161,24 @@
     }
   }
 
+  // Stick the Logs tab to the bottom as new entries flow in, unless the
+  // user has scrolled up. Re-runs on every change to `filteredLogs`.
+  $effect(() => {
+    if (!logScrollEl) return;
+    // Read `filteredLogs.length` so this effect re-runs on new entries.
+    void filteredLogs.length;
+    if (!autoScrollLogs) return;
+    queueMicrotask(() => {
+      if (logScrollEl) logScrollEl.scrollTop = logScrollEl.scrollHeight;
+    });
+  });
+
+  function onLogsScroll(ev: Event): void {
+    const el = ev.currentTarget as HTMLElement;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    autoScrollLogs = atBottom;
+  }
+
   // SvelteKit reuses this component across same-route navigations
   // (`/jobs/abc → /jobs/def`), so onMount alone would leave the SSE
   // stream + refresh pointed at the OLD jobId. `$effect` re-runs on
@@ -163,9 +187,11 @@
   $effect(() => {
     if (!jobId) return;
     events = [];
+    logs = [];
     detail = null;
     error = null;
     lastHeartbeat = null;
+    autoScrollLogs = true;
     void refresh(jobId);
     const close = openSSE(`/jobs/${jobId}/events`, {
       onEvent: (ev) => {
@@ -343,23 +369,42 @@
               : 'Waiting for log output…'}
         </p>
       {:else}
-        <ul
-          class="font-mono text-xs leading-snug max-h-[60vh] overflow-y-auto p-2 rounded"
-          style="background: var(--bg-deep); border: 1px solid var(--border-warm);"
-        >
-          {#each filteredLogs as entry, i (i)}
-            <li
-              style="color: {entry.level === 'warn' || entry.level === 'warning'
-                ? 'var(--accent-amber)'
-                : entry.level === 'error' || entry.level === 'critical'
-                  ? 'var(--accent-red)'
-                  : 'var(--text-secondary)'};"
+        <div class="relative">
+          <ul
+            bind:this={logScrollEl}
+            onscroll={onLogsScroll}
+            class="font-mono text-xs leading-snug max-h-[60vh] overflow-y-auto p-2 rounded"
+            style="background: var(--bg-deep); border: 1px solid var(--border-warm);"
+            data-test="job-logs-list"
+          >
+            {#each filteredLogs as entry, i (i)}
+              <li
+                style="color: {entry.level === 'warn' || entry.level === 'warning'
+                  ? 'var(--accent-amber)'
+                  : entry.level === 'error' || entry.level === 'critical'
+                    ? 'var(--accent-red)'
+                    : 'var(--text-secondary)'};"
+              >
+                <span style="color: var(--text-muted);">[{entry.source}]</span>
+                {entry.line}
+              </li>
+            {/each}
+          </ul>
+          {#if !autoScrollLogs}
+            <button
+              type="button"
+              class="absolute right-3 bottom-3 px-2 py-1 rounded text-xs font-mono"
+              style="background: var(--accent-green-soft); color: var(--accent-green); border: 1px solid var(--accent-green);"
+              onclick={() => {
+                autoScrollLogs = true;
+                if (logScrollEl) logScrollEl.scrollTop = logScrollEl.scrollHeight;
+              }}
+              data-test="job-logs-resume-tail"
             >
-              <span style="color: var(--text-muted);">[{entry.source}]</span>
-              {entry.line}
-            </li>
-          {/each}
-        </ul>
+              tail ↓
+            </button>
+          {/if}
+        </div>
       {/if}
     </div>
   {:else if activeTab === 'op_runs'}

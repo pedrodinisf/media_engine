@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -36,12 +37,17 @@ from media_engine.backends import (
 )
 from media_engine.ops import CostEstimate, OperationContext
 from media_engine.ops.video.sample_frames import SampleFramesParams
+from media_engine.runtime.events import Event, LogLine
 from media_engine.runtime.log_pump import attach_subprocess
 
 BACKEND_NAME = "ffmpeg-uniform"
 BACKEND_VERSION = "1.0.0"
 
 _FFMPEG_TIMEOUT_S = 300.0
+# Tail size for the in-memory stderr buffer surfaced in failure messages.
+# Small enough to fit in a one-screen exception, big enough to include the
+# error context ffmpeg prints right before exit.
+_STDERR_TAIL_LINES = 20
 
 
 async def _run_ffmpeg_extract(
@@ -70,10 +76,19 @@ async def _run_ffmpeg_extract(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    # Live-stream stdout/stderr to the Web UI Logs tab; the same lines
-    # also accumulate in `stderr_bytes` below for the failure envelope.
+    # Live-stream stdout/stderr to the Web UI Logs tab, and side-channel
+    # the last N lines into a deque so CLI users (no SSE subscriber) still
+    # see the diagnostic context in the RuntimeError message.
+    tail: deque[str] = deque(maxlen=_STDERR_TAIL_LINES)
+
+    def _tee(event: Event) -> None:
+        # Only intercept our own LogLines; let everything else pass through.
+        if isinstance(event, LogLine) and event.source == "ffmpeg":
+            tail.append(event.line)
+        ctx.emit(event)
+
     log_handle = attach_subprocess(
-        proc, source="ffmpeg", emit=ctx.emit, op_run_id=run_id
+        proc, source="ffmpeg", emit=_tee, op_run_id=run_id
     )
     try:
         try:
@@ -87,9 +102,10 @@ async def _run_ffmpeg_extract(
     finally:
         await log_handle.aclose()
     if proc.returncode != 0:
+        stderr_tail = "\n".join(tail) if tail else "(no stderr captured)"
         raise RuntimeError(
-            f"ffmpeg sample_frames failed (exit {proc.returncode}); "
-            "see Logs tab for stderr."
+            f"ffmpeg sample_frames failed (exit {proc.returncode}). "
+            f"Last {len(tail)} stderr line(s):\n{stderr_tail}"
         )
 
 

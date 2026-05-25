@@ -255,9 +255,22 @@ class MlxWhisperDetectLanguageBackend(Backend):
         audio = inputs[0]
         assert isinstance(audio, Audio)
 
-        probs = await asyncio.to_thread(
-            _run_detect_language_sync, params.model, str(audio.path)
+        # Bridge mlx-whisper logger → LogLine for the Web UI Logs tab.
+        # detect_language uses the same library as transcribe, so the
+        # same surface applies.
+        run_id = uuid4().hex
+        log_token = attach_logger(
+            "mlx_whisper",
+            source="mlx-whisper",
+            emit=ctx.emit,
+            op_run_id=run_id,
         )
+        try:
+            probs = await asyncio.to_thread(
+                _run_detect_language_sync, params.model, str(audio.path)
+            )
+        finally:
+            log_token.detach()
         if not probs:
             language = "unknown"
             confidence = 0.0

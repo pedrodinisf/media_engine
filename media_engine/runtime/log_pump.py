@@ -197,7 +197,17 @@ async def _tail_file(
     level: str,
     poll_interval: float,
 ) -> None:
-    """Tail a growing log file from the current end, pushing new lines."""
+    """Tail a growing log file from the current end, pushing new lines.
+
+    Handles two real-world cases beyond the happy path:
+
+    * **File is replaced** (vllm-mlx server stop+restart truncates / rotates
+      the log file). We detect this by comparing the current size against
+      our last known offset; if it shrank, we reset to 0 and re-read from
+      the new beginning.
+    * **File doesn't exist yet**. We poll quietly until it appears, then
+      start tailing from byte 0 so the operator sees the very first lines.
+    """
     from pathlib import Path
 
     p = Path(path)
@@ -209,12 +219,22 @@ async def _tail_file(
         offset = 0
     leftover = ""
     while True:
-        try:
-            await asyncio.sleep(poll_interval)
-        except asyncio.CancelledError:
-            raise
+        await asyncio.sleep(poll_interval)
         if not p.exists():
+            # File was deleted (or hasn't been created yet); reset state
+            # so we start fresh when it (re)appears.
+            offset = 0
+            leftover = ""
             continue
+        try:
+            current_size = p.stat().st_size
+        except OSError:
+            continue
+        # Truncation / log rotation: size shrank below our last offset.
+        # Reset to 0 so we pick up the new content from the start.
+        if current_size < offset:
+            offset = 0
+            leftover = ""
         try:
             with p.open("rb") as h:
                 h.seek(offset)

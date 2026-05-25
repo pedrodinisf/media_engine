@@ -383,6 +383,18 @@ class VideoComprehend(Operation):
 
         # ── Merge timeline → MarkdownArtifact ──
         transcript_segments = list(transcript.metadata.get("segments", []))
+        # Guard: if both the per-frame analyses and the transcript are
+        # empty (silent video with all-blank frame descriptions), the
+        # synth call would receive an empty document — wasteful and the
+        # model would hallucinate. Fail loudly with a tunable hint.
+        non_empty_frames = [(t, d) for t, d in frame_entries if d.strip()]
+        if not non_empty_frames and not transcript_segments:
+            raise RuntimeError(
+                "video.comprehend produced an empty timeline (no usable "
+                "frame descriptions and no transcript segments). Check the "
+                "input video has audio + visible content, or lower fps so "
+                "frames are sampled where motion is."
+            )
         timeline_text = _build_timeline_markdown(
             frame_entries=list(frame_entries),
             transcript_segments=transcript_segments,

@@ -247,14 +247,12 @@ class VllmMlxVideoMultimodalBackend(Backend):
         )
         assert isinstance(reduced, FrameSet)
 
-        # 2. Ensure the server is serving the requested model.
-        base_url = _ensure_server(ctx, params.model, port, run_id)
-
-        # Tail the detached vllm-mlx server's log file from this point
-        # forward — the server itself is owned by ServerManager (long-
-        # lived across CLI invocations, log captured to a file rather
-        # than a pipe), so a file-tail is the only way to surface its
-        # output without breaking the detached lifecycle.
+        # Attach the file-tail BEFORE ensure_server so the 30-60s boot
+        # phase shows up in the Logs tab (it's the slowest, noisiest
+        # part). The server is detached by ServerManager (long-lived
+        # across CLI invocations, log captured to a file rather than a
+        # pipe) so file-tail is the only way to surface its output
+        # without breaking the detached lifecycle.
         log_handle = None
         if ctx.server_manager is not None:
             log_handle = attach_file_tail(
@@ -265,6 +263,9 @@ class VllmMlxVideoMultimodalBackend(Backend):
             )
 
         try:
+            # 2. Ensure the server is serving the requested model.
+            base_url = _ensure_server(ctx, params.model, port, run_id)
+
             # 3. Base64 frames + OpenAI chat call.
             _emit(ctx, run_id, 0.5, "encoding frames + generating")
             messages = _build_messages(ctx, reduced, params)

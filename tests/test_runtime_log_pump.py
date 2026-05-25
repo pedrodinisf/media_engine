@@ -10,6 +10,7 @@ import pytest
 from media_engine.runtime.events import Event, LogLine
 from media_engine.runtime.log_pump import (
     MAX_LINES_PER_RUN,
+    attach_file_tail,
     attach_logger,
     attach_subprocess,
 )
@@ -144,3 +145,101 @@ async def test_attach_logger_detach_removes_handler() -> None:
     assert len(logger.handlers) == baseline, (
         f"handler leak: baseline={baseline} now={len(logger.handlers)}"
     )
+
+
+@pytest.mark.asyncio
+async def test_attach_file_tail_emits_appended_lines(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Lines appended after attach surface as LogLines (history is ignored)."""
+    captured: list[Event] = []
+    log_path = tmp_path / "service.log"
+    log_path.write_text("HISTORY-line-that-should-not-be-replayed\n")
+
+    handle = attach_file_tail(
+        str(log_path),
+        source="filetail",
+        emit=captured.append,
+        op_run_id="op",
+        poll_interval=0.05,
+    )
+    try:
+        await asyncio.sleep(0.1)  # let the tail task settle on EOF
+        with log_path.open("a") as h:
+            h.write("first-new-line\n")
+            h.write("second-new-line\n")
+        # Give the poll loop a few cycles to pick up the append.
+        for _ in range(20):
+            await asyncio.sleep(0.05)
+            lines = [
+                ev.line for ev in captured if isinstance(ev, LogLine)
+            ]
+            if "second-new-line" in lines:
+                break
+    finally:
+        handle.cancel()
+        await handle.aclose()
+
+    lines = [ev.line for ev in captured if isinstance(ev, LogLine)]
+    assert "HISTORY-line-that-should-not-be-replayed" not in lines
+    assert "first-new-line" in lines
+    assert "second-new-line" in lines
+
+
+@pytest.mark.asyncio
+async def test_attach_file_tail_handles_truncation(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """After the file shrinks (truncate / rotation), new lines from byte 0
+    are picked up — we don't silently miss them past a stale offset."""
+    captured: list[Event] = []
+    log_path = tmp_path / "service.log"
+    log_path.write_text("pre-rotation-noise\n" * 5)
+
+    handle = attach_file_tail(
+        str(log_path),
+        source="filetail",
+        emit=captured.append,
+        op_run_id="op",
+        poll_interval=0.05,
+    )
+    try:
+        await asyncio.sleep(0.1)  # task seeks to EOF (offset > 0)
+        # Truncate + rewrite — common for `vllm-mlx` server restart.
+        log_path.write_text("post-rotation-line-A\npost-rotation-line-B\n")
+        for _ in range(20):
+            await asyncio.sleep(0.05)
+            lines = [ev.line for ev in captured if isinstance(ev, LogLine)]
+            if "post-rotation-line-B" in lines:
+                break
+    finally:
+        handle.cancel()
+        await handle.aclose()
+
+    lines = [ev.line for ev in captured if isinstance(ev, LogLine)]
+    assert "post-rotation-line-A" in lines
+    assert "post-rotation-line-B" in lines
+
+
+@pytest.mark.asyncio
+async def test_attach_file_tail_handles_missing_file(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Attach against a path that doesn't exist yet; start tailing when it
+    appears."""
+    captured: list[Event] = []
+    log_path = tmp_path / "not-yet.log"
+    handle = attach_file_tail(
+        str(log_path),
+        source="filetail",
+        emit=captured.append,
+        op_run_id="op",
+        poll_interval=0.05,
+    )
+    try:
+        await asyncio.sleep(0.1)
+        log_path.write_text("late-arrival\n")
+        for _ in range(20):
+            await asyncio.sleep(0.05)
+            lines = [ev.line for ev in captured if isinstance(ev, LogLine)]
+            if "late-arrival" in lines:
+                break
+    finally:
+        handle.cancel()
+        await handle.aclose()
+    lines = [ev.line for ev in captured if isinstance(ev, LogLine)]
+    assert "late-arrival" in lines
