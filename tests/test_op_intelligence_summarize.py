@@ -155,6 +155,10 @@ async def test_summarize_forwards_extract_backend_param(
         await engine.run(
             "intelligence.summarize",
             inputs=[t.id],
+            # Use an mlx-community model so the extract router agrees that
+            # mlx-lm is the right backend (router model/backend consistency
+            # check, B-008).
+            model="mlx-community/Qwen2.5-7B-Instruct-4bit",
             extract_backend="mlx-lm",
         )
         assert sentinel["calls"] == 1
@@ -200,9 +204,13 @@ async def test_summarize_forwards_ctx_backend_when_param_unset(
         # Pass --backend on the composite itself — the engine preserves
         # it in ctx.backend (per the _resolve_backend tweak), and the
         # composite's run() reads ctx.backend when no explicit
-        # extract_backend param is set.
+        # extract_backend param is set. Match the model to the backend
+        # so the B-008 router consistency check is happy.
         await engine.run(
-            "intelligence.summarize", inputs=[t.id], backend="mlx-lm"
+            "intelligence.summarize",
+            inputs=[t.id],
+            model="mlx-community/Qwen2.5-7B-Instruct-4bit",
+            backend="mlx-lm",
         )
         assert sentinel["calls"] == 1
     finally:
@@ -259,11 +267,15 @@ async def test_summarize_explicit_param_beats_ctx_backend(
 
     try:
         t = make_transcript(engine)
+        # Use a claude-prefixed model so the extract router agrees with
+        # the winning explicit `extract_backend="claude"` choice (B-008
+        # validation runs on the delegate's resolve).
         await engine.run(
             "intelligence.summarize",
             inputs=[t.id],
-            backend="mlx-lm",  # ctx.backend
-            extract_backend="claude",  # explicit — wins
+            model="claude-opus-4-7",
+            backend="mlx-lm",  # ctx.backend on the composite — would lose
+            extract_backend="claude",  # explicit on the composite — wins
         )
         assert explicit_calls["n"] == 1
         assert ctx_calls["n"] == 0

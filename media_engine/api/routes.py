@@ -436,7 +436,23 @@ def post_run_preview(
         raise HTTPException(status_code=422, detail=str(e)) from None
 
     # Resolve backend the same way Engine.run does.
-    backend_name = body.backend or op_cls().select_backend(params_model) or op_cls.default_backend
+    op_inst = op_cls()
+    backend_name = body.backend or op_inst.select_backend(params_model) or op_cls.default_backend
+    # Router model/backend consistency (B-008). Mirror the engine's
+    # _resolve_backend validation so the cost-preview surface can warn
+    # ahead of submit, not only at run time.
+    if body.backend is not None:
+        routed = op_inst.select_backend(params_model)
+        if routed is not None and routed != body.backend:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{body.op}: backend {body.backend!r} is incompatible "
+                    f"with the current params (model routes to {routed!r}). "
+                    f"Either change the model param or omit the backend "
+                    f"override so the router picks {routed!r}."
+                ),
+            )
     # An op with no registered Backend layer (composite / fan-out) gets
     # an empty backend list — flag it so the UI can render "(composite)"
     # instead of "—" in the cost preview (B-005 p1).

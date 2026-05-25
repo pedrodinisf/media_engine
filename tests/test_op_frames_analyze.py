@@ -169,6 +169,38 @@ async def test_analyze_rejects_non_frameset(
         await engine.run("frames.analyze", inputs=[video.id], prompt="x")
 
 
+async def test_analyze_rejects_incompatible_backend_for_model(
+    engine: Engine, sample_mp4: Path, fake_fa_backend
+) -> None:
+    """B-008: passing --backend vllm-mlx with a gemini default model must
+    fail loudly at submit time, not hit a confusing model-load error
+    deep inside the backend.
+    """
+    fs = await _frameset(engine, sample_mp4)
+    with pytest.raises(ValueError, match="incompatible|routes to"):
+        await engine.run(
+            "frames.analyze",
+            inputs=[fs.id],
+            prompt="x",
+            backend="vllm-mlx",  # router would have picked gemini for gemini-2.5-pro
+        )
+
+
+async def test_analyze_accepts_matching_explicit_backend(
+    engine: Engine, sample_mp4: Path, fake_fa_backend
+) -> None:
+    """B-008 sanity: an explicit --backend that matches the router's
+    pick is accepted (no false-positive reject)."""
+    fs = await _frameset(engine, sample_mp4)
+    [analysis] = await engine.run(
+        "frames.analyze",
+        inputs=[fs.id],
+        prompt="x",
+        backend="gemini",
+    )
+    assert analysis is not None
+
+
 def test_cost_estimate_gemini_vs_local(engine: Engine) -> None:
     op = FramesAnalyze()
     from datetime import UTC, datetime

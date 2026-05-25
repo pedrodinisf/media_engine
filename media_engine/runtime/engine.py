@@ -650,6 +650,24 @@ class Engine:
             raise ValueError(
                 f"{op_name} requires a backend; available: {registered}"
             )
+        # Router model/backend consistency (B-008). When the operator
+        # forces a backend via ``--backend`` AND the op has a router,
+        # validate that the chosen backend agrees with what the router
+        # would have picked from ``params.model``. Without this check,
+        # frames.analyze --backend vllm-mlx + default model=gemini-2.5-pro
+        # silently dispatches vllm-mlx to load a gemini model, failing
+        # deep inside the backend's model-load path with a confusing
+        # message. Failing loudly here points the operator at the actual
+        # fix (change the model param or drop the --backend).
+        if requested is not None:
+            routed = op.select_backend(params_model)
+            if routed is not None and routed != requested:
+                raise ValueError(
+                    f"{op_name}: backend {requested!r} is incompatible "
+                    f"with the current params (model routes to "
+                    f"{routed!r}). Either change the model param or "
+                    f"omit --backend so the router picks {routed!r}."
+                )
         backend_class = BackendRegistry.get(op_name, chosen)
         return (chosen, backend_class.version)
 
