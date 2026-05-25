@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { token } from '$lib/stores/token';
+  import Logo from '$lib/components/brand/Logo.svelte';
 
   type NavLink = { href: string; label: string };
 
@@ -79,9 +80,12 @@
     class="sticky top-0 z-50 h-12 px-5 flex items-center gap-4 text-text-inverse"
     style="background: var(--bg-header); border-bottom: 1px solid rgba(0,0,0,0.2);"
   >
-    <a href={isSetupRoute ? `${base}/setup` : `${base}/`} class="flex items-baseline gap-2 whitespace-nowrap text-text-inverse hover:no-underline">
-      <span class="font-mono text-sm font-semibold tracking-wider">media_engine</span>
-      <span class="text-xs opacity-60 font-mono">v{engineVersion}</span>
+    <a href={isSetupRoute ? `${base}/setup` : `${base}/`} class="flex items-center gap-2.5 whitespace-nowrap text-text-inverse hover:no-underline">
+      <Logo size={22} class="opacity-90" />
+      <span class="flex items-baseline gap-2">
+        <span class="font-mono text-sm font-semibold tracking-wider">media_engine</span>
+        <span class="text-xs opacity-60 font-mono">v{engineVersion}</span>
+      </span>
     </a>
 
     {#if !isSetupRoute}
