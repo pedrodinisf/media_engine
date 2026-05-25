@@ -81,7 +81,7 @@
     style="background: var(--bg-header); border-bottom: 1px solid rgba(0,0,0,0.2);"
   >
     <a href={isSetupRoute ? `${base}/setup` : `${base}/`} class="flex items-center gap-2.5 whitespace-nowrap text-text-inverse hover:no-underline">
-      <Logo size={22} class="opacity-90" />
+      <Logo size={22} />
       <span class="flex items-baseline gap-2">
         <span class="font-mono text-sm font-semibold tracking-wider">media_engine</span>
         <span class="text-xs opacity-60 font-mono">v{engineVersion}</span>

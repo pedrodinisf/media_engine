@@ -50,6 +50,9 @@
   --accent-green: #059669;
   --accent-amber: #d97706;
   --accent-red: #dc2626;
+  /* Brand-mark blue. Matches saturation of the other accents so the
+   * green/red/blue triad in the Logo component reads balanced. */
+  --accent-blue: #2563eb;
   --text-primary: #2d2d2d;
   --text-secondary: #555d66;
   --text-muted: #7b8490;
