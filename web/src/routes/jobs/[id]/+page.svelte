@@ -172,10 +172,11 @@
     <button
       type="button"
       onclick={() => (activeTab = tab.id as typeof activeTab)}
-      class="px-3 py-1.5 rounded font-medium"
+      class="px-3 py-1.5 rounded text-xs font-mono transition-colors hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green"
       style={activeTab === tab.id
-        ? 'background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-light);'
-        : 'color: var(--text-secondary); border: 1px solid transparent;'}
+        ? 'background: var(--accent-green-soft); color: var(--accent-green); border: 1.5px solid var(--accent-green); font-weight: 600;'
+        : 'background: var(--bg-alt); color: var(--text-primary); border: 1px solid var(--border-warm);'}
+      aria-current={activeTab === tab.id ? 'page' : undefined}
     >
       {tab.label}
     </button>

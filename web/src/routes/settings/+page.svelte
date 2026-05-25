@@ -52,7 +52,7 @@
     { id: 'secrets', label: 'Secrets' },
     { id: 'extras', label: 'Extras' },
     { id: 'backends', label: 'Backends' },
-    { id: 'catalog', label: 'Catalog gate' },
+    { id: 'catalog', label: 'Visibility' },
     { id: 'tokens', label: 'Tokens' },
     { id: 'storage', label: 'Storage' },
     { id: 'config', label: 'Config files' },
@@ -494,10 +494,10 @@
     <button
       type="button"
       onclick={() => activate(t.id)}
-      class="px-3 py-1.5 rounded text-xs font-mono"
+      class="px-3 py-1.5 rounded text-xs font-mono transition-colors hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green"
       style={activeTab === t.id
-        ? 'background: var(--accent-green-soft); color: var(--accent-green); border: 1px solid var(--accent-green-line);'
-        : 'background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border-light);'}
+        ? 'background: var(--accent-green-soft); color: var(--accent-green); border: 1.5px solid var(--accent-green); font-weight: 600;'
+        : 'background: var(--bg-alt); color: var(--text-primary); border: 1px solid var(--border-warm);'}
       aria-current={activeTab === t.id ? 'page' : undefined}
     >
       {t.label}
@@ -963,14 +963,14 @@
   </section>
 {/if}
 
-<!-- ─────────────── PLUGINS · CATALOG GATE ─────────────── -->
+<!-- ─────────────── VISIBILITY (formerly "Catalog gate") ─────────────── -->
 {#if activeTab === 'catalog'}
   <section class="p-4 rounded" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
-    <h2 class="text-xs font-semibold uppercase mb-1" style="color: var(--text-muted);">Catalog gate</h2>
+    <h2 class="text-xs font-semibold uppercase mb-1" style="color: var(--text-muted);">Op &amp; backend visibility</h2>
     <p class="text-xs mb-3" style="color: var(--text-secondary);">
-      Hide ops or backends from discovery surfaces (REST <code class="font-mono">/operations</code>, MCP
-      <code class="font-mono">tools/list</code>, the Web UI op picker). Hidden entries stay registered;
-      this is enforcement-only filtering, not uninstall.
+      Hide ops and backends from the Run picker, the REST <code class="font-mono">/operations</code> endpoint,
+      and the MCP <code class="font-mono">tools/list</code> surface. Hidden entries stay
+      registered — this is enforcement-only filtering, not uninstall.
     </p>
 
     <div class="flex items-center gap-2 mb-3">
