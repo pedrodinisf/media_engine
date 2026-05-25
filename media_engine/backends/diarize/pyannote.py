@@ -67,6 +67,27 @@ def _emit_progress(
         )
 
 
+def _pyannote_auth_kwarg(Pipeline: Any) -> str:
+    """Pick the HF-token kwarg name for the installed pyannote version.
+
+    pyannote.audio 4.x renamed ``use_auth_token`` → ``token`` on
+    ``Pipeline.from_pretrained``. Inspect the signature once so the
+    same call site works against both 3.x and 4.x without a brittle
+    try/except dance on every load.
+    """
+    import inspect
+
+    try:
+        sig = inspect.signature(Pipeline.from_pretrained)
+    except (TypeError, ValueError):
+        # Some bound methods can't be introspected on certain builds;
+        # the 4.x name is the better default since 3.x is EOL.
+        return "token"
+    if "token" in sig.parameters:
+        return "token"
+    return "use_auth_token"
+
+
 def _load_pipeline_sync(model: str) -> Any:
     Pipeline = _import_pyannote()
     token = os.environ.get("HF_TOKEN")
@@ -76,7 +97,8 @@ def _load_pipeline_sync(model: str) -> Any:
             "HuggingFace token to download the gated model. Get one at "
             "https://huggingface.co/settings/tokens and `export HF_TOKEN=...`."
         )
-    pipeline: Any = Pipeline.from_pretrained(model, use_auth_token=token)
+    auth_kwarg = _pyannote_auth_kwarg(Pipeline)
+    pipeline: Any = Pipeline.from_pretrained(model, **{auth_kwarg: token})
     # Move to MPS on Apple Silicon if available; CPU otherwise.
     with contextlib.suppress(ImportError, RuntimeError):
         import torch  # type: ignore[import-not-found]
