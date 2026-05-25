@@ -1269,7 +1269,7 @@ def _compute_env_impact() -> dict[str, dict[str, list[str]]]:
         deps = op_cls.delegates_to
         if not deps:
             continue
-        for env, bucket in impact.items():
+        for bucket in impact.values():
             unblocked_set = set(bucket["direct"])
             # If every delegate is either already working or would be
             # unblocked by this env, the composite is indirectly
@@ -1279,12 +1279,13 @@ def _compute_env_impact() -> dict[str, dict[str, list[str]]]:
                 for d in deps
             )
             touches_unblocked = any(d in unblocked_set for d in deps)
-            if reachable and touches_unblocked:
-                if (
-                    op_cls.name not in bucket["indirect"]
-                    and op_cls.name not in bucket["direct"]
-                ):
-                    bucket["indirect"].append(op_cls.name)
+            if (
+                reachable
+                and touches_unblocked
+                and op_cls.name not in bucket["indirect"]
+                and op_cls.name not in bucket["direct"]
+            ):
+                bucket["indirect"].append(op_cls.name)
 
     return impact
 

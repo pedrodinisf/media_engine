@@ -39,6 +39,14 @@ export MEDIA_ENGINE_CACHE_DB_URL="sqlite+pysqlite:///${work_dir}/cache.db"
 export MEDIA_ENGINE_MIN_FREE_GB="0"
 export MEDIA_ENGINE_NO_BROWSER="1"
 export MEDIA_ENGINE_CONFIG_DIR="${work_dir}/config"
+
+# Force a clean secret environment so the Doctor quick-fix banner +
+# Secrets unblock-impact counts are deterministic. Without this the
+# specs inherit whatever the operator has in their shell and the
+# expected "Unblocks N ops" affordances may not render.
+unset GEMINI_API_KEY ANTHROPIC_API_KEY OPENAI_API_KEY HF_TOKEN \
+      MEDIA_ENGINE_FULLTEXT_DB_URL MEDIA_ENGINE_SEMANTIC_DB_URL
+
 mkdir -p "${MEDIA_ENGINE_PERMANENT_STORE}" "${MEDIA_ENGINE_CONFIG_DIR}"
 
 cd "${repo_root}"
