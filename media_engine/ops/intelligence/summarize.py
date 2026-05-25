@@ -65,6 +65,7 @@ class IntelligenceSummarize(Operation):
     # Composite: no backend layer — delegates to intelligence.extract,
     # which bills the spend. records_cost=False avoids double-counting.
     records_cost = False
+    delegates_to = ("intelligence.extract",)
 
     async def run(
         self,

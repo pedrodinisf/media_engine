@@ -74,6 +74,7 @@ class AudioTranscribeDiarized(Operation):
     output_kinds = (Kind.Transcript,)
     params_model = TranscribeDiarizedParams
     declared_resources = ("apple_neural_engine",)
+    delegates_to = ("audio.transcribe", "audio.diarize")
 
     async def run(
         self,

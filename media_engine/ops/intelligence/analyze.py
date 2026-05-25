@@ -133,6 +133,7 @@ class IntelligenceAnalyze(Operation):
     # synthetic and not cached individually). The whole SessionAnalysis is
     # content-addressed + cached at this op's granularity.
     default_backend = None
+    delegates_to = ("intelligence.extract",)
 
     async def run(
         self,

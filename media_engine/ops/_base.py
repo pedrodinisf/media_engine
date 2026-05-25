@@ -102,6 +102,12 @@ class Operation(ABC):
         ledger row for this op. ``False`` for thin composite wrappers that
         delegate to a sub-op via ``ctx.run_op`` (the sub-op already billed
         the spend; billing the wrapper too would double-count).
+      * ``delegates_to`` — names of ops this op calls via ``ctx.run_op``
+        (or equivalent). Static declaration; the doctor + Settings UI
+        walk this to compute "if I install/set X, which composites
+        light up too?" without having to inspect ``run`` bodies. Empty
+        for non-composites and for composites that don't route through
+        another registered op (e.g. acquire.upload, video.trim).
     """
 
     name: ClassVar[str]
@@ -113,6 +119,7 @@ class Operation(ABC):
     declared_resources: ClassVar[tuple[str, ...]] = ()
     default_backend: ClassVar[str | None] = None
     records_cost: ClassVar[bool] = True
+    delegates_to: ClassVar[tuple[str, ...]] = ()
 
     def select_backend(self, params: BaseModel) -> str | None:
         """Backend this op will use, derived from ``params`` (e.g. by model

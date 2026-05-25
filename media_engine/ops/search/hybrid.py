@@ -95,6 +95,7 @@ class SearchHybrid(Operation):
     output_kinds = (Kind.Analysis,)
     params_model = SearchHybridParams
     records_cost = False  # composite — sub-ops bill their own spend
+    delegates_to = ("search.semantic", "search.fulltext")
 
     async def run(
         self,
