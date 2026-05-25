@@ -15,6 +15,7 @@
     type ParamsSchema,
     type ParamsValue,
   } from './schema';
+  import FloatInput from './FloatInput.svelte';
 
   type Props = {
     schema: ParamsSchema;
@@ -74,10 +75,10 @@
           checked={v === true}
           onchange={(e) => update(field.name, (e.target as HTMLInputElement).checked)}
         />
-      {:else if field.node.type === 'integer' || field.node.type === 'number'}
+      {:else if field.node.type === 'integer'}
         <input
           type="number"
-          step={field.node.type === 'integer' ? 1 : 'any'}
+          step="1"
           value={v ?? ''}
           oninput={(e) => {
             const t = e.target as HTMLInputElement;
@@ -89,6 +90,12 @@
           }}
           class="w-full px-3 py-2 rounded text-sm font-mono"
           style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
+        />
+      {:else if field.node.type === 'number'}
+        <FloatInput
+          value={typeof v === 'number' ? v : (v === null ? null : 0)}
+          nullable={field.nullable}
+          onChange={(next) => update(field.name, next)}
         />
       {:else if isMultilineField(field.name)}
         <textarea
