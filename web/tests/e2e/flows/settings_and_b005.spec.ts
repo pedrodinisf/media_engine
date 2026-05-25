@@ -286,3 +286,52 @@ test('Settings → Doctor shows quick-fix banner when ops are unavailable', asyn
 // correctness directly against the registry. Bringing this spec back
 // would require test.describe.serial — not worth it for the marginal
 // coverage.
+
+test('B-009: Doctor expand row shows the delegate breakdown for a composite', async ({ page }) => {
+  // After Phase 6.6: composites with delegates_to surface a per-delegate
+  // status list inside the expand row. The harness scrubs cloud-API keys
+  // so intelligence.extract's gemini/claude backends are unavailable and
+  // the composite (intelligence.summarize) rolls up to red — the row
+  // must render at least one ❌-marked delegate entry.
+  await page.goto(`${baseURL}/ui/settings`);
+  await expect(page.getByText('Dependency map — what works on this machine')).toBeVisible({
+    timeout: 5_000,
+  });
+  // intelligence.summarize is a composite; find its row and expand.
+  const row = page.locator('tr', { hasText: 'intelligence.summarize' }).first();
+  await row.getByRole('button', { name: '+' }).click();
+  // The breakdown carries a data-testid for stable lookup.
+  const breakdown = page.locator('[data-testid="delegate-breakdown"]');
+  await expect(breakdown).toBeVisible({ timeout: 5_000 });
+  await expect(breakdown).toContainText('intelligence.extract');
+});
+
+test('B-008: /run/preview returns 422 when --backend conflicts with model', async ({ request }) => {
+  // frames.analyze with default model=gemini-2.5-pro and an explicit
+  // backend=vllm-mlx is internally inconsistent. The preview endpoint
+  // must surface this with a 422 + a message naming the routed backend.
+  const resp = await request.post(`${baseURL}/run/preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      op: 'frames.analyze',
+      inputs: [],  // preview tolerates empty inputs for cost-only validation
+      backend: 'vllm-mlx',
+      params: { prompt: 'describe' },
+    },
+  });
+  expect(resp.status()).toBe(422);
+  const body = await resp.json();
+  expect(body.detail).toMatch(/incompatible|routes to/);
+});
+
+test('B-007: intelligence.summarize exposes extract_backend as a schema field', async ({ request }) => {
+  // The composite gained an explicit extract_backend override in Phase 6.6.
+  // The Run-panel SchemaForm auto-renders any new field; here we assert the
+  // server schema actually carries it so the dropdown gets surfaced.
+  const resp = await request.get(`${baseURL}/operations/intelligence.summarize`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(resp.ok()).toBeTruthy();
+  const body = await resp.json();
+  expect(body.params_schema.properties).toHaveProperty('extract_backend');
+});
