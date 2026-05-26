@@ -193,35 +193,61 @@
     };
   });
 
-  // Audio range slider state — surfaces above SchemaForm when:
-  //   * the op is one of audio.transcribe / audio.diarize / audio.transcribe_diarized
-  //   * the first input id resolved as an Audio artifact with known duration
-  // The slider writes into params.start_s / params.end_s. Both null
-  // means "full audio" (engine default — no ffmpeg slice fires).
-  const AUDIO_RANGE_OPS = new Set([
-    'audio.transcribe',
-    'audio.diarize',
-    'audio.transcribe_diarized',
-  ]);
-  const audioInputDuration = $derived.by<number | null>(() => {
-    if (!selectedOp || !AUDIO_RANGE_OPS.has(selectedOp)) return null;
+  // Range slider state — surfaces above SchemaForm when BOTH:
+  //   * the op's params schema declares `start_s` + `end_s` properties
+  //     (schema-driven, not an allowlist — every op that gains the two
+  //     params lights up automatically, including Phase-6.7's
+  //     `video.sample_frames` and `video.comprehend`)
+  //   * the first input id resolved as an Audio OR Video artifact with
+  //     known duration on `metadata.duration`
+  // Writes into params.start_s / params.end_s. Both null means "full
+  // length" (engine default — no slice fires).
+  const RANGE_AWARE_KINDS = new Set(['audio', 'video']);
+  const opSupportsRange = $derived.by<boolean>(() => {
+    if (!opDetail) return false;
+    const props = opDetail.params_schema?.properties as
+      | Record<string, unknown>
+      | undefined;
+    return !!(props && 'start_s' in props && 'end_s' in props);
+  });
+  const rangeableInputDuration = $derived.by<number | null>(() => {
+    if (!opSupportsRange) return null;
     for (const id of inputIds()) {
       const c = inputChecks[id];
-      if (c?.status === 'ok' && c.kind.toLowerCase() === 'audio' && c.duration !== null) {
+      if (
+        c?.status === 'ok' &&
+        RANGE_AWARE_KINDS.has(c.kind.toLowerCase()) &&
+        c.duration !== null
+      ) {
         return c.duration;
       }
     }
     return null;
   });
-  const audioInputResolvedKindMissingDuration = $derived.by<boolean>(() => {
-    if (!selectedOp || !AUDIO_RANGE_OPS.has(selectedOp)) return false;
+  const rangeableInputResolvedKindMissingDuration = $derived.by<boolean>(() => {
+    if (!opSupportsRange) return false;
     for (const id of inputIds()) {
       const c = inputChecks[id];
-      if (c?.status === 'ok' && c.kind.toLowerCase() === 'audio' && c.duration === null) {
+      if (
+        c?.status === 'ok' &&
+        RANGE_AWARE_KINDS.has(c.kind.toLowerCase()) &&
+        c.duration === null
+      ) {
         return true;
       }
     }
     return false;
+  });
+  // Kind label for the duration-missing copy; "audio" / "video" /
+  // generic fallback.
+  const rangeableInputKindLabel = $derived.by<string>(() => {
+    for (const id of inputIds()) {
+      const c = inputChecks[id];
+      if (c?.status === 'ok' && RANGE_AWARE_KINDS.has(c.kind.toLowerCase())) {
+        return c.kind.toLowerCase();
+      }
+    }
+    return 'input';
   });
 
   function onRangeChange(start: number | null, end: number | null): void {
@@ -448,19 +474,20 @@
         </label>
       {/if}
 
-      {#if audioInputDuration !== null}
+      {#if rangeableInputDuration !== null}
         <RangeSlider
-          duration={audioInputDuration}
+          duration={rangeableInputDuration}
           startValue={(params.start_s as number | null | undefined) ?? null}
           endValue={(params.end_s as number | null | undefined) ?? null}
           onChange={onRangeChange}
         />
-      {:else if audioInputResolvedKindMissingDuration}
+      {:else if rangeableInputResolvedKindMissingDuration}
         <p
           class="mb-3 text-xs italic p-2 rounded"
           style="color: var(--text-secondary); background: var(--bg-page); border: 1px solid var(--border-light);"
+          data-test="run-range-missing-duration"
         >
-          This audio's duration isn't in the catalog metadata — use the numeric
+          This {rangeableInputKindLabel}'s duration isn't in the catalog metadata — use the numeric
           <code class="font-mono">start_s</code> / <code class="font-mono">end_s</code>
           fields below to bound the run to a sub-range.
         </p>

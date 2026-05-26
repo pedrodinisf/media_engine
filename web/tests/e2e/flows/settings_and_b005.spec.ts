@@ -141,6 +141,64 @@ test('Run panel: range slider renders when an Audio artifact is the input', asyn
   await expect(page.getByRole('button', { name: 'Use full range' })).toBeVisible();
 });
 
+test('Phase 6.7: range slider also renders for Video inputs when the op exposes start_s/end_s', async ({ page }) => {
+  // Upload sample.mp4 → Video artifact with duration metadata.
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const fixture = path.resolve(
+    process.cwd(), '..', 'tests', 'fixtures', 'sample.mp4',
+  );
+  let videoBuffer: Buffer;
+  try {
+    videoBuffer = await fs.readFile(fixture);
+  } catch {
+    test.skip(true, `fixture missing: ${fixture}`);
+    return;
+  }
+  const upload = await page.request.post(`${baseURL}/acquire/upload`, {
+    headers: { Authorization: `Bearer ${token}` },
+    multipart: {
+      file: {
+        name: 'sample.mp4',
+        mimeType: 'video/mp4',
+        buffer: videoBuffer,
+      },
+      commit: 'true',
+    },
+  });
+  expect(upload.ok()).toBeTruthy();
+  const { job_id: jobId } = await upload.json();
+
+  let artifactId: string | null = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const r = await page.request.get(`${baseURL}/jobs/${jobId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await r.json();
+    if (body.job?.status === 'completed' && body.job.output_artifact_ids?.length) {
+      artifactId = body.job.output_artifact_ids[0];
+      break;
+    }
+    if (body.job?.status === 'failed') {
+      throw new Error(`acquire.upload failed: ${JSON.stringify(body.job.error)}`);
+    }
+    await new Promise((res) => setTimeout(res, 250));
+  }
+  expect(artifactId).toBeTruthy();
+
+  await page.goto(`${baseURL}/ui/run`);
+  // Pick an op that has start_s/end_s + accepts Video. sample_frames
+  // is the leanest schema for this (one input field, params include
+  // the new fields).
+  await page.getByRole('button', { name: 'video.sample_frames', exact: true }).click();
+  await page.locator('input[placeholder*="a-3c1f"]').fill(artifactId!);
+
+  // Same slider, same labels — proves the gating generalized from
+  // audio-only to "any kind that carries duration metadata".
+  await expect(page.getByText('Time range')).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByRole('button', { name: 'Use full range' })).toBeVisible();
+});
+
 test('Settings → Secrets lists the catalog and round-trips a save', async ({ page }) => {
   await page.goto(`${baseURL}/ui/settings`);
   await page.getByRole('button', { name: 'Secrets' }).click();
