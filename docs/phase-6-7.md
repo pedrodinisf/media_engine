@@ -62,6 +62,36 @@ see `git log` for the full set):
   to every emit site. This was a pre-Phase-A latent bug, but the
   Phase A.4 Logs tab is what surfaced it.
 
+* **`pyannote.audio` 4.x `DiarizeOutput` unwrap** — pyannote 4.x
+  wraps the `Annotation` in a `DiarizeOutput` dataclass instead of
+  returning it directly. The diarize backend now detects the wrapper
+  and drills into `.speaker_diarization`; 3.x callers stay on the
+  passthrough path. Surfaced by the first real end-to-end run of
+  `video.comprehend` through the Web UI.
+
+* **Time-window slicing across the ops that take Audio / Video.**
+  `start_s` / `end_s` consistently mean "extract / process only the
+  segment between these source-video seconds." Coverage as of the
+  Phase 6.7 close:
+
+  | Op | Status |
+  |---|---|
+  | `audio.transcribe` | ✓ already supported |
+  | `audio.diarize` | ✓ already supported |
+  | `audio.transcribe_diarized` | ✓ already supported |
+  | `audio.detect_language` | ✓ added in Phase 6.7 |
+  | `video.extract_audio` | ✓ added in Phase 6.7 |
+  | `video.sample_frames` | ✓ added in Phase 6.7 (`ffmpeg-uniform` only — `pyscenedetect` refuses with NotImplementedError until follow-up) |
+  | `video.comprehend` | ✓ added in Phase 6.7; forwards into all sub-ops |
+  | `video.trim` | (windowing is the op's entire purpose) |
+  | `video.multimodal` | ⏸ deferred — workaround: pipeline `video.trim` → `video.multimodal`. Both backends would need backend-specific slicing (gemini uploads the full file; vllm-mlx already delegates frame extraction to `video.sample_frames` which now supports it). |
+
+  The Web UI Run-panel range slider was generalised from an audio-
+  only allowlist to a schema-driven detector (`params_schema` has
+  both `start_s` + `end_s` AND the first input artifact carries
+  `metadata.duration`), so every op in the ✓ rows above lights up
+  the slider automatically.
+
 ---
 
 ## Quality gates

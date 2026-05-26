@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from media_engine.artifacts import (
     Analysis,
@@ -36,6 +36,27 @@ class DetectLanguageParams(BaseModel):
         str,
         Field(json_schema_extra={"enum": list(WHISPER_MODELS)}),
     ] = "mlx-community/whisper-large-v3-mlx"
+    # Optional time-window slicing. Whisper's language detector only
+    # looks at the first ~30 s of input, so the most common reason to
+    # set these is "skip the silent intro" or "detect on a specific
+    # segment of a multilingual recording". Same `-ss start` / `-t
+    # duration` slicing as the transcribe path — handled inside the
+    # mlx-whisper backend via ``maybe_slice_audio``.
+    start_s: float | None = Field(default=None, ge=0.0)
+    end_s: float | None = Field(default=None, ge=0.0)
+
+    @model_validator(mode="after")
+    def _check_range(self) -> DetectLanguageParams:
+        if (
+            self.start_s is not None
+            and self.end_s is not None
+            and self.end_s <= self.start_s
+        ):
+            raise ValueError(
+                f"end_s must be > start_s "
+                f"(got start={self.start_s}, end={self.end_s})"
+            )
+        return self
 
 
 @register_op

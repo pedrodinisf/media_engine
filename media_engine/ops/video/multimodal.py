@@ -8,6 +8,14 @@ batches them through an OpenAI-compatible endpoint.
 
 Backend selection: explicit ``backend=`` wins; otherwise the model prefix
 decides — ``mlx-community/*`` → ``vllm-mlx``, everything else → ``gemini``.
+
+**Time-window slicing (deferred — Phase 6.7).** Unlike its newer sibling
+``video.comprehend``, this op does NOT yet accept ``start_s`` / ``end_s``
+params. Both backends would need backend-specific work: gemini uploads
+the whole file (so we'd need to ffmpeg-trim first), and vllm-mlx already
+internally calls ``video.sample_frames`` (which DOES accept the window).
+The clean workaround until a unified fix lands: pipeline
+``video.trim`` → ``video.multimodal`` to extract the segment first.
 """
 
 from __future__ import annotations

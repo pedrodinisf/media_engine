@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -43,6 +43,26 @@ class ExtractAudioParams(BaseModel):
     channels: Literal[1, 2] = 1
     codec: Literal["pcm_s16le", "aac", "flac"] = "pcm_s16le"
     container: Literal["wav", "m4a", "flac"] = "wav"
+    # Optional time-window slicing. When set, the resulting Audio
+    # artifact contains only the segment between ``[start_s, end_s]``
+    # of the source video. Same `-ss start` + `-t duration` ffmpeg
+    # convention as `video.sample_frames` (Phase 6.7) so cache keys
+    # naturally differ from full-video extractions.
+    start_s: float | None = Field(default=None, ge=0.0)
+    end_s: float | None = Field(default=None, ge=0.0)
+
+    @model_validator(mode="after")
+    def _check_range(self) -> ExtractAudioParams:
+        if (
+            self.start_s is not None
+            and self.end_s is not None
+            and self.end_s <= self.start_s
+        ):
+            raise ValueError(
+                f"end_s must be > start_s "
+                f"(got start={self.start_s}, end={self.end_s})"
+            )
+        return self
 
 
 def _container_format_flag(container: str) -> str:
@@ -132,11 +152,26 @@ class VideoExtractAudio(Operation):
 
         if not dest_in_store.exists():
             tmp_out = ctx.workdir / f"audio-{uuid4().hex}{ext}"
+            # Optional window: `-ss start` BEFORE -i (fast keyframe seek
+            # — accuracy is fine for audio at any sample rate) + `-t
+            # duration` AFTER -i. Same convention as
+            # video.sample_frames (Phase 6.7).
+            pre_input: list[str] = []
+            post_input: list[str] = []
+            if params.start_s is not None and params.start_s > 0.0:
+                pre_input += ["-ss", f"{params.start_s:.6f}"]
+            window_duration: float | None = None
+            if params.end_s is not None:
+                window_duration = params.end_s - (params.start_s or 0.0)
+                if window_duration > 0.0:
+                    post_input += ["-t", f"{window_duration:.6f}"]
             cmd = [
                 ffmpeg_path,
                 "-nostdin",
                 "-y",
+                *pre_input,
                 "-i", str(video.path),
+                *post_input,
                 "-vn",
                 "-ar", str(params.sample_rate),
                 "-ac", str(params.channels),
@@ -144,7 +179,13 @@ class VideoExtractAudio(Operation):
                 "-f", _container_format_flag(params.container),
                 str(tmp_out),
             ]
-            duration = video.duration
+            # Progress fraction targets the WINDOW length when set, not
+            # the source duration — otherwise a 5s window inside a
+            # 60-minute video would only ever report ~0.1% complete.
+            if window_duration is not None and window_duration > 0.0:
+                duration = window_duration
+            else:
+                duration = video.duration
             run_id = uuid4().hex
             log_pump = LinePump(
                 source="ffmpeg",

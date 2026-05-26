@@ -268,9 +268,18 @@ class MlxWhisperDetectLanguageBackend(Backend):
             op_run_id=ctx.op_run_id or run_id,
             job_id=ctx.job_id,
         )
+        # Optional window: maybe_slice_audio is a no-op when start_s /
+        # end_s are both None, so this is free for the common case.
+        sliced_path = await asyncio.to_thread(
+            maybe_slice_audio,
+            str(audio.path),
+            start_s=params.start_s,
+            end_s=params.end_s,
+            ctx=ctx,
+        )
         try:
             probs = await asyncio.to_thread(
-                _run_detect_language_sync, params.model, str(audio.path)
+                _run_detect_language_sync, params.model, sliced_path
             )
         finally:
             log_token.detach()
