@@ -88,7 +88,11 @@ async def _run_ffmpeg_extract(
         ctx.emit(event)
 
     log_handle = attach_subprocess(
-        proc, source="ffmpeg", emit=_tee, op_run_id=run_id
+        proc,
+        source="ffmpeg",
+        emit=_tee,
+        op_run_id=ctx.op_run_id or run_id,
+        job_id=ctx.job_id,
     )
     try:
         try:

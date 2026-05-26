@@ -313,6 +313,12 @@ class Engine:
             run_op=_scoped_run_op,
             backend=backend_name,
             cache=self.cache,
+            # Propagate the submission id + this op's run id so backend-
+            # emitted events (Progress, LogLine) carry them. Without this,
+            # SSE per-job replay drops them (event.job_id is None and the
+            # filter rejects mismatches).
+            job_id=event_job_id,
+            op_run_id=op_run_id,
         )
 
         # Cost is computed PRE-run so the heartbeat task has an initial

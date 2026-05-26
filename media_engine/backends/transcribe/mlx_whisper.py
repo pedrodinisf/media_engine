@@ -65,7 +65,8 @@ def _emit_segment_progress(
         ctx.emit(
             Progress(
                 event_id=uuid4().hex,
-                op_run_id=op_run_id,
+                op_run_id=ctx.op_run_id or op_run_id,
+                job_id=ctx.job_id,
                 artifact_id=artifact_id,
                 timestamp=datetime.now(UTC),
                 fraction=max(0.0, min(1.0, fraction)),
@@ -176,7 +177,8 @@ class MlxWhisperTranscribeBackend(Backend):
             "mlx_whisper",
             source="mlx-whisper",
             emit=ctx.emit,
-            op_run_id=run_id,
+            op_run_id=ctx.op_run_id or run_id,
+            job_id=ctx.job_id,
         )
         try:
             result = await asyncio.to_thread(
@@ -263,7 +265,8 @@ class MlxWhisperDetectLanguageBackend(Backend):
             "mlx_whisper",
             source="mlx-whisper",
             emit=ctx.emit,
-            op_run_id=run_id,
+            op_run_id=ctx.op_run_id or run_id,
+            job_id=ctx.job_id,
         )
         try:
             probs = await asyncio.to_thread(

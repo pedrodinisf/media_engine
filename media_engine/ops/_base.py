@@ -75,6 +75,17 @@ class OperationContext:
     # index over every persisted Transcript / Embedding / Document).
     # ``None`` outside of ``Engine.run``.
     cache: Any | None = None
+    # The REST/CLI submission id this op is running under. Backends
+    # forward it onto every event they emit (Progress, LogLine) so SSE
+    # per-job replay can ``WHERE job_id = ?`` and surface them on the
+    # Job-detail page. ``None`` outside of ``Engine.run``; the engine
+    # falls back to ``op_run_id`` when no explicit submission id was
+    # supplied (matches the engine's own event_job_id convention).
+    job_id: str | None = None
+    # The op-run id the engine assigned for this invocation. Mirrors the
+    # `op_run_id` on every Event the engine emits around the op, so
+    # backend-emitted events stay correlated.
+    op_run_id: str | None = None
 
 
 class Operation(ABC):

@@ -74,7 +74,8 @@ def _emit(ctx: OperationContext, run_id: str, frac: float, msg: str) -> None:
         ctx.emit(
             Progress(
                 event_id=uuid4().hex,
-                op_run_id=run_id,
+                op_run_id=ctx.op_run_id or run_id,
+                job_id=ctx.job_id,
                 timestamp=datetime.now(UTC),
                 fraction=max(0.0, min(1.0, frac)),
                 message=msg,
@@ -259,7 +260,8 @@ class VllmMlxVideoMultimodalBackend(Backend):
                 str(ctx.server_manager.log_path(_SERVER_NAME)),
                 source="vllm-mlx",
                 emit=ctx.emit,
-                op_run_id=run_id,
+                op_run_id=ctx.op_run_id or run_id,
+                job_id=ctx.job_id,
             )
 
         try:

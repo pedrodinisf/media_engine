@@ -54,6 +54,7 @@ def _emit_progress_from_stderr(
     *,
     duration: float | None,
     op_run_id: str,
+    job_id: str | None,
     artifact_id: str | None,
     emit: object,
 ) -> None:
@@ -73,6 +74,7 @@ def _emit_progress_from_stderr(
                 Progress(
                     event_id=uuid4().hex,
                     op_run_id=op_run_id,
+                    job_id=job_id,
                     artifact_id=artifact_id,
                     timestamp=datetime.now(UTC),
                     fraction=fraction,
@@ -147,8 +149,8 @@ class VideoExtractAudio(Operation):
             log_pump = LinePump(
                 source="ffmpeg",
                 emit=ctx.emit,
-                op_run_id=run_id,
-                job_id=None,
+                op_run_id=ctx.op_run_id or run_id,
+                job_id=ctx.job_id,
             )
             try:
                 proc = subprocess.Popen(
@@ -159,7 +161,8 @@ class VideoExtractAudio(Operation):
                     _emit_progress_from_stderr(
                         line,
                         duration=duration,
-                        op_run_id=run_id,
+                        op_run_id=ctx.op_run_id or run_id,
+                        job_id=ctx.job_id,
                         artifact_id=derived_id,
                         emit=ctx.emit,
                     )
