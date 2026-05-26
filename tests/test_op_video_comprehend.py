@@ -456,3 +456,43 @@ async def test_apple_silicon_only_vlm_rejected_on_other_host(
         pytest.raises(RuntimeError, match="vllm-mlx"),
     ):
         await op.run([video], params, ctx)
+
+
+async def test_comprehend_forwards_range_to_sample_frames(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Phase 6.7 — when comprehend is given start_s/end_s, sample_frames
+    receives them so the visual side stays aligned with the audio side."""
+    audio = _audio_fixture(tmp_path)
+    transcript = _transcript_fixture(tmp_path)
+    frameset = _frameset_fixture(tmp_path, n_frames=2)
+    calls, [fake_run_op] = _make_canned_responses(
+        audio=audio, transcript=transcript, frameset=frameset
+    )
+    ctx = _ctx_for(engine)
+    ctx_with_run = OperationContext(
+        workdir=ctx.workdir,
+        config=ctx.config,
+        storage=ctx.storage,
+        namespace=ctx.namespace,
+        emit=ctx.emit,
+        server_manager=ctx.server_manager,
+        model_pool=ctx.model_pool,
+        run_op=fake_run_op,  # type: ignore[arg-type]
+    )
+    video = _video_artifact(tmp_path, duration=120.0)
+    params = ComprehendParams(
+        fps=1.0, max_frames=240, vlm_model="gemini-2.5-flash",
+        start_s=30.0, end_s=90.0,
+    )
+    await VideoComprehend().run([video], params, ctx_with_run)
+
+    sf_calls = [c for c in calls if c[0] == "video.sample_frames"]
+    assert len(sf_calls) == 1
+    sf_kwargs = sf_calls[0][1]
+    assert sf_kwargs.get("start_s") == 30.0
+    assert sf_kwargs.get("end_s") == 90.0
+    # And the audio path also received the same window.
+    td_calls = [c for c in calls if c[0] == "audio.transcribe_diarized"]
+    assert td_calls[0][1].get("start_s") == 30.0
+    assert td_calls[0][1].get("end_s") == 90.0

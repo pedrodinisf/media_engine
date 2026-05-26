@@ -137,3 +137,75 @@ def test_cost_estimate_scales_with_duration_and_fps(tmp_path: Path) -> None:
     cheap = op.cost_estimate([v], SampleFramesParams(fps=0.5))
     rich = op.cost_estimate([v], SampleFramesParams(fps=4.0))
     assert rich.local_seconds > cheap.local_seconds
+
+
+def test_params_range_validation() -> None:
+    """start_s ≤ end_s validator on SampleFramesParams (Phase 6.7)."""
+    import pytest as _pytest
+
+    from media_engine.ops.video.sample_frames import SampleFramesParams
+    with _pytest.raises(ValueError, match="end_s must be > start_s"):
+        SampleFramesParams(start_s=30.0, end_s=10.0)
+    # Equal is also rejected (a zero-length window is operator error).
+    with _pytest.raises(ValueError, match="end_s must be > start_s"):
+        SampleFramesParams(start_s=10.0, end_s=10.0)
+    # Valid range parses fine.
+    SampleFramesParams(start_s=0.0, end_s=10.0)
+
+
+async def test_ffmpeg_uniform_emits_ss_and_t_when_range_set() -> None:
+    """Phase 6.7 — the backend uses ``-ss start`` (pre-input) + ``-t
+    duration`` (post-input) to slice the source video. We capture the
+    constructed argv via a stub of asyncio.create_subprocess_exec to
+    avoid actually invoking ffmpeg."""
+    import asyncio
+    from pathlib import Path as _Path
+    from unittest.mock import patch
+
+    from media_engine.backends.sample_frames.ffmpeg_uniform import (
+        _run_ffmpeg_extract,
+    )
+
+    captured: dict[str, tuple[str, ...]] = {}
+
+    class _StubProc:
+        returncode = 0
+        stdout = None
+        stderr = None
+
+        async def wait(self) -> int:
+            return 0
+
+    async def _fake_exec(*args: str, **kwargs: object) -> _StubProc:
+        captured["argv"] = args
+        return _StubProc()
+
+    class _Ctx:
+        op_run_id = "op"
+        job_id = "job"
+        def emit(self, _ev: object) -> None: pass
+
+    with patch.object(asyncio, "create_subprocess_exec", _fake_exec):
+        await _run_ffmpeg_extract(
+            ffmpeg_path="ffmpeg",
+            input_path=_Path("/tmp/in.mp4"),
+            output_pattern=_Path("/tmp/f_%05d.jpg"),
+            fps=1.0,
+            max_w=480,
+            max_h=360,
+            quality=2,
+            start_s=30.0,
+            end_s=90.0,
+            ctx=_Ctx(),  # type: ignore[arg-type]
+            run_id="rid",
+        )
+
+    argv = captured["argv"]
+    # `-ss 30.0` must come before `-i`; `-t 60.0` must come after.
+    i_idx = argv.index("-i")
+    assert "-ss" in argv[:i_idx], argv
+    ss_val = argv[argv.index("-ss") + 1]
+    assert float(ss_val) == 30.0
+    assert "-t" in argv[i_idx:], argv
+    t_val = argv[argv.index("-t") + 1]
+    assert abs(float(t_val) - 60.0) < 1e-6

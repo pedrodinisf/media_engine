@@ -317,10 +317,20 @@ class VideoComprehend(Operation):
         release_audio_models(ctx)
 
         # ── Frames ──
+        # Forward the time window so sample_frames extracts only the
+        # selected segment. Without this the audio side would be
+        # transcript-of-[start_s,end_s] while the visual side would
+        # describe the whole video — the merged timeline would be
+        # misaligned and the LLM would correlate the wrong things.
+        sf_kwargs: dict[str, Any] = {"fps": params.fps}
+        if params.start_s is not None:
+            sf_kwargs["start_s"] = params.start_s
+        if params.end_s is not None:
+            sf_kwargs["end_s"] = params.end_s
         [frameset] = await run_op(
             "video.sample_frames",
             inputs=[video.id],
-            fps=params.fps,
+            **sf_kwargs,
         )
         assert isinstance(frameset, FrameSet)
 
@@ -358,10 +368,14 @@ class VideoComprehend(Operation):
                 text = str(data.get("text", ""))  # type: ignore[arg-type]
             elif isinstance(data, str):
                 text = data
+            # Read the offset from the FrameSet metadata, not from
+            # params — that way wall-clock timestamps come straight
+            # from the artifact's own provenance and stay correct if
+            # sample_frames ever slices via a different mechanism.
             t_sec = _frame_timestamp(
                 position=position,
                 fps=fps_eff,
-                start_s=params.start_s,
+                start_s=frameset.metadata.get("start_s") or params.start_s,
             )
             return (t_sec, text.strip())
 

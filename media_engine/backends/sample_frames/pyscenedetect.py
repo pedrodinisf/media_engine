@@ -132,6 +132,21 @@ class PySceneDetectBackend(Backend):
         video = inputs[0]
         assert isinstance(video, Video)
 
+        # Phase 6.7 deferred: the start_s / end_s window slicing currently
+        # only ships in the ffmpeg-uniform backend (it's a one-arg ffmpeg
+        # flag there). PySceneDetect's VideoStream API accepts start/end
+        # times but plumbing them through the scene-detection loop is a
+        # separate change. Fail loudly so a `strategy=scene_change` user
+        # who set a range knows their range was about to be silently
+        # ignored.
+        if params.start_s is not None or params.end_s is not None:
+            raise NotImplementedError(
+                "video.sample_frames with strategy=scene_change does not "
+                "yet honor start_s/end_s. Use strategy=uniform for time-"
+                "windowed extraction, or omit the range to sample the "
+                "whole video."
+            )
+
         ffmpeg_path = ctx.config.ffmpeg_path
         if shutil.which(ffmpeg_path) is None:
             raise RuntimeError(

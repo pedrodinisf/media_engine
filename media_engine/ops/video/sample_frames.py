@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -31,6 +31,27 @@ class SampleFramesParams(BaseModel):
     max_width: int = 480
     max_height: int = 360
     quality: int = 2  # ffmpeg JPEG quality, 1-31 (lower = better)
+    # Optional time-window slicing. When set, the backend extracts frames
+    # only between [start_s, end_s] of the source video. The resulting
+    # FrameSet's metadata.start_s + .fps let downstream consumers
+    # reconstruct wall-clock timestamps for each frame
+    # (t_sec = original_index / fps + start_s). Currently honored by
+    # `ffmpeg-uniform`; `pyscenedetect` refuses (Phase 6.7 deferred).
+    start_s: float | None = Field(default=None, ge=0.0)
+    end_s: float | None = Field(default=None, ge=0.0)
+
+    @model_validator(mode="after")
+    def _check_range(self) -> SampleFramesParams:
+        if (
+            self.start_s is not None
+            and self.end_s is not None
+            and self.end_s <= self.start_s
+        ):
+            raise ValueError(
+                f"end_s must be > start_s "
+                f"(got start={self.start_s}, end={self.end_s})"
+            )
+        return self
 
 
 @register_op

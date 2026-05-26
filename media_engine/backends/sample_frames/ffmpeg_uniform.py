@@ -59,13 +59,31 @@ async def _run_ffmpeg_extract(
     max_w: int,
     max_h: int,
     quality: int,
+    start_s: float | None,
+    end_s: float | None,
     ctx: OperationContext,
     run_id: str,
 ) -> None:
+    # `-ss` BEFORE `-i` is the fast (keyframe) seek — exact accuracy
+    # isn't load-bearing here because we're downsampling to fps≤8
+    # anyway. `-t duration` (relative to the seek point) bounds the
+    # tail. ffmpeg interprets `-to` differently depending on its
+    # position relative to `-i`, so we use `-t (end - start)` which is
+    # unambiguous across builds.
+    pre_input: list[str] = []
+    post_input: list[str] = []
+    if start_s is not None and start_s > 0.0:
+        pre_input += ["-ss", f"{start_s:.6f}"]
+    if end_s is not None:
+        duration = end_s - (start_s or 0.0)
+        if duration > 0.0:
+            post_input += ["-t", f"{duration:.6f}"]
     cmd = [
         ffmpeg_path,
         "-nostdin", "-y",
+        *pre_input,
         "-i", str(input_path),
+        *post_input,
         "-vf",
         f"fps={fps},scale={max_w}:{max_h}:force_original_aspect_ratio=decrease",
         "-q:v", str(quality),
@@ -174,6 +192,8 @@ class FfmpegUniformBackend(Backend):
                 max_w=params.max_width,
                 max_h=params.max_height,
                 quality=params.quality,
+                start_s=params.start_s,
+                end_s=params.end_s,
                 ctx=ctx,
                 run_id=scratch_uuid,
             )
@@ -190,6 +210,13 @@ class FfmpegUniformBackend(Backend):
                 "fps": params.fps,
                 "max_width": params.max_width,
                 "max_height": params.max_height,
+                # Window-of-source captured by this FrameSet. Downstream
+                # consumers reconstruct wall-clock per frame via
+                # `t_sec = original_index / fps + start_s`. ``None`` ==
+                # "full video" — preserved explicitly so cached payloads
+                # are distinguishable from windowed ones.
+                "start_s": params.start_s,
+                "end_s": params.end_s,
             }
             import json
             tmp_manifest = scratch / "manifest.json"
