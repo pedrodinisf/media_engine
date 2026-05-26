@@ -68,7 +68,7 @@ async function submitVideoExtractAudio(
       // op_runs is the per-op summary which doesn't carry them.
       const outs: string[] = body?.job?.output_artifact_ids ?? [];
       if (outs.length > 0) {
-        videoId = outs[0];
+        videoId = outs[0] ?? null;
         break;
       }
       if (body?.job?.status === 'failed') {

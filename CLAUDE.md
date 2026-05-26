@@ -77,7 +77,8 @@ YAML frontmatter) or pipeline (YAML DAG).
   live `med web start`
 - `uv run pyright media_engine` — strict typecheck
 - `uv run ruff check` / `uv run ruff format` — lint/format
-- `uv run med ops` — list registered operations (34 as of Phase 5)
+- `uv run med ops` — list registered operations (35 as of Phase 6.7;
+  `video.comprehend` is the most recent addition)
 - `uv run med config` — print effective configuration
 - `uv run med doctor [--op N] [--json]` — declarative dep map per op +
   backend. Walks every registered op, evaluates each backend's
@@ -96,6 +97,11 @@ YAML frontmatter) or pipeline (YAML DAG).
 - `bash scripts/verify_settings.sh [--headed]` — sibling of
   `verify_b001.sh`; regression gate for the Settings (Doctor +
   Secrets) + B-005 spec against a clean `med web start`.
+- `bash scripts/verify_observability.sh [--headed]` — Phase 6.7
+  regression gate for the Job-detail Logs tab + RAM/ETA gauges +
+  the in-op `Progress` / `LogLine` SSE replay path. Boots a clean
+  `med web start`, submits `video.extract_audio` on the bundled
+  fixture, and asserts the Logs tab populates within 10 s. 3 specs.
 - `bash scripts/build_web.sh` (or `pnpm -C web install && pnpm -C web
   build`) — rebuild the SvelteKit SPA into `media_engine/web/dist/`.
   CI / `hatch build` runs this first so the wheel ships the dist tree.
@@ -106,6 +112,11 @@ YAML frontmatter) or pipeline (YAML DAG).
 - `uv run med acquire-live <url> [--max-duration N] [--segment-seconds N]
   [--hotkey "cmd+shift+j"]` — `acquire.livestream` recorder (SIGUSR1 splits)
 - `uv run med extract-audio <video-id>` — `video.extract_audio` shortcut
+- `uv run med run video.comprehend --input <video-id> --param fps=1.0
+  --param synth_model=gemini-2.5-flash [--param style=lecture]
+  [--param output_kind=structured|prose]` — Phase-6.7 composite: per-
+  frame VLM + diarized transcript fused into one SOTA-LLM call. See
+  `docs/phase-6-7.md` + `profiles/examples/video-comprehend.yaml`.
 - `uv run med run <op> [--input ID] [--param K=V] [--backend B] [--schema P]`
   — generic single-op runner (cost preview, `--yes` to skip the prompt)
 - `uv run med batch <file> [--op] [--input-arg] [--param]` — fan an op
@@ -202,6 +213,45 @@ Phases are formalized in `~/.claude/plans/goofy-gathering-beaver.md`
   Playwright two-step install; `docker-compose.override.yaml` adds
   Caddy and drops the public `:8000` bind so the engine is only
   reachable via the TLS-terminated reverse proxy.
+
+- **Phase 6.7 — Live observability + `video.comprehend`**
+  *(shipped — current version `0.7.0`)*. Two related shipments
+  bundled into the same release because the second leans on the
+  first for debugging UX:
+
+  *Live observability* — every running op now emits a
+  `Progress(phase="heartbeat", ...)` event every 2 s carrying
+  available RAM, an ETA derived from `op.cost_estimate(...)`, and
+  the model-pool byte estimate (`runtime/heartbeat.py`, wired in
+  `runtime/engine.py`). The previously-defined-but-never-emitted
+  `LogLine` event now flows: `runtime/log_pump.py` exposes
+  `attach_subprocess()`, `attach_logger()`, and `attach_file_tail()`,
+  and the load-bearing backends (ffmpeg in `extract_audio` +
+  `sample_frames/ffmpeg_uniform`, `mlx-whisper`, `pyannote`,
+  `vllm-mlx` server file-tail) all forward stdout/stderr or library
+  loggers. Both `Progress` and `LogLine` now also carry `job_id`
+  via two new `OperationContext` fields (`job_id`, `op_run_id`) so
+  per-job SSE replay surfaces them on `/ui/jobs/[id]`. The Job-
+  detail page grows a **Logs tab** (with per-source filter +
+  auto-scroll + 2000-line dedicated buffer) and **live RAM/ETA
+  gauges** in the status header. Operator-invoked regression gate
+  at `bash scripts/verify_observability.sh` (3 specs).
+
+  `video.comprehend` — new composite op. Fans out per-frame VLM
+  calls at a user-chosen fps (vllm-mlx on Apple Silicon; cloud
+  gemini on Linux), runs `audio.transcribe_diarized`, merges both
+  timelines into a `MarkdownArtifact`, and feeds that to ONE SOTA
+  LLM call (`intelligence.extract` for `output_kind=structured` /
+  `intelligence.summarize` for `prose`). Hard-fails fast on
+  fps × duration > max_frames (default 240) and on Linux + mlx
+  vlm_model. The RAM-release helper from `transcribe_diarized`
+  was renamed `release_audio_models` and now also drops
+  `pyannote:*` slots from `ctx.model_pool`; the vllm-mlx backend
+  exports a sibling `release_server(ctx)`. Default profile lives
+  at `profiles/examples/video-comprehend.yaml`. Tests:
+  `tests/test_op_video_comprehend.py` (10 unit specs covering
+  fan-out, timeline merge, derived-id determinism, output_kind
+  routing, hardware gate).
 
 **Roadmap:**
 

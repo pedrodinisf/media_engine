@@ -56,6 +56,15 @@ uv run med acquire-live 'https://stream.example.com/index.m3u8' \
 uv run med run intelligence.summarize --input t-2c4d... \
     --param model=mlx-community/Qwen2.5-7B-Instruct-4bit --yes
 uv run med batch ids.txt --op embed.text --input-arg artifact
+
+# Phase 6.7 — full video comprehension in one node (Apple Silicon
+# defaults; swap vlm_model to a gemini-* id on Linux):
+uv run med run video.comprehend \
+    --input <video-id> \
+    --param fps=1.0 \
+    --param synth_model=gemini-2.5-flash \
+    --param style=lecture \
+    --param output_kind=structured
 ```
 
 ## Profiles

@@ -204,7 +204,7 @@ in-memory (`finalize_extract_data`).
 > never GC-visible). The `extract_invoke` split removes persistence from
 > the per-window path entirely.
 
-### 4.4 Op catalog (Phases 0–5 complete, 34 ops)
+### 4.4 Op catalog (Phases 0–6.7 complete, 35 ops)
 
 | Group | Ops | Backend layer |
 |---|---|---|
@@ -281,11 +281,16 @@ resolve op -> resolve inputs -> validate kinds -> build params model
 -> resolve backend (explicit > select_backend > default)
 -> cache lookup (op,ver,backend,ver,params_hash,inputs,ns)
    |_ hit -> return cached artifacts (no disk gate, no events, no ledger)
--> disk-space gate -> workdir -> ctx (backend, run_op, emit, pools)
+-> disk-space gate -> workdir
+-> op.cost_estimate(...)      (PRE-run — Phase 6.7 — heartbeat needs ETA)
+-> ctx (backend, run_op, emit, pools, job_id, op_run_id)
 -> emit OpStarted
+-> spawn heartbeat task        (Phase 6.7 — emits Progress every 2 s)
 -> with_retry(op.run)         (policy: backend.retry_policy or by-name)
    |_ failure -> emit OpFailed(envelope) -> raise
--> record_run (cache row, idempotent on the key tuple)
+-> cancel + await heartbeat    (finally block)
+-> record_run (cache row, idempotent on the key tuple) — reuses the
+   pre-run cost
 -> record_cost (cost_log) — skipped when op.records_cost is False
 -> emit OpCompleted
 -> stamp produced_by, upsert artifacts, return
@@ -294,17 +299,24 @@ resolve op -> resolve inputs -> validate kinds -> build params model
 Events fan out to subscribers (daemon stream) and to a synchronous
 persistence sink that writes the `events` table; the Engine prunes
 events older than 7 days on open (best-effort, swallowed on error).
+The `op.cost_estimate(...)` call is *pre-run* since Phase 6.7 because
+the heartbeat task needs the local-seconds estimate to compute a
+running ETA from the moment `OpStarted` fires; the same estimate
+feeds the post-run cache + cost-ledger writes.
 
 ### 6.2 OperationContext
 
 What an op receives: `workdir`, `config`, `storage`, `namespace`,
 `emit`, `server_manager`, `model_pool`, `run_op` (composite recursion
 handle), `backend` (engine-resolved name — the dispatch source of
-truth), and `cache` (read-only handle, set by `Engine.run`, used by
+truth), `cache` (read-only handle, set by `Engine.run`, used by
 index-building ops like `search.*` to enumerate persisted artifacts
-across runs — `None` outside Engine.run). Resource semaphores are
-acquired by the DAG executor *around* the op, so ops stay declarative
-and never touch a lock.
+across runs — `None` outside Engine.run), and **`job_id` /
+`op_run_id`** (Phase 6.7 — the submission id + per-run id the engine
+assigned, forwarded onto every `Progress` / `LogLine` a backend
+emits so per-job SSE replay surfaces them in the Web UI). Resource
+semaphores are acquired by the DAG executor *around* the op, so ops
+stay declarative and never touch a lock.
 
 ---
 
@@ -476,7 +488,7 @@ media_engine/
 ├── config.py              pydantic-settings, MEDIA_ENGINE_* env, config.toml
 ├── logging_setup.py       text default, JSON via MEDIA_ENGINE_LOG_FORMAT
 ├── artifacts/             base (Kind/Artifact/hashing) · media · text · analysis
-├── ops/                   _base · _registry · <group>/<verb>.py (34 ops)
+├── ops/                   _base · _registry · <group>/<verb>.py (35 ops)
 ├── backends/              _base · _pricing · _gemini_vision · <group>_<verb>/<provider>.py
 ├── runtime/               engine · cache · storage · dag · retry · events
 │                          cost_tracker · lineage · model_pool · server_manager
@@ -1072,6 +1084,117 @@ queued post-v0.6.x:
   ids that re-identify the same voice across recordings without a
   pre-built name DB. Privacy-by-default: namespace-scoped storage,
   per-namespace purge, MCP/REST opt-out.
+
+---
+
+## 12. Live observability (Phase 6.7)
+
+`Engine.run` carries a per-invocation **heartbeat task** that wakes
+on a fixed interval (default 2 s) and emits a
+`Progress(phase="heartbeat", …)` event carrying three new optional
+fields:
+
+* `available_memory_gb` — `psutil.virtual_memory().available / GiB`
+  at tick time. Drives the Web UI's RAM-free gauge.
+* `eta_seconds` — `cost_estimate.local_seconds − elapsed`, floored
+  at zero. Drives the ETA countdown.
+* `pool_bytes_estimate` — `ctx.model_pool.total_bytes_estimate()`,
+  so operators can spot a model-pool blowup.
+
+The heartbeat is `asyncio.create_task`'d after `OpStarted` and
+cancelled+awaited in the same `finally` block that already cleaned
+up the workdir. Production cost is ~0.1 ms per tick; `EventBus.emit`
+drops the oldest queue entry on a full subscriber so slow clients
+never wedge the producer.
+
+The previously-defined-but-never-emitted `LogLine` event now flows
+through `media_engine/runtime/log_pump.py`:
+
+| Surface             | Use                                        |
+|---------------------|--------------------------------------------|
+| `LinePump.push`     | Public form of the dedup/cap state machine; backends that already iterate stdout/stderr inline (`extract_audio` parses `time=` for Progress) push lines through it without spawning a second pump. |
+| `attach_subprocess` | Async `Process` stdout + stderr → LogLine per line. ffmpeg in `sample_frames/ffmpeg_uniform.py` uses this. |
+| `attach_logger`     | Bridges a stdlib `logging` logger → LogLine. `mlx-whisper` (`mlx_whisper`) and `pyannote.audio` (`pyannote`) use this. Caller MUST `.detach()` in `finally`. |
+| `attach_file_tail`  | Polls a growing log file from current EOF, emits LogLine per appended line. Used by the **detached** `vllm-mlx` server (owned by `ServerManager`; logs land in a file rather than a pipe so the server survives across CLI invocations). Handles truncation / rotation by resetting offset on shrink. |
+
+All four surfaces share a hard cap of 5000 lines per (source, op_run);
+past that a single `LogLine(level="warn", line="log truncated past 5000
+lines")` is emitted and the source goes quiet. Keeps a runaway
+backend from flooding the SSE queue.
+
+Both `Progress` and `LogLine` events emitted from inside an op now
+carry `job_id` (via `OperationContext.job_id`), so the per-job SSE
+endpoint `GET /jobs/{id}/events` includes them in replay + live
+delivery. The fix: every emitter that previously passed
+`op_run_id=run_id` now also passes `job_id=ctx.job_id`. This was a
+pre-Phase-A latent bug that surfaced when the Logs tab assertion
+in `verify_observability.sh` was added.
+
+**Web UI consumption** (`web/src/routes/jobs/[id]/+page.svelte`):
+
+* New **Logs tab** between Events and Op runs. Filters SSE frames to
+  `type == "log_line"`, keeps them in a dedicated 2000-entry buffer
+  (separate from the 500-entry general events buffer so heavy stdout
+  traffic doesn't crowd out `Progress` / `op_completed`). Per-source
+  `<select>` populated from the observed event tail. Auto-scrolls to
+  bottom by default; pauses when the operator scrolls up and shows a
+  `tail ↓` resume button.
+* **Status-header gauges** — `RAM x.x GB` + `ETA Nm SSs` pills next
+  to the job status pill, sourced from the most recent
+  `Progress(phase="heartbeat")` frame. Hidden once the job hits a
+  terminal state so a stale snapshot doesn't misrepresent a finished
+  run. `data-test="job-ram-gauge"` / `job-eta-gauge` are stable
+  Playwright selectors.
+
+Operator-invoked regression gate at
+`bash scripts/verify_observability.sh` (3 specs): tab presence + click,
+source filter wired, ffmpeg LogLines surface within 10 s of submitting
+`video.extract_audio` on the bundled fixture.
+
+## 13. `video.comprehend` (Phase 6.7)
+
+The most complex composite shipped to date. End-to-end Video →
+Analysis via five existing ops + an inline per-frame fan-out + one
+SOTA-LLM synthesis call:
+
+```
+video.comprehend(Video)
+├── video.extract_audio       → Audio
+├── audio.transcribe_diarized → Transcript (segments + speaker_id)
+├── (release_audio_models)    drops whisper singleton + pyannote slots
+├── video.sample_frames @ fps → FrameSet
+├── frames.analyze × N        per-frame VLM (asyncio.Semaphore-throttled)
+├── (release_server)          tears down vllm-mlx if it was the backend
+├── timeline merge inline     → MarkdownArtifact (sorted by t_sec)
+└── intelligence.extract      (output_kind=structured, default schema)
+    OR intelligence.summarize (output_kind=prose)
+```
+
+Hard guards at `run()` entry:
+
+* `fps × effective_duration > max_frames` → `ValueError` with a
+  suggested fps. Default `max_frames=240` (≈4 min @ 1 fps).
+* `vlm_model` is `mlx-community/*` on a non-arm64 host → `RuntimeError`
+  pointing at the deferred Linux backend.
+* Empty timeline (no usable frame descriptions AND no transcript
+  segments) → `RuntimeError`. Defensive; the synth model would
+  hallucinate.
+
+Per the B-008 routing rule (router model/backend consistency), the
+per-frame fan-out and the final synth call pass `model=` but never a
+hard `backend=` override — defer entirely to each delegate's model-
+prefix router.
+
+`records_cost=False`: every sub-op already bills its own spend, so
+the composite stays out of the cost ledger to avoid double-counting.
+`delegates_to` declares all six delegates honestly so `med doctor
+--op video.comprehend [--json]` returns a per-delegate breakdown
+(handled by the existing Phase 6.6 cycle-guarded walker).
+
+Default profile at `profiles/examples/video-comprehend.yaml` — a
+single-node DAG operators can paste into the Web UI Profiles
+workspace and run. The default `vlm_model` assumes Apple Silicon; on
+Linux swap to a `gemini-2.5-*` model.
 
 ---
 

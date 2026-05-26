@@ -186,11 +186,16 @@ Status badges (pending / running / completed / failed / cancelled),
 per-row cancel button (`DELETE /jobs/{id}`).
 
 **Detail page** (`/ui/jobs/[id]`). Header (status, namespace,
-started_at, op count), four tabs:
+started_at, op count) plus the Phase-6.7 **live RAM-free + ETA
+gauges** (rendered only while a heartbeat Progress event is in
+flight and the job hasn't reached a terminal state — they're hidden
+on cache hits and once the job is completed / failed / cancelled).
+Five tabs:
 
 | Tab | Source |
 |---|---|
-| Events | `GET /jobs/{id}/events` (SSE, `?token=...` since EventSource can't set headers — plan §13.1 documents the v1.x nonce hardening path). Last 500 frames buffered. |
+| Events | `GET /jobs/{id}/events` (SSE, `?token=...` since EventSource can't set headers — plan §13.1 documents the v1.x nonce hardening path). Last 500 frames buffered. `Progress(phase="heartbeat", …)` events also feed the header gauges. |
+| **Logs** | (Phase 6.7) Filtered to `type == "log_line"` frames from the same SSE stream. Per-source `<select>` (ffmpeg / mlx-whisper / pyannote / vllm-mlx) auto-populates from observed sources. Auto-scrolls to bottom as new lines arrive; if you scroll up to inspect history, a green `tail ↓` button appears so you can resume tailing. Dedicated 2000-entry buffer so heavy stdout traffic doesn't crowd Progress events off the 500-event general buffer. |
 | Op runs | `JobDetail.op_runs` — per-node op_name / backend / params / duration / outputs. |
 | Outputs | Output artifact ids, each linked to `/ui/catalog/<id>`. |
 | Failure | When the job ended in `failed`, the typed error envelope (class, message, traceback excerpt). |
@@ -199,6 +204,15 @@ The cancel button fires `DELETE /jobs/{id}` and shows the resolved
 status (`cancelled` if cancellation took effect; `already terminal`
 if the task naturally completed in the same window — see Phase 4
 audit fix #2 in [`CHANGELOG.md`](../CHANGELOG.md)).
+
+**Where the log lines come from** — the engine wires four backends
+into the `log_pump` emitters: ffmpeg (`source="ffmpeg"`, both in
+`sample_frames` and `extract_audio`), `mlx-whisper`
+(`source="mlx-whisper"`), `pyannote.audio` (`source="pyannote"`),
+and the long-lived `vllm-mlx` server (`source="vllm-mlx"`, tailed
+from its detached log file). See `docs/architecture.md` §12 for the
+full surface and the regression gate at
+`scripts/verify_observability.sh`.
 
 ### 4.4 Catalog (`/ui/catalog` + `/ui/catalog/[id]`)
 
@@ -410,6 +424,7 @@ covered.
 | `med search` | Search surface | 46 |
 | `med cost ls / summary` | Cost ledger | 46 |
 | `med events tail / history` | Job detail Events tab + global `/events/stream` | 43 |
+| (no CLI equivalent) | Job detail **Logs tab** + status-header RAM/ETA gauges (Phase 6.7) | 6.7 |
 | `med api token create / ls / revoke` | Settings → Tokens | 49 |
 | `med storage stats / gc` | Settings → Storage | 49 |
 | `med mcp serve` (allow-list) | Settings → Plugins · Catalog (filters tools/list) | 49 |

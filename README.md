@@ -7,7 +7,7 @@ MCP stdio server + local-first Web UI.
 
 ```bash
 uv sync
-uv run med ops                                    # 34 ops registered
+uv run med ops                                    # 35 ops registered
 uv run med profile ls                             # 8+ bundled profiles
 uv run med profile run analysis-full --input <video-id>
 
@@ -18,7 +18,7 @@ uv run med web start --open                       # opens /ui/setup
 
 ## What you get out of the box
 
-- **34 capability-named ops** across `acquire.*`, `audio.*`, `video.*`,
+- **35 capability-named ops** across `acquire.*`, `audio.*`, `video.*`,
   `image.*`, `frames.*`, `document.*`, `web.*`, `transcript.*`,
   `chunk.*`, `embed.*`, `intelligence.*`, `metadata.*`, `search.*`,
   `speakers.*`, and `report.*`.
@@ -51,7 +51,7 @@ for the full matrix.
 
 ```bash
 # What's available
-uv run med ops                       # all 34 ops
+uv run med ops                       # all 35 ops
 uv run med profile ls                # 8 bundled profiles
 uv run med config                    # effective config
 
@@ -155,7 +155,7 @@ with full CLI parity.
 
 Suite: 922 passed / 29 skipped (dep- and API-key-gated). Ruff +
 strict pyright clean. Frontend: 54 Vitest unit tests, svelte-check
-0/0 on 572 files. 34 ops, 30+ backends, 14 artifact kinds.
+0/0 on 572 files. 35 ops, 30+ backends, 14 artifact kinds.
 
 **Phase 7 — acoustic speaker identity** (`speakers.embed_voice` +
 `speakers.cluster` + `speakers.match`, voice-fingerprint DB reusing
