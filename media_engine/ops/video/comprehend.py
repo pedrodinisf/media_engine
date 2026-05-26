@@ -141,6 +141,14 @@ def _build_single_frame_frameset(
     different parents with the same single frame still produce
     distinct artifacts, and re-runs of an identical composite cache-hit
     naturally (B.0 cross-check).
+
+    Two side effects beyond returning the artifact: the manifest bytes
+    are written to ``ctx.storage`` AND a cache row is upserted via
+    ``ctx.cache.upsert_artifact``. Without the cache row, the
+    subsequent ``ctx.run_op("frames.analyze", inputs=[single_fs.id])``
+    fan-out would hit ``LookupError: input artifact not found`` —
+    the engine resolves inputs by querying the cache, not by reading
+    bytes off disk.
     """
     frame_ids = list(parent.metadata.get("frame_ids", []))
     original_indices = list(
@@ -173,13 +181,19 @@ def _build_single_frame_frameset(
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     dest = ctx.storage.store_file(tmp, derived_id, ".json")
     tmp.unlink(missing_ok=True)
-    return FrameSet(
+    single_fs = FrameSet(
         id=derived_id,
         path=dest,
         metadata=payload,
         derived_from=(parent.id,),
         created_at=datetime.now(UTC),
+        namespace=ctx.namespace,
     )
+    # Register the ephemeral FrameSet so ``frames.analyze`` can resolve
+    # it by id. Idempotent on re-runs (same id collapses to a no-op).
+    if ctx.cache is not None:
+        ctx.cache.upsert_artifact(single_fs)
+    return single_fs
 
 
 def _frame_timestamp(

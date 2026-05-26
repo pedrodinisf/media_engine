@@ -438,6 +438,36 @@ async def test_single_frame_frameset_is_content_addressed(
     assert a.id != c.id
 
 
+async def test_single_frame_frameset_registers_in_cache(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The ephemeral FrameSet must be queryable via Cache.get_artifact —
+    otherwise the subsequent ctx.run_op("frames.analyze") fan-out
+    hits LookupError. (Regression: produced "input artifact not
+    found: <id>" mid-run on real video.comprehend invocations.)"""
+    ctx = OperationContext(
+        workdir=engine.storage.ensure_workdir("comprehend-cache-test"),
+        config=engine.config,
+        storage=engine.storage,
+        namespace=engine.config.namespace,
+        emit=engine.event_bus.emit,
+        server_manager=engine.server_manager,
+        model_pool=engine.model_pool,
+        run_op=_unused_run_op,
+        cache=engine.cache,
+    )
+    parent = _frameset_fixture(tmp_path, n_frames=3, fps=2.0)
+    single = _build_single_frame_frameset(parent=parent, position=1, ctx=ctx)
+    found = engine.cache.get_artifact(single.id, namespace=engine.config.namespace)
+    assert found is not None, "single-frame FrameSet must land in the cache"
+    assert found.id == single.id
+    assert found.kind == Kind.FrameSet
+    # Calling again with the same (parent, position) is idempotent
+    # (same id, no IntegrityError from the cache).
+    again = _build_single_frame_frameset(parent=parent, position=1, ctx=ctx)
+    assert again.id == single.id
+
+
 async def test_apple_silicon_only_vlm_rejected_on_other_host(
     engine: Engine, tmp_path: Path
 ) -> None:
