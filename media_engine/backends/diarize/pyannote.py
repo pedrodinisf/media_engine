@@ -129,11 +129,38 @@ def _run_diarize_sync(
     return pipeline(audio_path, **kwargs)
 
 
+def _unwrap_annotation(result: Any) -> Any:
+    """Reduce a pyannote Pipeline call result to the inner ``Annotation``.
+
+    pyannote.audio 3.x returns an ``Annotation`` directly from
+    ``Pipeline(...)``. pyannote.audio 4.x wraps it as
+    ``DiarizeOutput(speaker_diarization=Annotation,
+    exclusive_speaker_diarization=Annotation, speaker_embeddings=…)``.
+    Detect by attribute: anything that has ``itertracks`` is already an
+    Annotation; otherwise drill into ``speaker_diarization``. Fail loudly
+    if neither path applies so a future major bump doesn't get
+    silently misclassified.
+    """
+    if hasattr(result, "itertracks"):
+        return result
+    if hasattr(result, "speaker_diarization") and hasattr(
+        result.speaker_diarization, "itertracks"
+    ):
+        return result.speaker_diarization
+    raise RuntimeError(
+        f"unsupported pyannote diarization result shape: {type(result).__name__}. "
+        "Expected an Annotation (3.x) or DiarizeOutput (4.x). Update "
+        "_unwrap_annotation if pyannote shipped a new wrapper."
+    )
+
+
 def _diarization_to_segments(diarization: Any) -> tuple[list[dict[str, Any]], int]:
-    """Convert a pyannote Annotation to a sorted list of {start, end, speaker_id}."""
+    """Convert a pyannote Annotation (or DiarizeOutput) to a sorted list of
+    ``{start, end, speaker_id}``."""
+    annotation = _unwrap_annotation(diarization)
     segments: list[dict[str, Any]] = []
     speakers: set[str] = set()
-    iter_tracks: Any = diarization.itertracks(yield_label=True)
+    iter_tracks: Any = annotation.itertracks(yield_label=True)
     for turn, _track, speaker in iter_tracks:
         speakers.add(str(speaker))
         segments.append({

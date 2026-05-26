@@ -192,3 +192,69 @@ async def test_real_pyannote_detects_two_speakers(
     [diar] = await engine.run("audio.diarize", inputs=[audio.id])
     assert isinstance(diar, Diarization)
     assert diar.num_speakers >= 1  # ideally 2; tolerate 1 if voices too similar
+
+
+def test_unwrap_annotation_pyannote_3x_passthrough() -> None:
+    """3.x: Pipeline(...) returns an Annotation directly — passthrough."""
+    from media_engine.backends.diarize.pyannote import (
+        _diarization_to_segments,
+        _unwrap_annotation,
+    )
+
+    class _FakeAnnotation:
+        def itertracks(self, yield_label: bool = False):  # type: ignore[no-untyped-def]
+            class _Turn:
+                start = 0.0
+                end = 1.5
+            yield _Turn(), "track-0", "SPEAKER_00"
+
+    ann = _FakeAnnotation()
+    assert _unwrap_annotation(ann) is ann
+    segments, n = _diarization_to_segments(ann)
+    assert n == 1
+    assert segments[0] == {"start": 0.0, "end": 1.5, "speaker_id": "SPEAKER_00"}
+
+
+def test_unwrap_annotation_pyannote_4x_drills_into_speaker_diarization() -> None:
+    """4.x: Pipeline(...) returns DiarizeOutput; the Annotation moved to
+    ``.speaker_diarization``. The unwrap helper drills in."""
+    from media_engine.backends.diarize.pyannote import (
+        _diarization_to_segments,
+        _unwrap_annotation,
+    )
+
+    class _Annotation:
+        def itertracks(self, yield_label: bool = False):  # type: ignore[no-untyped-def]
+            class _Turn:
+                def __init__(self, s: float, e: float) -> None:
+                    self.start = s
+                    self.end = e
+            yield _Turn(0.0, 1.0), "t0", "SPEAKER_00"
+            yield _Turn(1.0, 2.5), "t1", "SPEAKER_01"
+
+    class _DiarizeOutput:
+        # Matches pyannote.audio 4.x dataclass field name.
+        def __init__(self) -> None:
+            self.speaker_diarization = _Annotation()
+            self.exclusive_speaker_diarization = _Annotation()
+            self.speaker_embeddings = None
+
+    out = _DiarizeOutput()
+    unwrapped = _unwrap_annotation(out)
+    assert hasattr(unwrapped, "itertracks")
+    segments, n = _diarization_to_segments(out)
+    assert n == 2
+    assert [s["speaker_id"] for s in segments] == ["SPEAKER_00", "SPEAKER_01"]
+
+
+def test_unwrap_annotation_unknown_shape_raises() -> None:
+    """Future-major pyannote releases that change the wrapper again
+    should fail loudly, not silently misclassify the result."""
+    from media_engine.backends.diarize.pyannote import _unwrap_annotation
+
+    class _UnrecognisedWrapper:
+        # No itertracks, no speaker_diarization → unwrap should refuse.
+        pass
+
+    with pytest.raises(RuntimeError, match="unsupported pyannote"):
+        _unwrap_annotation(_UnrecognisedWrapper())
