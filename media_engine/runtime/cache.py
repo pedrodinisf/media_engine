@@ -435,6 +435,7 @@ class Cache:
         offset: int = 0,
         namespace: str = "default",
         oldest_first: bool = False,
+        include_ephemeral: bool = False,
     ) -> list[AnyArtifact]:
         """List artifacts in the cache.
 
@@ -442,6 +443,20 @@ class Cache:
         newest-first (what `med ls` and `GET /artifacts` want).
         Eviction passes ``oldest_first=True`` so it sees the long
         tail even when the table is large.
+
+        ``include_ephemeral`` defaults to False — internal scaffolding
+        artifacts (today: the per-frame FrameSet manifests created by
+        ``video.comprehend``'s fan-out) are hidden from catalog
+        listings. Set to True to debug-inspect them. The filter uses
+        substring matches on the canonical sorted-keys JSON text of
+        ``metadata_json``, so it works portably across SQLite and
+        Postgres without DB-specific JSON operators. Two shapes are
+        excluded:
+
+          * The new ``metadata.ephemeral = true`` flag.
+          * Legacy single-frame FrameSets (pre-flag): rows that match
+            ``kind = 'frameset' AND metadata.parent_position`` exists.
+            Cleans up existing stores without a data migration.
         """
         with self.session() as s:
             stmt = select(CachedArtifact).where(CachedArtifact.namespace == namespace)
@@ -449,6 +464,16 @@ class Cache:
                 stmt = stmt.where(CachedArtifact.kind == kind.value)
             if since is not None:
                 stmt = stmt.where(CachedArtifact.created_at >= since)
+            if not include_ephemeral:
+                stmt = stmt.where(
+                    ~CachedArtifact.metadata_json.like('%"ephemeral": true%')
+                )
+                stmt = stmt.where(
+                    ~(
+                        (CachedArtifact.kind == Kind.FrameSet.value)
+                        & CachedArtifact.metadata_json.like('%"parent_position":%')
+                    )
+                )
             order = (
                 CachedArtifact.created_at.asc()
                 if oldest_first

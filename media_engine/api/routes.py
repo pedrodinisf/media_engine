@@ -837,6 +837,7 @@ def list_artifacts_endpoint(
     kind: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    include_ephemeral: Annotated[bool, Query()] = False,
 ) -> ArtifactPage:
     """Paginated artifact list, newest first.
 
@@ -846,6 +847,11 @@ def list_artifacts_endpoint(
     we get back ``limit + 1`` rows, the surplus is dropped from the
     response and the client knows to call again with
     ``offset = current_offset + limit``.
+
+    ``include_ephemeral`` (default false) hides internal scaffolding
+    artifacts — today the single-frame FrameSets that
+    ``video.comprehend``'s fan-out produces, one per analysed frame.
+    Set to true to debug-inspect them.
     """
     kind_filter: Kind | None = None
     if kind is not None:
@@ -860,6 +866,7 @@ def list_artifacts_endpoint(
         limit=limit + 1,
         offset=offset,
         namespace=token.namespace,
+        include_ephemeral=include_ephemeral,
     )
     has_more = len(items) > limit
     if has_more:

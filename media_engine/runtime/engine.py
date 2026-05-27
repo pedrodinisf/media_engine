@@ -178,9 +178,14 @@ class Engine:
         kind: Kind | None = None,
         since: datetime | None = None,
         limit: int = 100,
+        include_ephemeral: bool = False,
     ) -> list[AnyArtifact]:
         return self.cache.list_artifacts(
-            kind=kind, since=since, limit=limit, namespace=self.config.namespace
+            kind=kind,
+            since=since,
+            limit=limit,
+            namespace=self.config.namespace,
+            include_ephemeral=include_ephemeral,
         )
 
     def lineage(self, artifact_id: str, max_depth: int = 10) -> LineageNode | None:

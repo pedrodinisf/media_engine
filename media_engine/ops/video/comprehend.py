@@ -176,6 +176,12 @@ def _build_single_frame_frameset(
         "fps": parent.metadata.get("fps"),
         "parent_frameset_id": parent.id,
         "parent_position": position,
+        # Internal scaffolding for the per-frame VLM fan-out. Catalog
+        # surfaces hide these by default so a 450-frame meeting doesn't
+        # flood the artifact list with 450 single-frame rows. Power
+        # users can opt back in via `med ls --include-ephemeral` or
+        # the "Show internal artifacts" toggle in the Web UI.
+        "ephemeral": True,
     }
     tmp = ctx.workdir / f"single-frame-{derived_id[:12]}.json"
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))

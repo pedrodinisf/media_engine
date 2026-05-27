@@ -415,3 +415,69 @@ def test_cache_survives_close_reopen(tmp_path: Path) -> None:
         assert back is not None and back.id == "persistx"
     finally:
         c2.close()
+
+
+def test_list_artifacts_hides_ephemeral_by_default(
+    cache: Cache, tmp_path: Path
+) -> None:
+    """The catalog list excludes artifacts marked
+    ``metadata.ephemeral = true`` (today: the single-frame FrameSets
+    that video.comprehend's fan-out produces). ``include_ephemeral=True``
+    opts back in for debugging."""
+    from media_engine.artifacts import FrameSet
+    # Normal artifact — should show.
+    cache.upsert_artifact(_video("v" * 8, tmp_path))
+    # Ephemeral FrameSet — should be hidden by default.
+    fs_ephemeral = FrameSet(
+        id="e" * 64,
+        path=tmp_path / "e.json",
+        metadata={
+            "frame_ids": ["f" * 64],
+            "original_indices": [0],
+            "parent_frameset_id": "p" * 64,
+            "parent_position": 0,
+            "ephemeral": True,
+        },
+        derived_from=("p" * 64,),
+        created_at=_now(),
+    )
+    cache.upsert_artifact(fs_ephemeral)
+
+    hidden = cache.list_artifacts()
+    assert all(a.id != fs_ephemeral.id for a in hidden), (
+        "ephemeral=True must be filtered out by default"
+    )
+    visible = cache.list_artifacts(include_ephemeral=True)
+    assert any(a.id == fs_ephemeral.id for a in visible), (
+        "include_ephemeral=True must show them"
+    )
+
+
+def test_list_artifacts_hides_legacy_single_frame_framesets(
+    cache: Cache, tmp_path: Path
+) -> None:
+    """Backwards-compat: artifacts persisted BEFORE the
+    metadata.ephemeral flag was added (i.e. by a pre-fix
+    video.comprehend run) are still hidden, because they have the
+    distinctive ``parent_position`` field that no other op writes."""
+    from media_engine.artifacts import FrameSet
+    fs_legacy = FrameSet(
+        id="l" * 64,
+        path=tmp_path / "l.json",
+        metadata={
+            # Note: no ``ephemeral`` field — this is the pre-flag shape
+            # that lives in existing stores.
+            "frame_ids": ["x" * 64],
+            "original_indices": [42],
+            "parent_frameset_id": "p" * 64,
+            "parent_position": 42,
+            "fps": 0.3,
+        },
+        derived_from=("p" * 64,),
+        created_at=_now(),
+    )
+    cache.upsert_artifact(fs_legacy)
+    hidden = cache.list_artifacts()
+    assert all(a.id != fs_legacy.id for a in hidden), (
+        "legacy single-frame FrameSets (parent_position present) must be hidden"
+    )

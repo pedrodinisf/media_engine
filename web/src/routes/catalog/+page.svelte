@@ -9,14 +9,24 @@
   let nextOffset: number | null = $state(null);
   let error: string | null = $state(null);
   let loading = $state(false);
+  // Show internal scaffolding artifacts (today: the per-frame
+  // FrameSets `video.comprehend` creates as input to frames.analyze).
+  // Off by default so a 450-frame meeting doesn't drown the catalog.
+  let includeEphemeral = $state(false);
+
+  function buildQs(opts: { offset?: number } = {}): URLSearchParams {
+    const qs = new URLSearchParams({ limit: '50' });
+    if (kindFilter !== 'all') qs.set('kind', kindFilter);
+    if (includeEphemeral) qs.set('include_ephemeral', 'true');
+    if (opts.offset !== undefined) qs.set('offset', String(opts.offset));
+    return qs;
+  }
 
   async function load(): Promise<void> {
     loading = true;
     error = null;
     try {
-      const qs = new URLSearchParams({ limit: '50' });
-      if (kindFilter !== 'all') qs.set('kind', kindFilter);
-      const page = await api.get<ArtifactPage>(`/artifacts?${qs.toString()}`);
+      const page = await api.get<ArtifactPage>(`/artifacts?${buildQs().toString()}`);
       items = page.items;
       nextOffset = page.next_offset;
     } catch (e) {
@@ -30,12 +40,9 @@
     if (nextOffset === null) return;
     loading = true;
     try {
-      const qs = new URLSearchParams({
-        limit: '50',
-        offset: String(nextOffset),
-      });
-      if (kindFilter !== 'all') qs.set('kind', kindFilter);
-      const page = await api.get<ArtifactPage>(`/artifacts?${qs.toString()}`);
+      const page = await api.get<ArtifactPage>(
+        `/artifacts?${buildQs({ offset: nextOffset }).toString()}`,
+      );
       items = [...items, ...page.items];
       nextOffset = page.next_offset;
     } finally {
@@ -86,6 +93,19 @@
       {kind}
     </button>
   {/each}
+  <label
+    class="ml-auto inline-flex items-center gap-2 text-xs font-mono px-2 py-1 rounded"
+    style="color: var(--text-secondary); background: var(--bg-card); border: 1px solid var(--border-light);"
+    title="Show internal scaffolding artifacts created by composite ops (e.g. the per-frame FrameSets behind video.comprehend)"
+    data-test="catalog-include-ephemeral"
+  >
+    <input
+      type="checkbox"
+      bind:checked={includeEphemeral}
+      onchange={() => void load()}
+    />
+    show internal
+  </label>
 </div>
 
 {#if error}
