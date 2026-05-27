@@ -481,3 +481,44 @@ def test_list_artifacts_hides_legacy_single_frame_framesets(
     assert all(a.id != fs_legacy.id for a in hidden), (
         "legacy single-frame FrameSets (parent_position present) must be hidden"
     )
+
+
+def test_mark_artifacts_ephemeral_updates_metadata(cache: Cache, tmp_path: Path) -> None:
+    """``Cache.mark_artifacts_ephemeral`` stamps ``ephemeral=true`` on a
+    batch of existing rows and they fall out of ``list_artifacts``
+    immediately."""
+    cache.upsert_artifact(_video("a" * 64, tmp_path))
+    cache.upsert_artifact(_video("b" * 64, tmp_path))
+    cache.upsert_artifact(_video("c" * 64, tmp_path))
+
+    # All three visible by default.
+    visible = {a.id for a in cache.list_artifacts()}
+    assert visible >= {"a" * 64, "b" * 64, "c" * 64}
+
+    updated = cache.mark_artifacts_ephemeral(["a" * 64, "b" * 64])
+    assert updated == 2
+
+    visible_after = {a.id for a in cache.list_artifacts()}
+    assert "a" * 64 not in visible_after
+    assert "b" * 64 not in visible_after
+    assert "c" * 64 in visible_after
+
+    # Re-applying is a no-op (already ephemeral).
+    again = cache.mark_artifacts_ephemeral(["a" * 64])
+    assert again == 0
+
+    # ``include_ephemeral=True`` brings them back.
+    all_rows = {a.id for a in cache.list_artifacts(include_ephemeral=True)}
+    assert all_rows >= {"a" * 64, "b" * 64, "c" * 64}
+
+
+def test_mark_artifacts_ephemeral_skips_missing_ids(
+    cache: Cache, tmp_path: Path
+) -> None:
+    """Missing ids are silently skipped (composite ops shouldn't fail
+    because one of their intermediates was already evicted)."""
+    cache.upsert_artifact(_video("a" * 64, tmp_path))
+    updated = cache.mark_artifacts_ephemeral(
+        ["a" * 64, "nonexistent" + "x" * 53]
+    )
+    assert updated == 1

@@ -427,6 +427,47 @@ class Cache:
                 return None
             return to_pydantic(row)
 
+    def mark_artifacts_ephemeral(
+        self, artifact_ids: list[str], namespace: str = "default"
+    ) -> int:
+        """Stamp ``metadata.ephemeral = true`` on a batch of existing rows.
+
+        Used by composite ops (``video.comprehend``) that produce N
+        intermediate artifacts which are scaffolding for the final
+        output. Marking them ephemeral keeps them in the cache (so
+        cache hits on re-run still work) but hides them from the
+        catalog list by default. ``list_artifacts(include_ephemeral=True)``
+        opts back in.
+
+        Returns the number of rows actually updated. Missing ids are
+        silently skipped — the helper is best-effort; a composite that
+        races against eviction shouldn't fail because one of its
+        outputs was already swept.
+
+        Idempotent: re-applying the mark on an already-ephemeral row
+        produces the same JSON payload thanks to ``sort_keys=True``.
+        """
+        if not artifact_ids:
+            return 0
+        updated = 0
+        with self.session() as s:
+            rows = list(
+                s.execute(
+                    select(CachedArtifact).where(
+                        CachedArtifact.id.in_(artifact_ids),
+                        CachedArtifact.namespace == namespace,
+                    )
+                ).scalars()
+            )
+            for row in rows:
+                meta = json.loads(row.metadata_json)
+                if meta.get("ephemeral") is True:
+                    continue
+                meta["ephemeral"] = True
+                row.metadata_json = json.dumps(meta, sort_keys=True)
+                updated += 1
+        return updated
+
     def list_artifacts(
         self,
         kind: Kind | None = None,

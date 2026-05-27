@@ -584,3 +584,74 @@ async def test_meeting_profile_yaml_parses() -> None:
     assert node.op == "video.comprehend"
     assert node.params["style"] == "meeting"
     assert node.params["output_kind"] == "structured"
+
+
+async def test_comprehend_marks_intermediates_ephemeral(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """After the synth completes, the per-frame Analyses + the timeline
+    MarkdownArtifact + the inner synth Analysis are all stamped with
+    ``metadata.ephemeral = true`` so the catalog list hides them by
+    default. The outer composite Analysis stays visible."""
+    audio = _audio_fixture(tmp_path)
+    transcript = _transcript_fixture(tmp_path)
+    frameset = _frameset_fixture(tmp_path, n_frames=2)
+    calls, [fake_run_op] = _make_canned_responses(
+        audio=audio, transcript=transcript, frameset=frameset
+    )
+    ctx = OperationContext(
+        workdir=engine.storage.ensure_workdir("comprehend-eph-test"),
+        config=engine.config,
+        storage=engine.storage,
+        namespace=engine.config.namespace,
+        emit=engine.event_bus.emit,
+        server_manager=engine.server_manager,
+        model_pool=engine.model_pool,
+        run_op=fake_run_op,  # type: ignore[arg-type]
+        cache=engine.cache,
+    )
+    video = _video_artifact(tmp_path, duration=2.0)
+    params = ComprehendParams(
+        fps=1.0, max_frames=10, vlm_model="gemini-2.5-flash"
+    )
+
+    # Spy on mark_artifacts_ephemeral so we can assert the exact set
+    # of intermediate ids the op flags. This test bypasses Engine.run
+    # (uses a stubbed ctx.run_op), so the outer Analysis op.run returns
+    # isn't auto-upserted — we verify the intermediates instead.
+    marked_calls: list[list[str]] = []
+    original_mark = engine.cache.mark_artifacts_ephemeral
+
+    def spy_mark(ids: list[str], namespace: str = "default") -> int:
+        marked_calls.append(list(ids))
+        return original_mark(ids, namespace=namespace)
+
+    engine.cache.mark_artifacts_ephemeral = spy_mark  # type: ignore[method-assign]
+    try:
+        await VideoComprehend().run([video], params, ctx)
+    finally:
+        engine.cache.mark_artifacts_ephemeral = original_mark  # type: ignore[method-assign]
+
+    # Single bulk mark, fired after the synth.
+    assert len(marked_calls) == 1
+    marked_ids = marked_calls[0]
+    # 2 per-frame Analysis ids (fake returns same stub so set may
+    # dedup to 1) + 1 timeline MarkdownArtifact + 1 synth Analysis.
+    assert len(marked_ids) >= 3
+
+    # Timeline MarkdownArtifact lands in the cache (real upsert path)
+    # AND is ephemeral so it's hidden from the default list.
+    md_default = [
+        a for a in engine.cache.list_artifacts()
+        if a.kind == Kind.MarkdownArtifact
+    ]
+    md_with_internal = [
+        a for a in engine.cache.list_artifacts(include_ephemeral=True)
+        if a.kind == Kind.MarkdownArtifact
+    ]
+    assert md_default == [], (
+        f"timeline MarkdownArtifact must be ephemeral, got {md_default}"
+    )
+    assert len(md_with_internal) >= 1, (
+        "timeline MarkdownArtifact must exist when include_ephemeral=True"
+    )

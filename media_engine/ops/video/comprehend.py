@@ -365,6 +365,10 @@ class VideoComprehend(Operation):
         # ── Per-frame VLM fan-out ──
         sem = asyncio.Semaphore(params.max_concurrent_frames)
         fps_eff = frameset.metadata.get("fps") or params.fps
+        # Track every per-frame Analysis id so we can bulk-mark them
+        # ephemeral after the fan-out — without this the catalog gains
+        # ~N rows of "frame N description" Analyses per run.
+        per_frame_analysis_ids: list[str] = []
 
         async def _analyze_one(position: int) -> tuple[float, str]:
             single_fs = _build_single_frame_frameset(
@@ -382,6 +386,7 @@ class VideoComprehend(Operation):
                     model=params.vlm_model,
                 )
             analysis = analysis_outs[0]
+            per_frame_analysis_ids.append(analysis.id)
             text = ""
             data: Any = analysis.metadata.get("data") if hasattr(analysis, "metadata") else None
             if isinstance(data, dict):
@@ -460,10 +465,20 @@ class VideoComprehend(Operation):
                 "source_video_id": video.id,
                 "source_transcript_id": transcript.id,
                 "source_frameset_id": frameset.id,
+                # Intermediate scaffolding — the outer Analysis already
+                # carries everything the operator needs to read. Hidden
+                # from the catalog list by default (Phase 6.7).
+                "ephemeral": True,
             },
             derived_from=tuple(timeline_input_ids),
             created_at=datetime.now(UTC),
+            namespace=ctx.namespace,
         )
+        # Same cache-registration pattern as the single-frame FrameSets:
+        # ``intelligence.extract`` below resolves its input via the
+        # cache, so the manifest must exist as a row, not just on disk.
+        if ctx.cache is not None:
+            ctx.cache.upsert_artifact(timeline_md)
 
         # ── Final synthesis ──
         system_prompt = SYSTEM_PROMPTS[params.style]
@@ -491,6 +506,19 @@ class VideoComprehend(Operation):
                 max_tokens=params.synth_max_tokens,
             )
         synth: Analysis = synth_outs[0]
+
+        # Hide the intermediate trail from the catalog list. The outer
+        # Analysis we're about to construct already carries everything
+        # the operator needs (synth.data, source ids, model + style).
+        # The per-frame Analyses + the inner synth + the timeline
+        # MarkdownArtifact stay in the cache (so cache hits on re-run
+        # still work) but are flagged so the default catalog listing
+        # filters them out. Use ``include_ephemeral=true`` to inspect.
+        if ctx.cache is not None:
+            ctx.cache.mark_artifacts_ephemeral(
+                [*per_frame_analysis_ids, timeline_md.id, synth.id],
+                namespace=ctx.namespace,
+            )
 
         # Re-key under our own derived id so the composite has a stable,
         # cache-friendly artifact id whose lineage carries the full
