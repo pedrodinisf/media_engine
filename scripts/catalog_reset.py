@@ -62,10 +62,15 @@ def main() -> int:
         return 2
 
     config = EngineConfig()
-    cache = Cache(config.cache_db_url)
+    # ``cache_db_url`` is None by default; the Engine resolves it to
+    # ``sqlite+pysqlite:///<permanent_store>/cache.db``. Use the same
+    # resolver so this script targets the exact DB the running engine
+    # sees, regardless of whether MEDIA_ENGINE_CACHE_DB_URL is set.
+    cache_url = config.resolve_cache_db_url()
+    cache = Cache(cache_url)
     namespace = config.namespace
 
-    print(f"Cache:       {config.cache_db_url}")
+    print(f"Cache:       {cache_url}")
     print(f"Store:       {config.permanent_store}")
     print(f"Namespace:   {namespace}")
     print(f"Keep kinds:  {sorted(keep_kinds)}")
