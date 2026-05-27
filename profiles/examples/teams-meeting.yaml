@@ -1,0 +1,63 @@
+profile_schema_version: "1.0"
+name: teams-meeting
+kind: pipeline
+description: >
+  Recorded business meeting (Teams / Zoom / Meet) → structured
+  Analysis with explicit decisions[] and action_items[] arrays.
+
+  Tuned for talking-heads + occasional screen-share content. fps=0.3
+  samples one frame every ~3 s, which is enough for slide-decks and
+  shared code without burning VLM calls on near-identical frames.
+  max_frames=720 covers ~40 minutes; raise for longer meetings or
+  use start_s/end_s to chunk a multi-hour recording into windows.
+
+  The `meeting` style biases the synthesis prompt toward extracting
+  decisions and action items aggressively — these are the primary
+  deliverables operators want from this profile.
+
+  Defaults assume an Apple-Silicon host with `transcribe-mlx` +
+  `diarize` extras installed. On Linux, swap `vlm_model` to a
+  gemini-prefixed id; the op auto-routes the per-frame fan-out
+  through the cloud backend.
+
+  Known limit: diarization gives anonymous SPEAKER_00 / SPEAKER_01
+  labels. The meeting prompt prefers `owner_name` when a participant
+  is addressed by name in the transcript, and falls back to
+  `owner_speaker_id` otherwise. Phase 7 will add voice fingerprints
+  that re-identify the same speaker across recordings.
+inputs:
+  - { name: source, kind: video }
+graph:
+  - id: result
+    op: video.comprehend
+    inputs: { in: source }
+    params:
+      # Frame sampling — slow rate, generous budget. Bump fps to 0.5
+      # for highly visual meetings (lots of slide flips); drop max_frames
+      # for shorter meetings to save spend on the per-frame VLM calls.
+      fps: 0.3
+      max_frames: 720
+
+      # Per-frame VLM. The default Qwen2-VL works well on text-heavy
+      # slides and code; on Linux swap to gemini-2.5-flash.
+      vlm_model: mlx-community/Qwen2-VL-7B-Instruct-4bit
+      vlm_prompt: >
+        Describe what is on screen in one sentence. If a slide,
+        document, code, or dashboard is shared, capture the key
+        text or topic. If only participants are visible, say so
+        briefly (e.g. "two participants on camera, no screen
+        share").
+
+      # Audio — whisper-medium balances accuracy with RAM on a
+      # 16-32 GB Mac. Use whisper-large-v3-mlx if you have headroom.
+      transcribe_model: mlx-community/whisper-medium-mlx
+      diarize_model: pyannote/speaker-diarization-3.1
+
+      # Synthesis — long-context model so the merged timeline fits
+      # even for a 1-hour meeting. claude-opus-4-7 is the alternative.
+      synth_model: gemini-2.5-pro
+      synth_temperature: 0.2
+
+      style: meeting
+      output_kind: structured
+outputs: [result]

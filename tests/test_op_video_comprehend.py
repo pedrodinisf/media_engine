@@ -526,3 +526,61 @@ async def test_comprehend_forwards_range_to_sample_frames(
     td_calls = [c for c in calls if c[0] == "audio.transcribe_diarized"]
     assert td_calls[0][1].get("start_s") == 30.0
     assert td_calls[0][1].get("end_s") == 90.0
+
+
+def test_meeting_style_has_prompt_and_user_text() -> None:
+    """The new 'meeting' style is wired in SYSTEM_PROMPTS + USER_PROMPTS."""
+    from media_engine.ops.video._comprehend_prompts import (
+        SYSTEM_PROMPTS,
+        USER_PROMPTS,
+    )
+    assert "meeting" in SYSTEM_PROMPTS
+    assert "meeting" in USER_PROMPTS
+    # Must reference the load-bearing deliverables — otherwise the
+    # synth model won't know to extract them aggressively.
+    sp = SYSTEM_PROMPTS["meeting"]
+    assert "decisions" in sp
+    assert "action_items" in sp
+
+
+def test_default_schema_has_meeting_fields() -> None:
+    """`decisions[]` and `action_items[]` exist on the default schema as
+    optional fields (not in `required`, so other styles aren't forced
+    to populate them)."""
+    from media_engine.ops.video._comprehend_prompts import DEFAULT_SCHEMA
+    props = DEFAULT_SCHEMA["properties"]
+    assert "decisions" in props
+    assert "action_items" in props
+    # Optional → not in required.
+    assert "decisions" not in DEFAULT_SCHEMA["required"]
+    assert "action_items" not in DEFAULT_SCHEMA["required"]
+    # Action item items at minimum carry t_seconds + task.
+    ai_required = props["action_items"]["items"]["required"]
+    assert "task" in ai_required
+    assert "t_seconds" in ai_required
+
+
+def test_meeting_style_accepted_by_params() -> None:
+    """style='meeting' parses (the Literal accepts it)."""
+    p = ComprehendParams(style="meeting")  # type: ignore[arg-type]
+    assert p.style == "meeting"
+
+
+async def test_meeting_profile_yaml_parses() -> None:
+    """The bundled teams-meeting profile compiles via the profile loader."""
+    from media_engine.profiles import load_profile
+    profile_path = (
+        Path(__file__).parent.parent
+        / "profiles"
+        / "examples"
+        / "teams-meeting.yaml"
+    )
+    assert profile_path.exists()
+    profile = load_profile(profile_path)
+    assert profile.name == "teams-meeting"
+    # One node, calls video.comprehend with style=meeting.
+    assert len(profile.graph) == 1
+    node = profile.graph[0]
+    assert node.op == "video.comprehend"
+    assert node.params["style"] == "meeting"
+    assert node.params["output_kind"] == "structured"

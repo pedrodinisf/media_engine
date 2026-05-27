@@ -50,12 +50,38 @@ _TUTORIAL = (
     "specific UI elements, commands, or outputs shown."
 )
 
+_MEETING = (
+    "You are reviewing a recorded business meeting (Teams / Zoom / Meet). "
+    "The audio captures multiple participants discussing topics; the "
+    "frame descriptions capture both faces-on-camera moments and "
+    "screen-share content (slides, code, dashboards, documents). "
+    "Synthesize both — when the screen-share shows context (a slide, a "
+    "doc, a chart), tie it to what was being discussed at that "
+    "timestamp.\n\n"
+    "Extract aggressively into the structured fields:\n"
+    "  * `decisions[]` — every concrete agreement or choice the group "
+    "made (or rejected). Include the timestamp.\n"
+    "  * `action_items[]` — every assignment, follow-up, or task the "
+    "group committed to. Capture WHO owns it (use the speaker_id when "
+    "the assignee isn't named), WHAT they're doing, and WHEN (if a "
+    "due date was mentioned). If ownership is ambiguous, set "
+    "`owner_speaker_id` and leave `owner_name` null.\n"
+    "  * `key_moments[]` — significant pivots, disagreements, "
+    "questions that changed direction, important screen-share "
+    "content.\n"
+    "  * `topics[]` — the agenda items as they came up.\n\n"
+    "Sections should chapter the meeting by topic, not by minute. "
+    "Be terse — operators read this to catch up on a meeting they "
+    "missed, not to relive it."
+)
+
 SYSTEM_PROMPTS: dict[str, str] = {
     "general": _GENERAL,
     "explainer": _EXPLAINER,
     "lecture": _LECTURE,
     "interview": _INTERVIEW,
     "tutorial": _TUTORIAL,
+    "meeting": _MEETING,
 }
 
 # ── User prompts (paired with each style) ─────────────────────────────────
@@ -76,6 +102,13 @@ USER_PROMPTS: dict[str, str] = {
     "lecture": _USER_BASE + " Treat this as an academic lecture.",
     "interview": _USER_BASE + " Treat this as an interview.",
     "tutorial": _USER_BASE + " Treat this as a how-to tutorial.",
+    "meeting": (
+        _USER_BASE
+        + " Treat this as a recorded business meeting. Populate "
+        "`decisions[]` and `action_items[]` aggressively — they are "
+        "the primary deliverable. Treat anonymous speaker_ids as "
+        "owners when the assignee isn't named explicitly."
+    ),
 }
 
 # ── Default structured-output schema ──────────────────────────────────────
@@ -139,6 +172,44 @@ DEFAULT_SCHEMA: dict[str, Any] = {
                     },
                 },
                 "required": ["t_seconds", "description"],
+            },
+        },
+        # Optional — populated heavily for style="meeting", emitted as
+        # empty arrays (or omitted) for the other styles. The synth
+        # model fills them when the timeline content supports it.
+        "decisions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "t_seconds": {"type": "number"},
+                    "decision": {"type": "string"},
+                    # Which speaker_ids supported / pushed for it (helps
+                    # downstream tooling attribute decisions).
+                    "speaker_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "context": {"type": "string"},
+                },
+                "required": ["t_seconds", "decision"],
+            },
+        },
+        "action_items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "t_seconds": {"type": "number"},
+                    "task": {"type": "string"},
+                    # owner_name when the assignee was addressed by name
+                    # ("Alice, can you..."); owner_speaker_id as fallback
+                    # for anonymous diarized labels.
+                    "owner_name": {"type": "string"},
+                    "owner_speaker_id": {"type": "string"},
+                    "due": {"type": "string"},
+                },
+                "required": ["t_seconds", "task"],
             },
         },
     },

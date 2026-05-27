@@ -92,7 +92,7 @@ class ComprehendParams(BaseModel):
         Field(json_schema_extra={"enum": list(INTELLIGENCE_MODELS)}),
     ] = "gemini-2.5-pro"
     style: Literal[
-        "general", "explainer", "lecture", "interview", "tutorial"
+        "general", "explainer", "lecture", "interview", "tutorial", "meeting"
     ] = "general"
     output_kind: Literal["structured", "prose"] = "structured"
     synth_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
