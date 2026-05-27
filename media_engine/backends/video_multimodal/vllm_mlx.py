@@ -143,7 +143,16 @@ def _ensure_server(
     if not fit.fits:
         raise RuntimeError(
             f"Refusing to load {model!r}: only {fit.available_gb:.1f} GB RAM "
-            f"available, need ~12 GB (8 GB model + 4 GB headroom)."
+            f"available, need ~12 GB (8 GB model + 4 GB headroom). "
+            "Three workarounds:\n"
+            "  1. Free RAM (close browser / IDE) and retry — the audio side "
+            "is cached so only the VLM phase re-runs.\n"
+            "  2. Use a smaller local model, e.g. "
+            "`--param vlm_model=mlx-community/Qwen2-VL-2B-Instruct-4bit` "
+            "(~1.5 GB resident; less accurate on dense slide text).\n"
+            "  3. Use a cloud VLM, e.g. "
+            "`--param vlm_model=gemini-2.5-flash` (no local RAM; needs "
+            "GEMINI_API_KEY)."
         )
 
     if health.running and health.model != model:

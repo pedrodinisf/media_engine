@@ -16,9 +16,14 @@ description: >
   deliverables operators want from this profile.
 
   Defaults assume an Apple-Silicon host with `transcribe-mlx` +
-  `diarize` extras installed. On Linux, swap `vlm_model` to a
-  gemini-prefixed id; the op auto-routes the per-frame fan-out
-  through the cloud backend.
+  `diarize` extras installed and ~16 GB RAM. The per-frame VLM
+  defaults to the 2B Qwen2-VL variant (~1.5 GB resident) so it
+  coexists with whisper-medium + pyannote on commodity Macs;
+  upgrade to the 7B variant for dense slide / code legibility when
+  you have >24 GB free.
+
+  On Linux, swap `vlm_model` to a gemini-prefixed id; the op
+  auto-routes the per-frame fan-out through the cloud backend.
 
   Known limit: diarization gives anonymous SPEAKER_00 / SPEAKER_01
   labels. The meeting prompt prefers `owner_name` when a participant
@@ -38,9 +43,13 @@ graph:
       fps: 0.3
       max_frames: 720
 
-      # Per-frame VLM. The default Qwen2-VL works well on text-heavy
-      # slides and code; on Linux swap to gemini-2.5-flash.
-      vlm_model: mlx-community/Qwen2-VL-7B-Instruct-4bit
+      # Per-frame VLM. Qwen2-VL-2B-4bit needs ~1.5 GB resident so it
+      # fits comfortably on a 16 GB Mac alongside whisper-medium +
+      # pyannote. For dense slide text or code legibility, upgrade to
+      # `mlx-community/Qwen2-VL-7B-Instruct-4bit` if you have >24 GB
+      # headroom, or swap to `gemini-2.5-flash` for zero local RAM
+      # cost (needs GEMINI_API_KEY).
+      vlm_model: mlx-community/Qwen2-VL-2B-Instruct-4bit
       vlm_prompt: >
         Describe what is on screen in one sentence. If a slide,
         document, code, or dashboard is shared, capture the key
