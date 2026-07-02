@@ -34,7 +34,12 @@ graph:
     op: intelligence.analyze
     inputs: { transcript: identified }
     params:
-      model: mlx-community/Qwen2.5-14B-Instruct-4bit
+      # 7B (~4 GB) is the safe default on a 16 GB Mac after whisper +
+      # pyannote ran for the audio step. Operators on >24 GB can swap
+      # in mlx-community/Qwen2.5-14B-Instruct-4bit (~7.5 GB) for the
+      # higher-quality analysis quality at the cost of a tighter
+      # RAM-headroom margin.
+      model: mlx-community/Qwen2.5-7B-Instruct-4bit
       prompt_path: profiles/analysis-full/analyze_prompt.md
       schema_def: profiles/analysis-full/analysis_schema.json
       window: 8

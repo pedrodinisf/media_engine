@@ -22,7 +22,11 @@ graph:
     params:
       fps: 1.0
       max_frames: 240
-      vlm_model: mlx-community/Qwen2-VL-7B-Instruct-4bit
+      # 2B fits a 16 GB Mac alongside whisper + pyannote (the audio
+      # side loads first). Operators with >24 GB free can switch to
+      # mlx-community/Qwen2-VL-7B-Instruct-4bit for richer per-frame
+      # captions.
+      vlm_model: mlx-community/Qwen2-VL-2B-Instruct-4bit
       transcribe_model: mlx-community/whisper-medium-mlx
       synth_model: gemini-2.5-pro
       style: general
