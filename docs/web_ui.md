@@ -330,8 +330,6 @@ workspace.
 **Workspace** (`/ui/profiles/[name]`). The heart of Phase 6's
 "data, not code" promise. Split view, **YAML is canonical**:
 
-![Profile workspace — visual DAG composer + CodeMirror YAML editor + live compile](web_ui/profile-workspace.png)
-
 - **Left** — visual DAG composer (Svelte Flow + dagre auto-layout).
   Op palette down the side; click an op to append a new node to
   the YAML AST (round-trips through the `yaml` JS lib's `Document`

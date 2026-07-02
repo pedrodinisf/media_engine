@@ -6,6 +6,188 @@ once we ship v1.0 (after Phase 6 — the REST surface needs to freeze
 first). Until then expect 0.x to bump frequently and best-effort
 backwards compatibility.
 
+## [Unreleased]
+
+Repo hygiene pass ahead of a public/portfolio release, plus five small
+`video.comprehend` refinements that landed after the v0.7.0 tag.
+
+### Added
+
+- **CI** (`.github/workflows/ci.yml`) — ubuntu-latest jobs for
+  `ruff check` / `pyright media_engine` / `pytest` (Python) and
+  `svelte-check` / `vitest` (frontend web/).
+- **LICENSE** — MIT.
+- `video.comprehend` gains a `style="meeting"` mode + a bundled
+  teams-meeting profile.
+
+### Fixed
+
+- **`web/pnpm-workspace.yaml`**: `allowBuilds.esbuild` was committed
+  as the literal placeholder text `"set this to true or false"`
+  instead of `true`, so pnpm's build-approval gate
+  (`ERR_PNPM_IGNORED_BUILDS`) never cleared and `bash
+  scripts/build_web.sh` — the exact command CLAUDE.md tells new
+  contributors to run — failed on a clean checkout. `scripts/build_web.sh`
+  also now runs `pnpm` via `corepack` when available, so it respects
+  the `packageManager` pin in `web/package.json` instead of whatever
+  `pnpm` major happens to be on the contributor's PATH.
+- pyannote.audio 4.x `DiarizeOutput` wrapper unwrapped correctly.
+- Ephemeral single-frame `FrameSet`s (produced by `video.comprehend`'s
+  per-frame fan-out) are now registered in the cache and hidden from
+  the catalog browser instead of cluttering it; `scripts/catalog_reset.py`
+  ships to clear a namespace during development.
+- `video.comprehend`'s hardware-gate error message is now actionable
+  (names the offending `vlm_model` + how to fix it), paired with a
+  smaller default VLM.
+- `tests/test_op_video_comprehend.py::test_frame_budget_pre_flight_raises`
+  didn't pin `vlm_model`, so on any non-Apple-Silicon machine it hit
+  the (correct) hardware gate before ever reaching the frame-budget
+  check it was meant to exercise — every sibling test in the file
+  already pins `vlm_model="gemini-2.5-flash"` for this reason. Fixed
+  to match.
+- `tests/test_api_settings.py::test_secrets_impact_hf_unblocks_diarize`
+  asserted `HF_TOKEN` alone unblocks `audio.diarize`, but the pyannote
+  backend also hardware-gates on `apple_silicon`
+  (`media_engine/backends/diarize/pyannote.py`) — the assertion only
+  holds on that platform. Marked `@pytest.mark.needs_pyannote` to
+  match how the suite's other hardware/credential-gated tests are
+  excluded from a default run.
+- Removed personal-environment fingerprints ahead of going public:
+  the `/Volumes/UNIVERSE_V/…` default `permanent_store` path
+  (now `~/.local/share/media_engine`), a stray name in a test comment,
+  and a personal GitHub username hardcoded into the `web.fetch`
+  User-Agent string.
+- Removed a docs screenshot (`docs/web_ui/profile-workspace.png`)
+  that leaked a local filesystem path.
+- `video.extract_audio` / `audio.detect_language` / `sample_frames`
+  gain `start_s`/`end_s` windowing; `video.comprehend` forwards it.
+  Web UI range slider now lights up for Video inputs, not just Audio.
+
+### Fixed — correctness sweep
+
+A pass over all 35 ops surfaced a cluster of related defects, each
+landed with a regression test verified to fail on the pre-fix tree:
+
+- **`video.comprehend` ignored the time window on the audio track.**
+  The composite forwarded `start_s`/`end_s` to `video.sample_frames`
+  and `audio.transcribe_diarized` but called `video.extract_audio`
+  with no params, so a 10 s window transcribed 10 s but extracted the
+  full audio track — a cache miss + a latent duration mismatch for any
+  downstream consumer. Now forwards symmetrically.
+- **Five `Progress` event sites never reached the Web UI.**
+  `acquire.url` (yt-dlp), `acquire.livestream` (ffmpeg-recorder +
+  playwright-HLS), `video.multimodal` (gemini upload), and
+  `metadata.scrape_page` constructed `Progress(...)` without
+  `job_id=ctx.job_id`; the SSE per-job filter dropped them, so the
+  Job-detail Events tab stayed empty during those ops. (Same class as
+  the Phase-6.7 `job_id` sweep, which missed these five.)
+- **Op + profile default models were too large for 16 GB machines.**
+  `video.comprehend`'s `vlm_model` default dropped 7B → 2B (the
+  profile default had already moved but the op default lagged); the
+  `analysis-full` profile dropped its analysis model 14B → 7B and the
+  `video-comprehend` example profile 7B → 2B, each documenting the
+  larger-hardware opt-in inline.
+- **Vague error messages** on `chunk.semantic` / `embed.text` /
+  `audio.diarize` (no-default-backend) and `transcript.parse`
+  (unknown-format) now name the fix — the `backend=` argument and the
+  list of valid formats respectively.
+- **Missing numeric bounds** on `intelligence.{classify,summarize,analyze}`
+  (`temperature`, `max_tokens`) and `search.hybrid` (`top_k`, `rrf_k`)
+  now carry `ge`/`le` constraints, so the Web UI auto-form renders
+  guard rails and the backend rejects nonsense at validation time.
+  `analyze`'s hand-rolled `window` validator was replaced by
+  `Field(ge=1)` (same semantics; standard schema-emitted message).
+
+### Suite
+
+1033 passed / 6 skipped / 24 deselected (hardware, API-key, and
+external-tool gated — see the `needs_*` markers in
+`pyproject.toml`) on Linux-equivalent tooling. Ruff clean. Pyright
+strict clean (26 stdlib-platform-conditional findings on Windows —
+`signal.SIGUSR1`/`asyncio.open_unix_connection` and friends — are
+not real errors; they're Unix-only stdlib members absent from the
+Windows typeshed stubs pyright resolves against on that OS). Frontend:
+70 Vitest unit tests, svelte-check 0/0 on 582 files.
+
+## [0.7.0] — 2026-05-26
+
+Phase 6.7 — two related shipments bundled into one release because
+the second leans on the first for debugging UX.
+
+### Added
+
+- **Live observability**: every running op now emits a
+  `Progress(phase="heartbeat", ...)` event every 2s carrying
+  available RAM, an ETA derived from `op.cost_estimate(...)`, and
+  the model-pool byte estimate (`runtime/heartbeat.py`, wired in
+  `runtime/engine.py`).
+- The previously-defined-but-never-emitted `LogLine` event now
+  flows: `runtime/log_pump.py` exposes `attach_subprocess()`,
+  `attach_logger()`, and `attach_file_tail()`; ffmpeg (in
+  `extract_audio` + `sample_frames/ffmpeg_uniform`), mlx-whisper,
+  pyannote, and the vllm-mlx server file-tail all forward
+  stdout/stderr or library loggers.
+- `OperationContext` gains `job_id` + `op_run_id` fields, carried on
+  both `Progress` and `LogLine`, so per-job SSE replay surfaces them
+  on `/ui/jobs/[id]`.
+- Job-detail page: a **Logs tab** (per-source filter, auto-scroll,
+  2000-line dedicated buffer) and live RAM/ETA gauges in the status
+  header.
+- `scripts/verify_observability.sh` — operator-invoked regression
+  gate for the Logs tab + gauges + in-op SSE replay (3 specs).
+- **`video.comprehend`** — new composite op. Fans out per-frame VLM
+  calls at a user-chosen fps (vllm-mlx on Apple Silicon; cloud
+  gemini on Linux), runs `audio.transcribe_diarized`, merges both
+  timelines into a `MarkdownArtifact`, and feeds that to one SOTA
+  LLM call (`intelligence.extract` for `output_kind=structured` /
+  `intelligence.summarize` for `prose`). Hard-fails fast on
+  `fps × duration > max_frames` (default 240) and on Linux + an mlx
+  `vlm_model`. Default profile at
+  `profiles/examples/video-comprehend.yaml`.
+- `tests/test_op_video_comprehend.py` — 10 unit specs (fan-out,
+  timeline merge, derived-id determinism, `output_kind` routing,
+  hardware gate).
+
+### Changed
+
+- The RAM-release helper from `transcribe_diarized` was renamed
+  `release_audio_models` and now also drops `pyannote:*` slots from
+  `ctx.model_pool`; the vllm-mlx backend exports a sibling
+  `release_server(ctx)`.
+
+## [0.6.2] — 2026-05-25
+
+Phase 6.6 — audit + close-out. Closed every bug left open in the
+Phase 6.5 triage (`docs/phase-6-5-bugs.md`).
+
+### Fixed
+
+- **B-004 (p1)** — locale-safe float input. `FloatInput.svelte` keeps
+  a period-decimal text buffer (seeded from `String(value)`, so it's
+  locale-independent) so pt-PT users see `0.2`, not `0,2`.
+- **B-006 (p2)** — intelligence model dropdown via
+  `json_schema_extra` + a new `media_engine/ops/intelligence/_models.py`
+  catalog, mirroring the audio-ops pattern.
+- **B-007 (p1)** — composite ops with backend routers now forward
+  `--backend` overrides to their delegates. Precedence: explicit
+  composite param > `ctx.backend` > delegate's own model-prefix
+  router.
+- **B-008 (p1)** — router model/backend consistency is now a hard
+  fail at submit time and in `POST /run/preview`, instead of silently
+  dispatching the wrong backend to the wrong model.
+- **B-009 (p2)** — `med doctor` walks `delegates_to` for embedded
+  composites and surfaces a per-delegate breakdown
+  (`OpDoctorReport.delegate_overalls`), with a cycle guard; Settings →
+  Doctor renders it in the expand row.
+
+### Added
+
+- `Operation.delegates_to` static declaration on every composite op,
+  reused by the doctor recursion above and by the Settings → Secrets
+  impact computation.
+- E2E regression specs in `scripts/verify_settings.sh` grew from 11
+  to 14.
+
 ## [0.6.1] — 2026-05-23
 
 Phase 6.5 — a focused post-release quality + UX pass. Started from
