@@ -4,7 +4,7 @@
 
 ### Turn any media — video, audio, images, documents, web pages — into typed, cached, queryable artifacts.
 
-[![CI](https://github.com/pedrodinis/media_engine/actions/workflows/ci.yml/badge.svg)](https://github.com/pedrodinis/media_engine/actions/workflows/ci.yml)
+[![CI](https://github.com/pedrodinisf/media_engine/actions/workflows/ci.yml/badge.svg)](https://github.com/pedrodinisf/media_engine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Typed: pyright strict](https://img.shields.io/badge/typed-pyright%20strict-2ea44f.svg)](pyproject.toml)
@@ -20,7 +20,7 @@ You describe **what** you want — `audio.transcribe`, `video.comprehend`, `inte
 Add one operation and it lights up across the **CLI, REST API, MCP server, Python API, warm daemon, and web UI** — automatically.
 
 ```bash
-git clone https://github.com/pedrodinis/media_engine.git && cd media_engine
+git clone https://github.com/pedrodinisf/media_engine.git && cd media_engine
 uv sync
 uv run med acquire-url "https://youtu.be/…" --quality 360p    # ingest anything
 uv run med run video.comprehend --input <video-id>            # VLM + diarized transcript → one LLM synthesis
