@@ -66,8 +66,13 @@ class ComprehendParams(BaseModel):
     fps: float = Field(default=1.0, ge=0.1, le=8.0)
     max_frames: int = Field(default=240, ge=1, le=2000)
 
-    # Per-frame VLM
-    vlm_model: str = "mlx-community/Qwen2-VL-7B-Instruct-4bit"
+    # Per-frame VLM. The 2B variant fits on a 16 GB Mac alongside
+    # whisper + pyannote (the audio side loads before the VLM phase).
+    # Operators with >24 GB free can opt in to 7B via:
+    #   --param vlm_model=mlx-community/Qwen2-VL-7B-Instruct-4bit
+    # The bundled teams-meeting + video-comprehend profiles also set
+    # this explicitly per their target hardware.
+    vlm_model: str = "mlx-community/Qwen2-VL-2B-Instruct-4bit"
     vlm_prompt: str = (
         "Describe what is visible in this frame in one sentence. Note any "
         "text, objects, people, actions."
@@ -312,8 +317,20 @@ class VideoComprehend(Operation):
                 )
 
         # ── Audio ──
+        # Forward the time window so video.extract_audio cuts only the
+        # selected segment. Without this the audio file would cover the
+        # whole video while the diarized transcript (windowed) and the
+        # frame sampling (windowed below) describe only [start_s,end_s].
+        # Same class of bug as the sample_frames forwarding fix in
+        # 02fc1e9 — that commit patched the visual side; this patches
+        # the audio side that was missed.
+        ea_kwargs: dict[str, Any] = {}
+        if params.start_s is not None:
+            ea_kwargs["start_s"] = params.start_s
+        if params.end_s is not None:
+            ea_kwargs["end_s"] = params.end_s
         [audio] = await run_op(
-            "video.extract_audio", inputs=[video.id]
+            "video.extract_audio", inputs=[video.id], **ea_kwargs
         )
 
         td_kwargs: dict[str, Any] = {

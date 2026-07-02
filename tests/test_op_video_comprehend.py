@@ -217,6 +217,17 @@ def test_params_validate_range() -> None:
         ComprehendParams(start_s=10.0, end_s=10.0)
 
 
+def test_default_vlm_model_is_commodity_hardware_safe() -> None:
+    """F-009 — default vlm_model must fit 16 GB Macs alongside whisper+pyannote.
+
+    The 7B variant (~8 GB resident) + whisper (~3 GB) + pyannote (~1 GB)
+    blows past the safety margin on the most common operator hardware.
+    Commit ab43c9a lowered the *profile* default; this regression pins
+    the OP default to the safe 2B variant.
+    """
+    assert ComprehendParams().vlm_model == "mlx-community/Qwen2-VL-2B-Instruct-4bit"
+
+
 async def test_frame_budget_pre_flight_raises(
     engine: Engine, tmp_path: Path
 ) -> None:
@@ -224,7 +235,9 @@ async def test_frame_budget_pre_flight_raises(
     op = VideoComprehend()
     ctx = _ctx_for(engine)
     video = _video_artifact(tmp_path, duration=120.0)
-    params = ComprehendParams(fps=4.0, max_frames=100)  # 4 × 120 = 480 > 100
+    params = ComprehendParams(
+        fps=4.0, max_frames=100, vlm_model="gemini-2.5-flash"
+    )  # 4 × 120 = 480 > 100
     with pytest.raises(ValueError, match="exceeds max_frames"):
         await op.run([video], params, ctx)
 
@@ -526,6 +539,14 @@ async def test_comprehend_forwards_range_to_sample_frames(
     td_calls = [c for c in calls if c[0] == "audio.transcribe_diarized"]
     assert td_calls[0][1].get("start_s") == 30.0
     assert td_calls[0][1].get("end_s") == 90.0
+    # F-008: video.extract_audio also receives the window — otherwise
+    # the audio file would cover the whole video while transcript +
+    # frames describe only [start_s,end_s]. Symmetric with the sample_frames
+    # forwarding fix in 02fc1e9.
+    ea_calls = [c for c in calls if c[0] == "video.extract_audio"]
+    assert len(ea_calls) == 1
+    assert ea_calls[0][1].get("start_s") == 30.0
+    assert ea_calls[0][1].get("end_s") == 90.0
 
 
 def test_meeting_style_has_prompt_and_user_text() -> None:
