@@ -232,7 +232,8 @@ class MetadataScrapePage(Operation):
             ctx.emit(
                 Progress(
                     event_id=uuid4().hex,
-                    op_run_id=run_id,
+                    job_id=ctx.job_id,
+                    op_run_id=ctx.op_run_id or run_id,
                     timestamp=datetime.now(UTC),
                     fraction=0.1,
                     message="scraping page",
