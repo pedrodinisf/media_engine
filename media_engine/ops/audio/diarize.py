@@ -83,7 +83,10 @@ class AudioDiarize(Operation):
         audio: Audio = inputs[0]
         backend_name = self.default_backend
         if backend_name is None:
-            raise RuntimeError(f"{self.name} has no default backend")
+            raise RuntimeError(
+                f"{self.name} has no default backend; register one or "
+                f"pass `backend=` to Engine.run."
+            )
         backend_cls = BackendRegistry.get(self.name, backend_name)
         backend = backend_cls()
         return await backend.execute([audio], params, ctx)

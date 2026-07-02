@@ -153,7 +153,10 @@ def _parse(fmt: TranscriptFormat, text: str) -> list[dict[str, Any]]:
         return _parse_cued(text, is_vtt=True)
     if fmt == "speakered_txt":
         return _parse_speakered_txt(text)
-    raise ValueError(f"transcript.parse: unknown format {fmt!r}")
+    raise ValueError(
+        f"transcript.parse: unknown format {fmt!r}; "
+        f"expected one of: srt, vtt, speakered_txt"
+    )
 
 
 @register_op

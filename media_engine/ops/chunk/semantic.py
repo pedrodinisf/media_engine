@@ -78,7 +78,10 @@ class ChunkSemantic(Operation):
             )
         backend_name = self.default_backend
         if backend_name is None:
-            raise RuntimeError(f"{self.name} has no default backend")
+            raise RuntimeError(
+                f"{self.name} has no default backend; register one or "
+                f"pass `backend=` to Engine.run."
+            )
         backend_cls = BackendRegistry.get(self.name, backend_name)
         return await backend_cls().execute(inputs, params, ctx)
 
