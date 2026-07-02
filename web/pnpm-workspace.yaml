@@ -12,7 +12,7 @@
 #   `pnpm install && pnpm <script>` with no manual approval step.
 
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
 onlyBuiltDependencies:
   - esbuild
 verifyDepsBeforeRun: false

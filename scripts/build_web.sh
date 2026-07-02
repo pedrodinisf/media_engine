@@ -13,8 +13,14 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}/web"
 
-if ! command -v pnpm >/dev/null 2>&1; then
-    echo "[build_web] pnpm not on PATH. Install via:" >&2
+# Prefer corepack so we always run the exact `packageManager` version
+# pinned in web/package.json, regardless of whatever `pnpm` happens to
+# be on PATH — a mismatched global pnpm (e.g. an older major) chokes on
+# pnpm-workspace.yaml settings that only exist in newer schema versions.
+if command -v corepack >/dev/null 2>&1; then
+    pnpm() { corepack pnpm "$@"; }
+elif ! command -v pnpm >/dev/null 2>&1; then
+    echo "[build_web] Neither corepack nor pnpm found on PATH. Install via:" >&2
     echo "    corepack enable && corepack prepare pnpm@latest --activate" >&2
     exit 1
 fi
