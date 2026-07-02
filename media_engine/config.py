@@ -22,7 +22,7 @@ def _default_config_dir() -> Path:
 
 
 def _default_permanent_store() -> Path:
-    return Path("/Volumes/UNIVERSE_V/MEDIA/media_engine")
+    return Path.home() / ".local" / "share" / "media_engine"
 
 
 def _default_workdir() -> Path:

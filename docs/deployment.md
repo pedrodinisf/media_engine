@@ -15,7 +15,7 @@ most in a container:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MEDIA_ENGINE_PERMANENT_STORE` | `/Volumes/UNIVERSE_V/MEDIA/media_engine` | Where artifacts + cache.db live. Override with a bind-mount or PVC. |
+| `MEDIA_ENGINE_PERMANENT_STORE` | `~/.local/share/media_engine` | Where artifacts + cache.db live. Override with a bind-mount or PVC. |
 | `MEDIA_ENGINE_DB_URL` | derived from `permanent_store` (`sqlite+pysqlite:///…/cache.db`) | Postgres URL to use instead of SQLite. |
 | `MEDIA_ENGINE_LOG_FORMAT` | `text` | Set to `json` for one-JSON-record-per-line stdout. |
 | `MEDIA_ENGINE_MIN_FREE_GB` | `20` | Disk-guard threshold. Lower in CI / dev containers. |

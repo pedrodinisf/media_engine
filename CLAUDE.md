@@ -148,7 +148,7 @@ YAML frontmatter) or pipeline (YAML DAG).
 
 ## Storage
 - Permanent: `MEDIA_ENGINE_PERMANENT_STORE` (default
-  `/Volumes/UNIVERSE_V/MEDIA/media_engine/`)
+  `~/.local/share/media_engine/`)
 - Workdir: `/tmp/media_engine` (per-job; GC'd after 24 h on failure)
 - Config: `~/.config/media_engine/config.toml` (or `MEDIA_ENGINE_*` env vars)
 - Resources: `~/.config/media_engine/resources.yaml` (optional — overrides

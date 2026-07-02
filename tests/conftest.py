@@ -2,7 +2,7 @@
 
 The ``engine`` fixture wires an ``Engine`` against a tmp permanent_store and
 workdir — all tests should use this rather than touching the user's real
-``permanent_store`` (default ``/Volumes/UNIVERSE_V/MEDIA/media_engine``).
+``permanent_store`` (default ``~/.local/share/media_engine``).
 """
 
 from __future__ import annotations

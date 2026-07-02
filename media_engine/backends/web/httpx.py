@@ -21,7 +21,7 @@ from ._html import build_webpage_artifact
 BACKEND_NAME = "httpx"
 BACKEND_VERSION = "1.0.0"
 
-_USER_AGENT = "media-engine/0.1 (+https://github.com/pedrodinis/media_engine)"
+_USER_AGENT = "media-engine/0.1 (+https://github.com/media-engine/media-engine)"
 
 
 def _fetch_sync(url: str) -> tuple[int, str | None, str]:

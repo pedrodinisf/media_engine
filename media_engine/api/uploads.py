@@ -217,10 +217,10 @@ async def post_acquire_upload(
     # metadata.original_filename survives.
     #
     # link_mode=copy: the workdir tmp file lives on the API process's
-    # filesystem, but the permanent_store may be on a different volume
-    # (default /Volumes/UNIVERSE_V/MEDIA/...). A hardlink requires the
-    # same filesystem, so we copy unconditionally — the tmp file is
-    # cleaned up by the workdir GC sweep regardless.
+    # filesystem, but the permanent_store may be on a different volume.
+    # A hardlink requires the same filesystem, so we copy
+    # unconditionally — the tmp file is cleaned up by the workdir GC
+    # sweep regardless.
     job_id = submit_run_op(
         state,
         op_name="acquire.upload",
