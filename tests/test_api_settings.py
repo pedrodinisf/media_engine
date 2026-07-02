@@ -187,12 +187,15 @@ def test_secrets_impact_gemini_unblocks_intelligence_composites(
     assert "intelligence.extract" in intel_buckets
 
 
+@pytest.mark.needs_pyannote
 def test_secrets_impact_hf_unblocks_diarize(
     client: TestClient,
     auth: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """HF_TOKEN unblocks audio.diarize (pyannote's only env requirement)."""
+    """HF_TOKEN unblocks audio.diarize (pyannote's only *env* requirement —
+    the backend also hardware-gates on apple_silicon, so this only holds
+    on that platform)."""
     _clear_known_secrets(monkeypatch)
     r = client.get("/settings/secrets", headers=auth)
     hf = next(row for row in r.json()["items"] if row["name"] == "HF_TOKEN")
