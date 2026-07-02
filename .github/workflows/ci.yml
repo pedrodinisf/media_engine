@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The wheel force-includes media_engine/web/dist/, so hatchling's
+      # editable build fails until the SPA is built at least once.
+      - name: Build web SPA
+        run: |
+          corepack enable
+          bash scripts/build_web.sh
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Sync Python deps
+        run: uv sync --extra api --extra mcp
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Pyright
+        run: uv run pyright media_engine
+
+      # The needs_* markers gate tests behind hardware (Apple Silicon /
+      # vllm-mlx), real API keys, or a local service (Postgres, a
+      # Chromium install) that CI doesn't provision. See the marker
+      # docstrings in pyproject.toml.
+      - name: Pytest
+        run: >
+          uv run pytest -q
+          -m "not needs_mlx and not needs_pyannote and not needs_gemini and
+          not needs_vllm and not needs_postgres and not needs_ytdlp and
+          not needs_playwright and not needs_pymupdf"
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm run check
+      - run: corepack pnpm test
