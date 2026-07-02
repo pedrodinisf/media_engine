@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, cast
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -58,9 +58,9 @@ class AnalyzeParams(BaseModel):
         Field(json_schema_extra={"enum": list(INTELLIGENCE_MODELS)}),
     ] = "gemini-2.5-flash"
     system_prompt: str | None = None
-    temperature: float = 0.2
-    max_tokens: int = 2048
-    window: int = 1  # transcript segments per analysis window
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2048, ge=1, le=32768)
+    window: int = Field(default=1, ge=1)  # transcript segments per analysis window
     classify_labels: list[str] | None = None
     classify_multi_label: bool = False
     # See SummarizeParams.extract_backend for the precedence rules. B-007.
@@ -96,14 +96,6 @@ class AnalyzeParams(BaseModel):
                 "intelligence.analyze requires `prompt` or `prompt_path`."
             )
         return self
-
-    @field_validator("window")
-    @classmethod
-    def _window_ge_1(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("window must be >= 1")
-        return v
-
 
 def _windows(
     segments: list[dict[str, Any]], size: int

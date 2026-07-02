@@ -44,8 +44,8 @@ class SummarizeParams(BaseModel):
     ] = "gemini-2.5-flash"
     focus: str | None = None
     system_prompt: str | None = None
-    temperature: float = 0.2
-    max_tokens: int = 2048
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2048, ge=1, le=32768)
     # Optional override for which backend the delegate `intelligence.extract`
     # call dispatches to. Mirrors ``audio.transcribe_diarized``'s
     # ``transcribe_backend`` / ``diarize_backend`` pattern. Precedence

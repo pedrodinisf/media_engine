@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     Analysis,
@@ -42,9 +42,9 @@ OP_VERSION = "1.0.0"
 
 class SearchHybridParams(BaseModel):
     query: str
-    top_k: int = 10
+    top_k: int = Field(default=10, ge=1, le=1000)
     kind_filter: tuple[Kind, ...] | None = None
-    rrf_k: int = 60
+    rrf_k: int = Field(default=60, ge=1)
     refresh_nonce: str | None = None
 
 

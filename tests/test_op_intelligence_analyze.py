@@ -80,7 +80,10 @@ def test_windows_grouping() -> None:
 
 
 def test_params_window_validation() -> None:
-    with pytest.raises(ValueError, match="window must be >= 1"):
+    # F-018 replaced the _window_ge_1 field_validator with Field(ge=1).
+    # Pydantic now emits a standard schema-violation message; semantics
+    # unchanged (window=0 still rejected).
+    with pytest.raises(ValueError, match="greater than or equal to 1"):
         AnalyzeParams(prompt="p", schema_def=_SCHEMA, window=0)
 
 
