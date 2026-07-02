@@ -96,6 +96,24 @@ Plus **10 bundled profiles** (`profiles/`) — an `analysis-full` reference pipe
 | 🕸️ **DAG, not pipeline** | Fan-out / fan-in with resource-aware parallelism (e.g. one VLM at a time on Apple Silicon). |
 | 💰 **Cost-aware** | `op.cost_estimate()` everywhere; `--dry-run` prices the whole DAG before you spend a cent. |
 
+## 🚢 Deployment modes
+
+The engine runs two ways, and the swappable-backend design (above) is what makes both work off the same op catalog:
+
+- **🐳 Docker / Linux / cloud** — a 4-stage, non-root, Node-free [`Dockerfile`](infra/docker/Dockerfile) (targets `linux/amd64` **and** `linux/arm64`), a Helm chart, a Terraform module, and a full one-shot Hetzner VPS deploy under [`deploy/hetzner/`](deploy/hetzner/). Ops dispatch to cloud backends (Gemini, Claude) or platform-agnostic ones (ffmpeg, pymupdf, sqlite/pgvector).
+- **🍎 Apple Silicon, local-first** — the same ops dispatch to on-device backends over Apple's **MLX** framework (Metal + unified memory + Neural Engine): private inference, zero API cost, no network. `runtime/hardware.py` gates model loads on available RAM before loading (fails fast instead of swap-thrashing); an `apple_neural_engine` resource semaphore limits VLM/LLM concurrency to one at a time.
+
+**Today, four ops are Apple-Silicon-only** — no cloud backend has been wired for them yet:
+
+| Op | Local backend | Cloud backend |
+|---|---|---|
+| `audio.transcribe` | mlx-whisper | *(none yet)* |
+| `audio.diarize` | pyannote (Metal) | *(none yet)* |
+| `audio.detect_language` | mlx-whisper | *(none yet)* |
+| `embed.text` | sentence-transformers | *(none yet)* |
+
+Every other op already routes to a cloud or platform-agnostic backend on Linux/Docker — including `intelligence.extract` (Claude/Gemini), `frames.analyze` and `video.multimodal` (Gemini, with `vllm-mlx` as the Apple-Silicon alternate), `image.*`, `search.*`, `document.parse`, and `web.fetch`. Run `med doctor` on any machine to see exactly which ops have a working backend there.
+
 ## 📦 Install
 
 ```bash
