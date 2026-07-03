@@ -97,17 +97,23 @@ landed with a regression test verified to fail on the pre-fix tree:
   guard rails and the backend rejects nonsense at validation time.
   `analyze`'s hand-rolled `window` validator was replaced by
   `Field(ge=1)` (same semantics; standard schema-emitted message).
+- **`release_audio_models` failed strict pyright on Linux CI** (the
+  very CI added in this release). `mlx.core` has no Linux wheels, so
+  the existing `# type: ignore[import]` on the import line suppressed
+  the import-resolution error but not the `reportUnknownMemberType`
+  cascade on every subsequent `mx.clear_cache` / `mx.metal` attribute
+  access — pyright had only ever been run against this file with mlx
+  actually installed (macOS). Fixed by explicitly typing the bound
+  name `Any`, matching the existing idiom in
+  `backends/transcribe/mlx_whisper.py`.
 
 ### Suite
 
-1033 passed / 6 skipped / 24 deselected (hardware, API-key, and
-external-tool gated — see the `needs_*` markers in
-`pyproject.toml`) on Linux-equivalent tooling. Ruff clean. Pyright
-strict clean (26 stdlib-platform-conditional findings on Windows —
-`signal.SIGUSR1`/`asyncio.open_unix_connection` and friends — are
-not real errors; they're Unix-only stdlib members absent from the
-Windows typeshed stubs pyright resolves against on that OS). Frontend:
-70 Vitest unit tests, svelte-check 0/0 on 582 files.
+1050 passed / 6 skipped / 24 deselected (hardware, API-key, and
+external-tool gated — see the `needs_*` markers in `pyproject.toml`),
+verified on the actual GitHub Actions Linux runner, not just locally.
+Ruff clean. Pyright strict clean on Linux. Frontend: 70 Vitest unit
+tests, svelte-check 0/0 on 582 files.
 
 ## [0.7.0] — 2026-05-26
 

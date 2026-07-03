@@ -196,7 +196,7 @@ The engine is designed to be extended in minutes — a new op or backend is pick
 
 **v0.7.0 (2026-05-26), Phase 6.7.** Two bundled shipments: live observability (every op emits a heartbeat with RAM + ETA every 2s; a Logs tab streams subprocess/logger output live in the Web UI) and **`video.comprehend`** — a composite op that fans out per-frame VLM calls, runs diarized transcription in parallel, and fuses both timelines into a single SOTA-LLM call. See [`CHANGELOG.md`](CHANGELOG.md) for the full per-release history.
 
-**Quality bar:** 1033 passing tests (6 skipped / 24 deselected behind hardware-, API-key-, and external-tool-gated markers), `ruff` clean, `pyright --strict` clean, and a 70-test frontend suite (`svelte-check` 0/0 on 582 files). CI runs the same gate on every push. **35 ops · 30 backends · 14 artifact kinds · 6 transports.**
+**Quality bar:** 1050 passing tests (6 skipped / 24 deselected behind hardware-, API-key-, and external-tool-gated markers), `ruff` clean, `pyright --strict` clean, and a 70-test frontend suite (`svelte-check` 0/0 on 582 files) — all green on the actual CI runners (`.github/workflows/ci.yml`), not just locally. **35 ops · 30 backends · 14 artifact kinds · 6 transports.**
 
 **Next — Phase 7:** acoustic speaker identity (`speakers.embed_voice` + `speakers.cluster` + `speakers.match`, a voice-fingerprint DB reusing the pgvector backend). See the roadmap in [`CLAUDE.md`](CLAUDE.md).
 
