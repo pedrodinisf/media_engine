@@ -80,7 +80,8 @@ def release_audio_models(ctx: OperationContext | None = None) -> None:
     # until something prompts a sweep. Explicit clear ensures the
     # bytes are reclaimable by the next allocation.
     try:
-        import mlx.core as mx  # type: ignore[import]
+        import mlx.core as mx_module  # type: ignore[import]
+        mx: Any = mx_module
         if hasattr(mx, "clear_cache"):
             mx.clear_cache()
         elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
