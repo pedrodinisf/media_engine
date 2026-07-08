@@ -8,8 +8,13 @@ backwards compatibility.
 
 ## [Unreleased]
 
-Repo hygiene pass ahead of a public/portfolio release, plus five small
-`video.comprehend` refinements that landed after the v0.7.0 tag.
+_Nothing yet._
+
+## [0.8.0] — 2026-07-08
+
+Phase 7 (acoustic speaker identity), plus the repo-hygiene / public-release
+pass and five small `video.comprehend` refinements that landed after the
+v0.7.0 tag.
 
 ### Added
 
@@ -34,6 +39,15 @@ Repo hygiene pass ahead of a public/portfolio release, plus five small
 
 ### Fixed
 
+- **Phase 7 privacy hardening** (review pass): the `speaker_export_enabled`
+  REST gate was enforced only on `POST /run`, so a pipeline DAG (`POST
+  /pipelines`) could smuggle a gated `speakers.*` op past it — now enforced on
+  both surfaces. `med speakers purge` / `Cache.purge_namespace` now also
+  deletes the on-disk artifact blob files (voice-vector sidecars), not just
+  the index rows. Plus robustness fixes: numpy-array flattening in the pyannote
+  embedding backend, empty-query handling in `speakers.match`, `min_samples`
+  clamping in the HDBSCAN backend, and a side-effect-free fingerprint-store
+  path helper.
 - **`web/pnpm-workspace.yaml`**: `allowBuilds.esbuild` was committed
   as the literal placeholder text `"set this to true or false"`
   instead of `true`, so pnpm's build-approval gate

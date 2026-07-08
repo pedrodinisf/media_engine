@@ -6,13 +6,15 @@ powers the REST API. The bar is *full GUI parity with the CLI*:
 anything you can do with `med <verb>` you can do from the browser,
 without dropping to a shell.
 
-This guide is a feature tour of what ships in Phase 6 v0.6.0. For the
-underlying REST surface see [`api_reference.md`](api_reference.md); for
-the architectural rationale (mount model, paste-token bootstrap, SSE
+This guide is a feature tour of the Web UI, first shipped in Phase 6
+(v0.6.0). The engine is now at **v0.8.0** (Phase 7); Phase 6.7 later added
+the Job-detail **Logs tab** and live **RAM/ETA gauges** described in §4.3.
+For the underlying REST surface see [`api_reference.md`](api_reference.md);
+for the architectural rationale (mount model, paste-token bootstrap, SSE
 auth) see [`architecture.md`](architecture.md) §11 + §12; for items
 explicitly deferred to v1.x see [`web_ui_deferred.md`](web_ui_deferred.md).
 
-> **Status — v0.6.0 (2026-05-22) — Phase 6 complete.** Twelve
+> **Status — Web UI first shipped v0.6.0 (2026-05-22), Phase 6.** Twelve
 > numbered commits (39–50) + three audit-fix passes (post-46, post-48,
 > post-49) + two docs syncs landed in the release window. Every panel
 > is live: Ingest, Run, Jobs, Catalog, Search, Cost, Lineage,

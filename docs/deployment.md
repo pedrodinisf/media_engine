@@ -160,7 +160,7 @@ default `docker build .` produces a Node-free runtime image with the
 SvelteKit SPA already inside:
 
 ```bash
-docker build -t media-engine:0.6.0 -f infra/docker/Dockerfile .
+docker build -t media-engine:0.8.0 -f infra/docker/Dockerfile .
 ```
 
 The stages, in order:
@@ -177,7 +177,7 @@ Opt-outs:
 ```bash
 # Headless deployment (no /ui mount).  Skips the ui-build stage entirely
 # when buildx prunes unused stages.
-docker build --target api-only -t media-engine:0.6.0-api .
+docker build --target api-only -t media-engine:0.8.0-api .
 
 # Just the dist tree (e.g. to vendor it elsewhere).
 docker build --target ui-build --output type=local,dest=./_dist .
@@ -218,5 +218,5 @@ curl -fsS -H "Authorization: Bearer $TOKEN" http://media-engine/operations
 curl -fsS -H "Authorization: Bearer $TOKEN" http://media-engine/ready
 ```
 
-If `/ready` returns 200 and `/operations` lists 31+ ops, the deployment
+If `/ready` returns 200 and `/operations` lists 38 ops, the deployment
 is healthy.
