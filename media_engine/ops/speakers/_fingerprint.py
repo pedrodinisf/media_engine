@@ -7,23 +7,15 @@ gets the same stable id" promise, so it unit-tests without any model or DB:
 * :func:`running_mean` — fold new member vectors into an existing centroid.
 * :func:`reconcile` — greedy one-to-one match of new clusters to existing
   profiles by cosine ≥ threshold (reuse the id) else mint a new one.
-
-Plus :func:`release_speaker_models`, the RAM-cleanup helper that mirrors
-``release_audio_models`` for the ``speaker-embed:`` model-pool slots.
 """
 
 from __future__ import annotations
 
-import gc
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
 
 from media_engine.backends._vec import cosine, l2_normalize
-
-if TYPE_CHECKING:
-    from media_engine.ops import OperationContext
 
 _ID_PREFIX = "Speaker_"
 
@@ -147,38 +139,10 @@ def reconcile(
     return out
 
 
-def release_speaker_models(ctx: OperationContext | None = None) -> None:
-    """Drop cached voice-embedding models from the pool + reclaim RAM.
-
-    Mirrors ``release_audio_models``: forget every ``speaker-embed:`` slot in
-    ``ctx.model_pool`` (the key prefix used by the pyannote embedding backend),
-    then nudge Apple Silicon's unified-memory allocator with
-    ``mx.clear_cache`` + ``gc.collect`` so the bytes are promptly reclaimable.
-    Best-effort and silent on missing optional deps.
-    """
-    if ctx is not None and ctx.model_pool is not None:
-        for key in list(ctx.model_pool.keys()):
-            if key.startswith("speaker-embed:"):
-                ctx.model_pool.forget(key)
-
-    try:
-        import mlx.core as mx_module  # type: ignore[import]
-        mx: Any = mx_module
-        if hasattr(mx, "clear_cache"):
-            mx.clear_cache()
-        elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
-            mx.metal.clear_cache()
-    except ImportError:
-        pass
-
-    gc.collect()
-
-
 __all__ = [
     "ExistingProfile",
     "ReconcileDecision",
     "reconcile",
-    "release_speaker_models",
     "running_mean",
     "stable_speaker_id",
 ]

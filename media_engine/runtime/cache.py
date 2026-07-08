@@ -11,6 +11,7 @@ artifacts are the immutable in-flight representation that ops produce/consume.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Iterable
 from contextlib import contextmanager
@@ -491,13 +492,19 @@ class Cache:
         from sqlalchemy import delete, func
 
         with self.session() as s:
-            n_arts = int(
-                s.execute(
-                    select(func.count())
-                    .select_from(CachedArtifact)
-                    .where(CachedArtifact.namespace == namespace)
-                ).scalar_one()
-            )
+            # Collect the on-disk blob paths before dropping the rows — a
+            # privacy purge must delete the artifact *files* too (a
+            # SpeakerEmbedding sidecar holds the raw voice vectors), not
+            # just the index rows. Mirrors eviction's file+row removal.
+            paths = [
+                row.path
+                for row in s.execute(
+                    select(CachedArtifact.path).where(
+                        CachedArtifact.namespace == namespace
+                    )
+                )
+            ]
+            n_arts = len(paths)
             n_runs = int(
                 s.execute(
                     select(func.count())
@@ -516,6 +523,10 @@ class Cache:
                 )
             )
 
+        for p in paths:
+            with contextlib.suppress(OSError):
+                Path(p).unlink(missing_ok=True)
+
         n_profiles = 0
         if permanent_store is not None:
             from media_engine.backends import _speaker_store as store
@@ -524,8 +535,6 @@ class Cache:
             from media_engine.backends import _speaker_store_pg as pg
 
             if pg.is_configured():
-                import contextlib
-
                 with contextlib.suppress(Exception):
                     n_profiles += pg.delete_namespace(namespace)
 

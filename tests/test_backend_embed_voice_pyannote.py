@@ -46,16 +46,28 @@ def test_as_1d_unwraps_row() -> None:
     assert _as_1d([[0.1, 0.2, 0.3]]) == [0.1, 0.2, 0.3]
 
 
-class _FakeArray:
+class _FakeWrapper:
+    """Mimics pyannote's SlidingWindowFeature: an inner array in ``.data``,
+    and (unlike a bare ndarray) NO ``tolist`` of its own."""
+
     def __init__(self, data):
         self.data = data
 
-    def tolist(self):
-        return self.data
+
+def test_as_1d_from_wrapper_data_attr() -> None:
+    assert _as_1d(_FakeWrapper([[0.4, 0.5]])) == [0.4, 0.5]
 
 
-def test_as_1d_from_arraylike_data_attr() -> None:
-    assert _as_1d(_FakeArray([[0.4, 0.5]])) == [0.4, 0.5]
+def test_as_1d_real_numpy_array() -> None:
+    # The actual production shape: Inference.crop(window="whole") returns a
+    # 1-D numpy float32 ndarray. A bare ndarray has a .data memoryview we must
+    # NOT flatten — regression guard for the earlier getattr(.,'data') bug.
+    np = pytest.importorskip("numpy")
+    out = _as_1d(np.asarray([0.1, 0.2, 0.3], dtype="float32"))
+    assert out == pytest.approx([0.1, 0.2, 0.3], abs=1e-6)
+    # (1, D) row shape unwraps to 1-D too.
+    out2 = _as_1d(np.asarray([[0.4, 0.5, 0.6]], dtype="float32"))
+    assert out2 == pytest.approx([0.4, 0.5, 0.6], abs=1e-6)
 
 
 def _ctx_for(engine: Engine) -> OperationContext:

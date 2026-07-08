@@ -51,13 +51,15 @@ class StoredProfile:
 
 
 def store_path(perm_store: Path) -> Path:
-    d = perm_store / "speakers"
-    d.mkdir(parents=True, exist_ok=True)
-    return d / "fingerprints.db"
+    """Path to the fingerprint DB. Pure — no filesystem side effects, so an
+    ``exists()`` existence check never accidentally creates the directory."""
+    return perm_store / "speakers" / "fingerprints.db"
 
 
 def connect(perm_store: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(store_path(perm_store))
+    path = store_path(perm_store)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
     conn.executescript(_SCHEMA)
     return conn
 

@@ -73,9 +73,14 @@ def cluster_labels(
     if len(vectors) < min_cluster_size:
         return [-1] * len(vectors)
     x = np.asarray(vectors, dtype="float64")
+    # HDBSCAN raises if min_samples > n; clamp so a large user value degrades
+    # gracefully instead of crashing the op.
+    effective_min_samples = (
+        min(min_samples, len(vectors)) if min_samples is not None else None
+    )
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
+        min_samples=effective_min_samples,
         metric="euclidean",
     )
     labels = clusterer.fit_predict(x)

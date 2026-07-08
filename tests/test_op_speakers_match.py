@@ -69,6 +69,13 @@ def test_rank_matches_empty_candidates() -> None:
     assert rank_matches([_unit([1.0, 0.0])], [], top_k=5, min_similarity=0.0) == []
 
 
+def test_rank_matches_empty_query_never_matches() -> None:
+    # Even with a permissive threshold, no query vectors → no matches (not
+    # "every stored voice at score 0.0").
+    candidates = [("Speaker_a", None, _unit([1.0, 0.0]))]
+    assert rank_matches([], candidates, top_k=5, min_similarity=-1.0) == []
+
+
 # ── op ───────────────────────────────────────────────────────────────
 
 

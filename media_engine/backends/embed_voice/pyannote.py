@@ -137,14 +137,26 @@ def _embed_turns_sync(
 
 
 def _as_1d(vector: Any) -> list[Any]:
-    """Flatten a numpy array / SlidingWindowFeature to a 1-D python list."""
-    data = getattr(vector, "data", vector)
-    tolist = getattr(data, "tolist", None)
-    flat = tolist() if tolist is not None else list(data)
-    # ``window="whole"`` may still hand back a (1, D) row — unwrap it.
-    if flat and isinstance(flat[0], list):
-        flat = flat[0]
-    return flat
+    """Flatten a crop result to a 1-D python list of floats.
+
+    ``Inference.crop(window="whole")`` returns a numpy ndarray; a
+    ``SlidingWindowFeature`` wraps the ndarray in ``.data``. A **bare ndarray
+    also has a ``.data`` attribute — but it's the raw memoryview buffer, not
+    the array** — so we must only drill into ``.data`` for the wrapper case
+    (detected by the absence of ``tolist``, which every ndarray has).
+    """
+    arr = vector
+    if not hasattr(arr, "tolist") and hasattr(arr, "data"):
+        arr = arr.data  # SlidingWindowFeature → inner ndarray
+    try:
+        import numpy as np  # always present wherever pyannote runs
+        return [float(x) for x in np.asarray(arr).ravel()]
+    except ImportError:
+        # numpy-free fallback (also the path the pure unit tests exercise).
+        flat = arr.tolist() if hasattr(arr, "tolist") else list(arr)
+        while flat and isinstance(flat[0], list):
+            flat = flat[0] if len(flat) == 1 else [r[0] for r in flat]
+        return flat
 
 
 @register_backend

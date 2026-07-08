@@ -58,6 +58,10 @@ def rank_matches(
     recording matches a voice if any turn is a strong hit). Filtered by
     ``min_similarity``, sorted descending, truncated to ``top_k``.
     """
+    # No query vectors → no basis for a match (guards against a low/negative
+    # min_similarity returning every stored voice with score 0.0).
+    if not query_vecs:
+        return []
     scored: list[dict[str, object]] = []
     for speaker_id, label, centroid in candidates:
         best = max((cosine(q, centroid) for q in query_vecs), default=0.0)

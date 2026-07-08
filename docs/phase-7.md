@@ -75,7 +75,7 @@ reads.
 | `feat(speakers): docs, example profile, version bump` | C4 — `docs/phase-7.md`, `profiles/examples/speaker-id.yaml`, CLAUDE.md/CHANGELOG/README, v0.8.0. |
 | `feat(speakers): privacy + med speakers CLI` | C4 — config gates, `Cache.purge_namespace`, REST 403 gate, MCP hidden-by-default test, `med speakers` group (embed-voice/cluster/match/purge). |
 | `feat(speakers): speakers.cluster + speakers.match ops & backends` | C3 — HDBSCAN clustering with reconcile-to-stable-id, sqlite+pgvector match backends, `cluster` extra. |
-| `feat(speakers): speakers.embed_voice op + pyannote backend` | C2 — per-turn voice embedding, model-pool + MPS, `release_speaker_models`. |
+| `feat(speakers): speakers.embed_voice op + pyannote backend` | C2 — per-turn voice embedding, model-pool + MPS. |
 | `feat(speakers): Phase-7 foundations` | C1 — new Kinds/artifacts, shared `backends/_vec.py`, fingerprint store, `stable_speaker_id`/`running_mean`/`reconcile`. |
 
 ## Tests
