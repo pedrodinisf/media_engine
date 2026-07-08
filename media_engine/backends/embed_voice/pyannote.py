@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import inspect
 import os
 from datetime import UTC, datetime
@@ -45,15 +46,18 @@ BACKEND_VERSION = "1.0.0"
 
 
 def _import_pyannote() -> tuple[Any, Any, Any]:
+    # Lazy import via importlib so the module type-checks clean without the
+    # optional dep installed (CI runs pyright with core deps only); the
+    # returned modules are ``Any``, matching backends/cluster/hdbscan.py.
     try:
-        from pyannote.audio import Inference, Model  # type: ignore[import-not-found]  # noqa: I001
-        from pyannote.core import Segment  # type: ignore[import-not-found]  # noqa: I001
+        audio = importlib.import_module("pyannote.audio")
+        core = importlib.import_module("pyannote.core")
     except ImportError as e:
         raise RuntimeError(
             "pyannote.audio is not installed. "
             "Install with: uv sync --extra diarize"
         ) from e
-    return Model, Inference, Segment
+    return audio.Model, audio.Inference, core.Segment
 
 
 def _auth_kwarg(from_pretrained: Any) -> str:
@@ -149,14 +153,14 @@ def _as_1d(vector: Any) -> list[Any]:
     if not hasattr(arr, "tolist") and hasattr(arr, "data"):
         arr = arr.data  # SlidingWindowFeature → inner ndarray
     try:
-        import numpy as np  # always present wherever pyannote runs
-        return [float(x) for x in np.asarray(arr).ravel()]
+        np = importlib.import_module("numpy")  # present wherever pyannote runs
     except ImportError:
         # numpy-free fallback (also the path the pure unit tests exercise).
         flat = arr.tolist() if hasattr(arr, "tolist") else list(arr)
         while flat and isinstance(flat[0], list):
             flat = flat[0] if len(flat) == 1 else [r[0] for r in flat]
         return flat
+    return [float(x) for x in np.asarray(arr).ravel()]
 
 
 @register_backend
