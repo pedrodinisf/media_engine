@@ -42,6 +42,8 @@ def test_kind_enum_has_all_phase_5_values() -> None:
         "chunks", "embedding",
         "analysis", "session_analysis",
         "markdown", "document", "webpage",
+        # Phase 7 — acoustic speaker identity
+        "speaker_embedding", "speaker_profile",
     }
     assert {k.value for k in Kind} == expected
 

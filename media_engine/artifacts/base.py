@@ -33,6 +33,8 @@ class Kind(StrEnum):
     MarkdownArtifact = "markdown"
     Document = "document"
     WebPage = "webpage"
+    SpeakerEmbedding = "speaker_embedding"
+    SpeakerProfile = "speaker_profile"
 
 
 _HASH_CHUNK_SIZE = 1024 * 1024  # 1 MB

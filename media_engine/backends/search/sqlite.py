@@ -18,9 +18,7 @@ runs the brute-force cosine query.
 
 from __future__ import annotations
 
-import array
 import json
-import math
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +39,9 @@ from media_engine.backends import (
     BackendRequirements,
     register_backend,
 )
+from media_engine.backends._vec import cosine as _cosine
+from media_engine.backends._vec import pack as _pack
+from media_engine.backends._vec import unpack as _unpack
 from media_engine.ops import CostEstimate, OperationContext
 from media_engine.ops.search.semantic import (
     OP_NAME,
@@ -75,27 +76,6 @@ def _connect(perm_store: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(_index_path(perm_store))
     conn.executescript(_SCHEMA)
     return conn
-
-
-def _pack(vector: list[float]) -> bytes:
-    return array.array("f", vector).tobytes()
-
-
-def _unpack(blob: bytes, dims: int) -> list[float]:
-    arr = array.array("f")
-    arr.frombytes(blob)
-    return list(arr[:dims])
-
-
-def _cosine(a: list[float], b: list[float]) -> float:
-    if not a or not b or len(a) != len(b):
-        return 0.0
-    dot = math.fsum(x * y for x, y in zip(a, b, strict=True))
-    na = math.sqrt(math.fsum(x * x for x in a))
-    nb = math.sqrt(math.fsum(y * y for y in b))
-    if na == 0.0 or nb == 0.0:
-        return 0.0
-    return dot / (na * nb)
 
 
 def _sync(conn: sqlite3.Connection, cache: Any, namespace: str) -> None:

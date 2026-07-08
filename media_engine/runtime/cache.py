@@ -35,7 +35,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import Pool
 
 from media_engine.artifacts import AnyArtifact, Kind
-from media_engine.artifacts.analysis import Analysis, Embedding, SessionAnalysis
+from media_engine.artifacts.analysis import (
+    Analysis,
+    Embedding,
+    SessionAnalysis,
+    SpeakerEmbedding,
+    SpeakerProfile,
+)
 from media_engine.artifacts.media import Audio, FrameSet, Image, Video
 from media_engine.artifacts.text import (
     Chunks,
@@ -64,6 +70,8 @@ _KIND_TO_CLASS: dict[Kind, type[AnyArtifact]] = {
     Kind.MarkdownArtifact: MarkdownArtifact,
     Kind.Document: Document,
     Kind.WebPage: WebPage,
+    Kind.SpeakerEmbedding: SpeakerEmbedding,
+    Kind.SpeakerProfile: SpeakerProfile,
 }
 
 
