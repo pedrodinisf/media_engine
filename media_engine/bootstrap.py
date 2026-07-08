@@ -54,6 +54,7 @@ def _op_classes() -> list[type]:
     from media_engine.ops.search.fulltext import SearchFulltext
     from media_engine.ops.search.hybrid import SearchHybrid
     from media_engine.ops.search.semantic import SearchSemantic
+    from media_engine.ops.speakers.embed_voice import SpeakersEmbedVoice
     from media_engine.ops.speakers.identify import SpeakersIdentify
     from media_engine.ops.transcript.merge import TranscriptMerge
     from media_engine.ops.transcript.parse import TranscriptParse
@@ -91,6 +92,7 @@ def _op_classes() -> list[type]:
         SearchFulltext,
         SearchHybrid,
         SearchSemantic,
+        SpeakersEmbedVoice,
         SpeakersIdentify,
         TranscriptMerge,
         TranscriptParse,
@@ -168,6 +170,13 @@ def _backend_classes() -> list[type]:
             PyannoteDiarizeBackend,
         )
         classes.append(PyannoteDiarizeBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.embed_voice.pyannote import (
+            PyannoteEmbedVoiceBackend,
+        )
+        classes.append(PyannoteEmbedVoiceBackend)
     except ImportError:
         pass
     try:
