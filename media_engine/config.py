@@ -82,6 +82,18 @@ class EngineConfig(BaseSettings):
     # Garbage-collect orphan workdirs older than this many hours
     # (also used by ``med storage gc --workdirs``).
     gc_workdir_retention_hours: int = 24
+    # Phase 7 — acoustic speaker identity, privacy-by-default. Voice
+    # fingerprints are biometric data, so both are OFF by default:
+    #   * ``speaker_storage_enabled`` — gate persisting SpeakerProfile
+    #     centroids to the fingerprint DB (``speakers.cluster`` still runs
+    #     and returns profiles, it just doesn't write them). Reconciliation
+    #     against saved profiles also requires this.
+    #   * ``speaker_export_enabled`` — gate the ``speakers.*`` ops over the
+    #     REST ``/run`` surface (403 when off). MCP already hides them by
+    #     default (not in the read-only allow-set).
+    # Env: MEDIA_ENGINE_SPEAKER_STORAGE_ENABLED / _SPEAKER_EXPORT_ENABLED.
+    speaker_storage_enabled: bool = False
+    speaker_export_enabled: bool = False
     # Phase 6: cap on a single ``POST /acquire/upload`` body to prevent
     # a malicious client from filling the disk through the new web-UI
     # multipart endpoint. The upload streams to a tmp file and aborts
