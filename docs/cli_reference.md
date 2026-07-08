@@ -18,7 +18,7 @@ self-describing); this doc exists to give you a one-page survey.
 
 | Command         | Purpose                                              |
 | --------------- | ---------------------------------------------------- |
-| `med ops`       | List all 34 registered ops, kinds, default backends. |
+| `med ops`       | List all 38 registered ops, kinds, default backends. |
 | `med config`    | Print the effective `EngineConfig` (post env-var merge). |
 | `med ls`        | List artifacts in the cache (paginated; filter by kind / namespace). |
 | `med show <id>` | Pretty-print one artifact's metadata + lineage refs. |
@@ -188,6 +188,26 @@ export MEDIA_ENGINE_DB_URL=postgresql+psycopg://user:pw@host/db
 uv run med db migrate
 ```
 
+## Speakers (Phase 7)
+
+Acoustic speaker identity — voice fingerprints → stable cross-recording ids.
+Storage is opt-in per namespace (`speaker_storage_enabled`); the acoustic ops
+are hidden from MCP and gated off REST unless `speaker_export_enabled`.
+
+| Command  | Purpose                                                |
+| -------- | ------------------------------------------------------ |
+| `med speakers embed-voice <audio-id> --diarization <diar-id>` | Embed each diarization turn into a voice fingerprint (`speakers.embed_voice`). |
+| `med speakers cluster <embedding-id...>` | Cluster fingerprints into stable `Speaker_<sha8>` profiles (`speakers.cluster`). |
+| `med speakers match <embedding-id> [--top-k N]` | Rank saved voices by similarity to a query (`speakers.match`). |
+| `med speakers purge [--namespace NS] --yes` | Hard-delete a namespace's artifacts, runs, and voice fingerprints. |
+
+```bash
+uv run med run audio.transcribe_diarized --input <audio-id>   # get a Diarization
+uv run med speakers embed-voice <audio-id> --diarization <diar-id>
+uv run med speakers cluster <embedding-id>
+uv run med speakers match <embedding-id> --top-k 5
+```
+
 ## Storage
 
 | Command  | Purpose                                                |
@@ -234,3 +254,17 @@ The CLI loads `~/.config/media_engine/config.toml` (path overridable via
 `--config`), then layers `MEDIA_ENGINE_*` env vars on top. The
 authoritative key list is `med config` (which prints the merged result)
 and the `EngineConfig` Pydantic model in `media_engine/config.py`.
+
+Common keys (config.toml key ↔ `MEDIA_ENGINE_*` env var):
+
+| Key | Purpose |
+| --- | ------- |
+| `permanent_store` | Where artifacts + `cache.db` live. Point this at a roomy volume to keep large files off a small system drive; the disk guard checks *this* filesystem. |
+| `workdir` | Per-job scratch (extracted audio, sampled frames, HLS segments). Put it on the same big volume so a large job can't fill the system drive. |
+| `min_free_gb` | Pre-op disk guard (default 20). The engine refuses to start an op when `permanent_store` has less than this free. |
+| `speaker_storage_enabled` / `speaker_export_enabled` | Phase-7 biometric gates — persist voice fingerprints / expose acoustic `speakers.*` ops over REST. Both default off. |
+
+> Model weights are cached wherever `HF_HOME` points (HuggingFace's own env
+> var); if it's unset, the engine defaults it to `<models_dir>/huggingface`
+> under `permanent_store`. Set `HF_HOME` to a large volume to keep multi-GB
+> model downloads off the system drive.

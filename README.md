@@ -50,9 +50,9 @@ flowchart TB
         cache -->|miss| dispatch["Dispatch op to backend<br/>resource-limited · events streamed"]
     end
 
-    ops["🧩 35 capability-named ops<br/>audio · video · image · frames · intelligence · search · report · …"]
-    bk["🔧 30 swappable backends<br/>mlx-whisper · pyannote · gemini · claude · yt-dlp · pgvector · ffmpeg"]
-    art[("🗃️ 14 typed artifact kinds<br/>content-addressed store + cache.db")]
+    ops["🧩 38 capability-named ops<br/>audio · video · image · frames · intelligence · search · speakers · report · …"]
+    bk["🔧 34 swappable backends<br/>mlx-whisper · pyannote · hdbscan · gemini · claude · yt-dlp · pgvector · ffmpeg"]
+    art[("🗃️ 16 typed artifact kinds<br/>content-addressed store + cache.db")]
 
     user --> T --> E
     dispatch --> ops --> bk --> art
@@ -62,7 +62,7 @@ flowchart TB
 
 ## ✨ What it can do
 
-**35 capability-named operations** across 15 groups — each one swappable, cacheable, and exposed on every transport:
+**38 capability-named operations** across 15 groups — each one swappable, cacheable, and exposed on every transport:
 
 | | Group | Operations |
 |:--:|---|---|
@@ -129,7 +129,7 @@ Optional-dependency extras keep the import surface lean and gate ML libraries be
 
 ```bash
 # What's available
-uv run med ops                       # all 35 ops
+uv run med ops                       # all 38 ops
 uv run med profile ls                # 10 bundled profiles
 uv run med config                    # effective config
 
@@ -194,10 +194,10 @@ The engine is designed to be extended in minutes — a new op or backend is pick
 
 ## 🚦 Status
 
-**v0.7.0 (2026-05-26), Phase 6.7.** Two bundled shipments: live observability (every op emits a heartbeat with RAM + ETA every 2s; a Logs tab streams subprocess/logger output live in the Web UI) and **`video.comprehend`** — a composite op that fans out per-frame VLM calls, runs diarized transcription in parallel, and fuses both timelines into a single SOTA-LLM call. See [`CHANGELOG.md`](CHANGELOG.md) for the full per-release history.
+**v0.8.0 (2026-07-08), Phase 7 — acoustic speaker identity.** Voice fingerprints per diarization turn (`speakers.embed_voice`), HDBSCAN clustering into **stable** `Speaker_<sha8>` ids that reconcile the same voice across recordings (`speakers.cluster`), and cosine lookup against a namespace-scoped fingerprint DB (`speakers.match`, sqlite + pgvector). Privacy-by-default: fingerprint storage and REST export are both opt-in (biometric), and `med speakers purge` hard-deletes a namespace. See [`docs/phase-7.md`](docs/phase-7.md) and [`CHANGELOG.md`](CHANGELOG.md) for the full per-release history.
 
-**Quality bar:** 1050 passing tests (6 skipped / 24 deselected behind hardware-, API-key-, and external-tool-gated markers), `ruff` clean, `pyright --strict` clean, and a 70-test frontend suite (`svelte-check` 0/0 on 582 files) — all green on the actual CI runners (`.github/workflows/ci.yml`), not just locally. **35 ops · 30 backends · 14 artifact kinds · 6 transports.**
+**Quality bar:** 1116 passing tests (27 skipped behind hardware-, API-key-, and external-tool-gated markers), `ruff` clean, `pyright --strict` clean, and a 70-test frontend suite (`svelte-check` 0/0 on 582 files) — all green on the actual CI runners (`.github/workflows/ci.yml`), not just locally. **38 ops · 34 backends · 16 artifact kinds · 6 transports.**
 
-**Next — Phase 7:** acoustic speaker identity (`speakers.embed_voice` + `speakers.cluster` + `speakers.match`, a voice-fingerprint DB reusing the pgvector backend). See the roadmap in [`CLAUDE.md`](CLAUDE.md).
+**Previously — Phase 6.7:** live observability (every op emits a heartbeat with RAM + ETA every 2s; a Logs tab streams subprocess/logger output live in the Web UI) and **`video.comprehend`**, a composite op fusing per-frame VLM + diarized transcript into a single SOTA-LLM call. See the roadmap in [`CLAUDE.md`](CLAUDE.md).
 
 *Semver applies from v1.0 (once the REST surface freezes). Until then, 0.x bumps freely with best-effort backwards compatibility.*

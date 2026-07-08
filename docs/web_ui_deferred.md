@@ -2,8 +2,9 @@
 
 Items consciously excluded from Phase 6 v1 (commits 39–50). Each one
 has a recorded reason for the deferral and a sketch of what bringing it
-in would entail. Revisit after Phase 6 closes and before Phase 7
-(acoustic speaker identity) lands.
+in would entail. Phase 7 (acoustic speaker identity) has since shipped
+(v0.8.0) — its *engine* side is done; only the Web-UI surface for it
+(below) remains deferred.
 
 Source of truth: this file. The plan file
 (`~/.claude/plans/you-are-resuming-goofy-spark.md` §10) and the project
@@ -133,15 +134,20 @@ memory (`memory/web_ui_v1_deferred.md`) reference here.
 
 ### Acoustic speaker identity UI (`speakers.embed_voice`, `cluster`,
 ### `match`, `SpeakerEmbedding` + `SpeakerProfile`)
-- **Status:** out (Phase 7 territory)
-- **Why:** Phase 6 ships zero speaker-DB UI beyond what the
+- **Status:** UI still out — but the trigger has fired (Phase 7 shipped
+  in v0.8.0). The ops (`speakers.embed_voice` / `cluster` / `match`),
+  backends, and `SpeakerEmbedding` / `SpeakerProfile` kinds now exist and
+  are usable via CLI (`med speakers …`) + REST; only the dedicated Web-UI
+  surface remains deferred.
+- **Why:** Phase 6 shipped zero speaker-DB UI beyond what the
   schema-driven form renders for the existing `speakers.identify` (the
   name-CSV fuzzy match from Phase 5). The acoustic ops + new artifact
-  kinds are Phase 7's scope (plan §12.6).
-- **Bring-in trigger:** Phase 7 lands. Then add: `SpeakerEmbedding` +
-  `SpeakerProfile` preview components (likely a centroid + members
+  kinds landed in Phase 7 without bespoke UI.
+- **Bring-in trigger:** fired. Remaining UI work to add: `SpeakerEmbedding`
+  + `SpeakerProfile` preview components (likely a centroid + members
   list), a `/ui/speakers` route for cross-recording cluster browsing
-  + `display_name` editing, a privacy-respecting purge button.
+  + `display_name` editing, a privacy-respecting purge button (the
+  engine's `med speakers purge` / `Cache.purge_namespace` already exists).
 
 ---
 

@@ -1,6 +1,6 @@
 # media_engine — Architecture
 
-> Comprehensive reference for the engine as built (Phases 0–2 complete,
+> Comprehensive reference for the engine as built (Phases 0–7 complete,
 > commits 1–22 + audit hardening). The commit-by-commit roadmap and
 > capability charter live in the implementation plan
 > (`~/.claude/plans/goofy-gathering-beaver.md`); this document describes
@@ -97,7 +97,7 @@ sub-models once shapes stabilize.
 
 **Kinds:** Video, Audio, Image, FrameSet, Transcript, Diarization,
 OCRText, Chunks, Embedding, Analysis, SessionAnalysis, MarkdownArtifact,
-Document, WebPage.
+Document, WebPage, SpeakerEmbedding, SpeakerProfile.
 
 **Why content addressing:** the cache key *is* the identity. Re-running
 an op with identical inputs/params is free and returns the byte-identical
@@ -204,7 +204,7 @@ in-memory (`finalize_extract_data`).
 > never GC-visible). The `extract_invoke` split removes persistence from
 > the per-window path entirely.
 
-### 4.4 Op catalog (Phases 0–6.7 complete, 35 ops)
+### 4.4 Op catalog (Phases 0–7 complete, 38 ops)
 
 | Group | Ops | Backend layer |
 |---|---|---|
@@ -214,13 +214,15 @@ in-memory (`finalize_extract_data`).
 | document | parse | pymupdf (unstructured deferred) |
 | web | fetch | httpx (static); playwright (render_js=True) |
 | search | semantic, fulltext, hybrid | semantic: sqlite / pgvector · fulltext: sqlite-fts5 / postgres-tsvector · hybrid: composite (RRF) |
-| video | extract_audio, trim, sample_frames, multimodal | sample_frames: ffmpeg-uniform/pyscenedetect · multimodal: gemini/vllm-mlx |
+| video | extract_audio, trim, sample_frames, multimodal, comprehend | sample_frames: ffmpeg-uniform/pyscenedetect · multimodal: gemini/vllm-mlx · comprehend: composite |
 | audio | transcribe, detect_language, diarize, transcribe_diarized | transcribe/detect: mlx-whisper · diarize: pyannote · t_d: composite |
 | frames | subsample, analyze, compare | analyze: gemini/vllm-mlx · compare: gemini |
 | image | describe, ocr, classify | describe: gemini · ocr: rapidocr/gemini-vision · classify: open-clip/gemini |
 | chunk | semantic | default (nltk) |
 | embed | text | sentence-transformers |
 | intelligence | extract, summarize, classify, analyze | extract: mlx-lm/claude/gemini · others: composite |
+| report | session, zeitgeist | — (pure-Python; profile-driven report renderers) |
+| speakers | identify, embed_voice, cluster, match | identify: — (name-CSV fuzzy) · embed_voice: pyannote · cluster: hdbscan · match: sqlite / pgvector |
 
 ---
 
@@ -488,7 +490,7 @@ media_engine/
 ├── config.py              pydantic-settings, MEDIA_ENGINE_* env, config.toml
 ├── logging_setup.py       text default, JSON via MEDIA_ENGINE_LOG_FORMAT
 ├── artifacts/             base (Kind/Artifact/hashing) · media · text · analysis
-├── ops/                   _base · _registry · <group>/<verb>.py (35 ops)
+├── ops/                   _base · _registry · <group>/<verb>.py (38 ops)
 ├── backends/              _base · _pricing · _gemini_vision · <group>_<verb>/<provider>.py
 ├── runtime/               engine · cache · storage · dag · retry · events
 │                          cost_tracker · lineage · model_pool · server_manager
@@ -563,9 +565,9 @@ instead of treating them as settable strings — the validator
 already overwrote any client value, so this is purely a UX
 clarification; the regenerated ``docs/openapi.json`` +
 ``docs/mcp_tools.json`` reflect both markers.
-**34 ops.** Suite: 886 passed / 29 skipped (dependency/API-key/network
-gated); `ruff` and strict `pyright` clean. Frontend: 54 Vitest unit
-tests across 8 suites, svelte-check 0/0 on 571 files.
+**38 ops.** Suite: 1116 passed / 27 skipped (dependency/API-key/network
+gated); `ruff` and strict `pyright` clean. Frontend: 70 Vitest unit
+tests, svelte-check 0/0 on 582 files.
 
 > *Charter deviation (commit 27).* The plan §3 names the semantic
 > backend ``sqlite-vss`` (loadable extension). We ship a plain SQLite
@@ -976,7 +978,7 @@ audit — validate string-loader, composer debounce, source field,
 rename guard`, `fix(phase-6): post-commit-49 audit — cache reuse,
 N+1 collapse, drift guard`.
 
-Phases 0–6 are complete; v0.6.0 is the current release. Phase 6
+Phases 0–7 are complete; v0.8.0 is the current release. Phase 6
 (local-first Web UI) closed with commits 39–50 + three audit-fix
 passes (post-46, post-48, post-49) + two docs syncs in the
 release window. Commit 50 shipped the docs refresh, the six
@@ -1072,18 +1074,18 @@ upgrading an existing deployment must run `med db migrate` to apply
 on a pre-migration DB (the live stream still works because the
 client-side snake_case fix is schema-independent).
 
-After Phase 6.5, one further phase is formalised in plan §12.6 and
-queued post-v0.6.x:
+The last formalised phase (plan §12.6), now shipped:
 
-- **Phase 7 — Acoustic speaker identity** (commits 51–54). Voice
+- **Phase 7 — Acoustic speaker identity** *(shipped — v0.8.0)*. Voice
   fingerprinting on top of `audio.diarize`. New ops:
   `speakers.embed_voice`, `speakers.cluster` (HDBSCAN cross-
-  recording), `speakers.match` (cosine vs a fingerprint DB,
-  reusing the pgvector backend). New artifact kinds:
-  `SpeakerEmbedding`, `SpeakerProfile`. Stable `Speaker_<sha8>`
-  ids that re-identify the same voice across recordings without a
-  pre-built name DB. Privacy-by-default: namespace-scoped storage,
-  per-namespace purge, MCP/REST opt-out.
+  recording), `speakers.match` (cosine vs a fingerprint DB, sqlite +
+  pgvector backends). New artifact kinds: `SpeakerEmbedding`,
+  `SpeakerProfile`. Stable `Speaker_<sha8>` ids that re-identify the
+  same voice across recordings without a pre-built name DB, reconciled
+  against saved profiles via a running-mean centroid. Privacy-by-
+  default: opt-in namespace-scoped storage, per-namespace purge,
+  MCP hidden + REST opt-out. See `docs/phase-7.md`.
 
 ---
 
