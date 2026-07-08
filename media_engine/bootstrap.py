@@ -54,7 +54,10 @@ def _op_classes() -> list[type]:
     from media_engine.ops.search.fulltext import SearchFulltext
     from media_engine.ops.search.hybrid import SearchHybrid
     from media_engine.ops.search.semantic import SearchSemantic
+    from media_engine.ops.speakers.cluster import SpeakersCluster
+    from media_engine.ops.speakers.embed_voice import SpeakersEmbedVoice
     from media_engine.ops.speakers.identify import SpeakersIdentify
+    from media_engine.ops.speakers.match import SpeakersMatch
     from media_engine.ops.transcript.merge import TranscriptMerge
     from media_engine.ops.transcript.parse import TranscriptParse
     from media_engine.ops.video.comprehend import VideoComprehend
@@ -91,7 +94,10 @@ def _op_classes() -> list[type]:
         SearchFulltext,
         SearchHybrid,
         SearchSemantic,
+        SpeakersCluster,
+        SpeakersEmbedVoice,
         SpeakersIdentify,
+        SpeakersMatch,
         TranscriptMerge,
         TranscriptParse,
         VideoComprehend,
@@ -114,6 +120,7 @@ def _backend_classes() -> list[type]:
     from media_engine.backends.frames_analyze.vllm_mlx import (
         VllmMlxFramesAnalyzeBackend,
     )
+    from media_engine.backends.match.sqlite import SqliteMatchBackend
     from media_engine.backends.sample_frames.ffmpeg_uniform import (
         FfmpegUniformBackend,
     )
@@ -134,6 +141,7 @@ def _backend_classes() -> list[type]:
         HttpxWebFetchBackend,
         SqliteSemanticBackend,
         SqliteFts5Backend,
+        SqliteMatchBackend,
         MlxWhisperTranscribeBackend,
         MlxWhisperDetectLanguageBackend,
         FfmpegUniformBackend,
@@ -168,6 +176,18 @@ def _backend_classes() -> list[type]:
             PyannoteDiarizeBackend,
         )
         classes.append(PyannoteDiarizeBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.embed_voice.pyannote import (
+            PyannoteEmbedVoiceBackend,
+        )
+        classes.append(PyannoteEmbedVoiceBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.cluster.hdbscan import HdbscanClusterBackend
+        classes.append(HdbscanClusterBackend)
     except ImportError:
         pass
     try:
@@ -269,6 +289,11 @@ def _backend_classes() -> list[type]:
             PgVectorSemanticBackend,
         )
         classes.append(PgVectorSemanticBackend)
+    except ImportError:
+        pass
+    try:
+        from media_engine.backends.match.pgvector import PgvectorMatchBackend
+        classes.append(PgvectorMatchBackend)
     except ImportError:
         pass
     try:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
@@ -374,6 +375,38 @@ class ConfigFilesResponse(BaseModel):
 router = APIRouter()
 
 
+def _is_gated_speaker_op(op_name: str) -> bool:
+    """True for the Phase-7 acoustic speaker ops that are biometric.
+
+    ``speakers.identify`` (name-CSV fuzzy match) is not biometric and stays
+    reachable; ``embed_voice`` / ``cluster`` / ``match`` read/write voice
+    fingerprints and are gated off REST unless ``speaker_export_enabled``.
+    """
+    return op_name.startswith("speakers.") and op_name != "speakers.identify"
+
+
+def _guard_speaker_export(op_names: Iterable[str], state: AppState) -> None:
+    """403 if any op is a gated acoustic speaker op and export is disabled.
+
+    Enforced on *every* op-submitting surface (``/run`` and ``/pipelines``) so
+    the privacy gate can't be bypassed by wrapping a ``speakers.*`` op in a
+    pipeline DAG.
+    """
+    if state.engine.config.speaker_export_enabled:
+        return
+    gated = sorted({op for op in op_names if _is_gated_speaker_op(op)})
+    if gated:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"{', '.join(gated)} disabled over REST. Acoustic speaker "
+                "operations handle biometric voice data; set "
+                "speaker_export_enabled = true (or "
+                "MEDIA_ENGINE_SPEAKER_EXPORT_ENABLED=1) to allow them."
+            ),
+        )
+
+
 # ─────────────────────────────────────────────────────────────────
 # /run — single op (async)
 # ─────────────────────────────────────────────────────────────────
@@ -387,6 +420,9 @@ async def post_run(
 ) -> JobAck:
     if not OpRegistry.has(body.op):
         raise HTTPException(status_code=400, detail=f"unknown op {body.op!r}")
+    # Phase 7 privacy: gate the acoustic speaker ops off REST unless the
+    # operator opts in. Discovery (GET /operations) still lists them.
+    _guard_speaker_export([body.op], state)
     if body.backend is not None and not BackendRegistry.has(body.op, body.backend):
         raise HTTPException(
             status_code=400,
@@ -675,6 +711,14 @@ async def post_pipeline(
                 tmp_path.unlink()
             with _ctx.suppress(Exception):
                 tmp.rmdir()
+
+    # Phase-7 privacy gate, enforced on the declared ops *before* we resolve
+    # sources or compile — a pipeline DAG must not be a way to smuggle a gated
+    # acoustic speaker op past the export flag.
+    if isinstance(profile, PipelineProfile):
+        _guard_speaker_export([n.op for n in profile.graph], state)
+    else:
+        _guard_speaker_export([profile.default_op], state)
 
     # Resolve sources via the cache (the API surface speaks artifact ids).
     sources: dict[str, AnyArtifact] = {}

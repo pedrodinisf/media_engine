@@ -13,6 +13,18 @@ Repo hygiene pass ahead of a public/portfolio release, plus five small
 
 ### Added
 
+- **Phase 7 — acoustic speaker identity** (v0.8.0). Three new ops:
+  `speakers.embed_voice` (per-diarization-turn voice fingerprints via
+  pyannote embedding), `speakers.cluster` (HDBSCAN → stable
+  `Speaker_<sha8>` ids, reconciled against saved profiles), and
+  `speakers.match` (cosine lookup vs the fingerprint DB; sqlite +
+  pgvector backends). New artifact kinds `SpeakerEmbedding` /
+  `SpeakerProfile`, a namespace-scoped `fingerprints.db` store,
+  `med speakers` CLI group, and `profiles/examples/speaker-id.yaml`.
+  Privacy-by-default: `speaker_storage_enabled` / `speaker_export_enabled`
+  both off, MCP hidden, `med speakers purge` for per-namespace delete.
+  New `cluster` extra (hdbscan + scikit-learn + numpy). See
+  `docs/phase-7.md`.
 - **CI** (`.github/workflows/ci.yml`) — ubuntu-latest jobs for
   `ruff check` / `pyright media_engine` / `pytest` (Python) and
   `svelte-check` / `vitest` (frontend web/).

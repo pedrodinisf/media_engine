@@ -78,7 +78,7 @@ flowchart TB
 | 🧮 | **Embed** | `text` (sentence-transformers) |
 | 🧠 | **Intelligence** | `extract` · `summarize` · `classify` · `analyze` |
 | 🔎 | **Search** | `fulltext` · `semantic` · `hybrid` (RRF fusion) |
-| 🗣️ | **Speakers** | `identify` (name-DB fuzzy match) |
+| 🗣️ | **Speakers** | `identify` (name-DB fuzzy match) · `embed_voice` · `cluster` · `match` (acoustic voice fingerprints → stable cross-recording ids) |
 | 📊 | **Report** | `session` · `zeitgeist` (Jinja-templated) |
 
 Plus **10 bundled profiles** (`profiles/`) — an `analysis-full` reference pipeline, five prompt-based lenses (`video-knowledge`, `technical-academic`, `diy-electronics`, `cooking-recipes`, `general-custom`), and four pipeline examples (`transcribe-and-diarize`, `url-to-summary`, `teams-meeting`, `video-comprehend`).

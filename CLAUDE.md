@@ -77,8 +77,9 @@ YAML frontmatter) or pipeline (YAML DAG).
   live `med web start`
 - `uv run pyright media_engine` — strict typecheck
 - `uv run ruff check` / `uv run ruff format` — lint/format
-- `uv run med ops` — list registered operations (35 as of Phase 6.7;
-  `video.comprehend` is the most recent addition)
+- `uv run med ops` — list registered operations (38 as of Phase 7;
+  `speakers.embed_voice` / `speakers.cluster` / `speakers.match` are the
+  most recent additions)
 - `uv run med config` — print effective configuration
 - `uv run med doctor [--op N] [--json]` — declarative dep map per op +
   backend. Walks every registered op, evaluates each backend's
@@ -117,6 +118,12 @@ YAML frontmatter) or pipeline (YAML DAG).
   [--param output_kind=structured|prose]` — Phase-6.7 composite: per-
   frame VLM + diarized transcript fused into one SOTA-LLM call. See
   `docs/phase-6-7.md` + `profiles/examples/video-comprehend.yaml`.
+- `uv run med speakers embed-voice <audio-id> --diarization <diar-id>` /
+  `med speakers cluster <embedding-id...>` / `med speakers match <embedding-id>
+  [--top-k N]` / `med speakers purge [--namespace NS] --yes` — Phase-7
+  acoustic speaker identity. Storage + REST export are opt-in
+  (`speaker_storage_enabled` / `speaker_export_enabled`; MCP hidden by
+  default). See `docs/phase-7.md` + `profiles/examples/speaker-id.yaml`.
 - `uv run med run <op> [--input ID] [--param K=V] [--backend B] [--schema P]`
   — generic single-op runner (cost preview, `--yes` to skip the prompt)
 - `uv run med batch <file> [--op] [--input-arg] [--param]` — fan an op
@@ -253,21 +260,26 @@ Phases are formalized in `~/.claude/plans/goofy-gathering-beaver.md`
   fan-out, timeline merge, derived-id determinism, output_kind
   routing, hardware gate).
 
-**Roadmap:**
-
-- **Phase 7 — Acoustic speaker identity** (commits 51–54, ~1,500
-  LOC). Extends Phase 5's name-DB `speakers.identify` with voice
+- **Phase 7 — Acoustic speaker identity** *(shipped — current version
+  `0.8.0`)*. Extends Phase 5's name-DB `speakers.identify` with voice
   fingerprints. New ops: `speakers.embed_voice` (pyannote-embedding
-  per Diarization turn), `speakers.cluster` (HDBSCAN cross-
-  recording clustering → stable `Speaker_<sha8>` ids), `speakers.match`
-  (cosine similarity vs a fingerprint DB, reusing
-  pgvector/sqlite-vss). New artifact kinds: `SpeakerEmbedding`,
-  `SpeakerProfile`. Privacy-by-default: namespace-scoped storage,
-  per-namespace purge, opt-out for MCP/REST export. Same voice
-  across different recordings gets the same stable id without
-  needing a pre-built name database.
+  per Diarization turn → one `SpeakerEmbedding` per recording),
+  `speakers.cluster` (HDBSCAN cross-recording clustering → stable
+  `Speaker_<sha8>` ids, reconciled against saved profiles by cosine ≥
+  `reconcile_threshold` via a running-mean centroid), `speakers.match`
+  (cosine similarity vs the fingerprint DB; sqlite + pgvector
+  backends). New artifact kinds: `SpeakerEmbedding`, `SpeakerProfile`.
+  Fingerprint store is a namespace-scoped `fingerprints.db` sidecar
+  (Postgres mirror when `MEDIA_ENGINE_SPEAKER_DB_URL` is set). Privacy-
+  by-default: `speaker_storage_enabled` / `speaker_export_enabled` both
+  off (biometric), MCP hidden by default, `med speakers purge` +
+  `Cache.purge_namespace` for per-namespace hard-delete. New `cluster`
+  extra (hdbscan + scikit-learn + numpy); `embed_voice` reuses the
+  `diarize` extra. Default profile at `profiles/examples/speaker-id.yaml`;
+  ledger at `docs/phase-7.md`. Same voice across recordings gets the
+  same stable id with no name database.
 
 When adding new features or revisiting plans, check whether the work
-fits Phase 5 / 6 / 7 scope before opening a new phase. Phase 5 stays
-focused on domain profiles + reports + the existing name-match
-`speakers.identify`; acoustic identity is explicitly Phase 7.
+fits existing phase scope before opening a new phase. Phase 5 stays
+focused on domain profiles + reports + the name-match
+`speakers.identify`; acoustic identity shipped as Phase 7.

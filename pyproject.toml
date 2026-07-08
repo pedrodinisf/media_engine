@@ -1,6 +1,6 @@
 [project]
 name = "media_engine"
-version = "0.7.0"
+version = "0.8.0"
 description = "Universal media-processing engine — typed artifacts, composable operations, pluggable backends."
 readme = "README.md"
 license = "MIT"
@@ -37,6 +37,7 @@ acquire-url    = ["yt-dlp>=2024.5", "playwright>=1.44"]
 live           = ["pynput>=1.7"]
 document       = ["pymupdf>=1.24"]
 search         = ["sqlite-vss>=0.1.2"]
+cluster        = ["hdbscan>=0.8", "scikit-learn>=1.4", "numpy>=1.26"]
 api            = ["fastapi>=0.110", "uvicorn[standard]>=0.30", "sse-starlette>=2.1"]
 mcp            = ["mcp>=0.3"]
 postgres       = ["psycopg[binary]>=3.1", "pgvector>=0.2"]
@@ -79,6 +80,7 @@ asyncio_mode = "auto"
 markers = [
     "needs_mlx: requires mlx-whisper",
     "needs_pyannote: requires pyannote + HF_TOKEN",
+    "needs_hdbscan: requires hdbscan + scikit-learn (uv sync --extra cluster)",
     "needs_gemini: requires GEMINI_API_KEY",
     "needs_vllm: requires vllm-mlx server reachable",
     "needs_postgres: requires MEDIA_ENGINE_TEST_POSTGRES_URL",

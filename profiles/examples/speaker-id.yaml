@@ -1,0 +1,42 @@
+profile_schema_version: "1.0"
+name: speaker-id
+kind: pipeline
+description: >
+  Video → acoustic speaker fingerprints → stable cross-recording identities.
+  Extracts audio, diarizes who-spoke-when, embeds every diarization turn into a
+  voice vector (speakers.embed_voice), then clusters those vectors into stable
+  ``Speaker_<sha8>`` profiles (speakers.cluster). Run it over several recordings
+  and — with ``speaker_storage_enabled`` set — the same voice reconciles to the
+  same id across all of them, no name database required.
+
+  Then look a fresh recording up against the saved fingerprints with
+  ``med speakers match <embedding-id>``.
+
+  Requires an Apple-Silicon host with the ``diarize`` (pyannote) and ``cluster``
+  (hdbscan) extras, plus ``HF_TOKEN`` for the gated pyannote models.
+inputs:
+  - { name: source, kind: video }
+graph:
+  - id: audio
+    op: video.extract_audio
+    inputs: { in: source }
+
+  - id: diarization
+    op: audio.diarize
+    inputs: { audio: audio }
+
+  - id: embeddings
+    op: speakers.embed_voice
+    inputs: { audio: audio, diarization: diarization }
+    params:
+      model: pyannote/embedding
+      min_turn_seconds: 0.5
+
+  - id: profiles
+    op: speakers.cluster
+    inputs: { in: embeddings }
+    params:
+      min_cluster_size: 2
+      reconcile_threshold: 0.75
+      persist: true
+outputs: [profiles]

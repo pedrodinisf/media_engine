@@ -10,7 +10,13 @@ from typing import Annotated, TypeAlias
 
 from pydantic import Field
 
-from .analysis import Analysis, Embedding, SessionAnalysis
+from .analysis import (
+    Analysis,
+    Embedding,
+    SessionAnalysis,
+    SpeakerEmbedding,
+    SpeakerProfile,
+)
 from .base import (
     Artifact,
     Kind,
@@ -43,7 +49,9 @@ AnyArtifact: TypeAlias = Annotated[
     | SessionAnalysis
     | MarkdownArtifact
     | Document
-    | WebPage,
+    | WebPage
+    | SpeakerEmbedding
+    | SpeakerProfile,
     Field(discriminator="kind"),
 ]
 
@@ -62,6 +70,8 @@ __all__ = [
     "MarkdownArtifact",
     "OCRText",
     "SessionAnalysis",
+    "SpeakerEmbedding",
+    "SpeakerProfile",
     "Transcript",
     "Video",
     "WebPage",

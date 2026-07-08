@@ -80,6 +80,7 @@ _EXTRAS_CATALOG: list[tuple[str, list[str], str]] = [
     ("live", ["pynput>=1.7"], "pynput"),
     ("document", ["pymupdf>=1.24"], "fitz"),
     ("search", ["sqlite-vss>=0.1.2"], "sqlite_vss"),
+    ("cluster", ["hdbscan>=0.8", "scikit-learn>=1.4", "numpy>=1.26"], "hdbscan"),
     ("api", ["fastapi>=0.110", "uvicorn[standard]>=0.30", "sse-starlette>=2.1"], "fastapi"),
     ("mcp", ["mcp>=0.3"], "mcp"),
     ("postgres", ["psycopg[binary]>=3.1", "pgvector>=0.2"], "psycopg"),

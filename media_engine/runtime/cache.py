@@ -11,10 +11,12 @@ artifacts are the immutable in-flight representation that ops produce/consume.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -35,7 +37,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import Pool
 
 from media_engine.artifacts import AnyArtifact, Kind
-from media_engine.artifacts.analysis import Analysis, Embedding, SessionAnalysis
+from media_engine.artifacts.analysis import (
+    Analysis,
+    Embedding,
+    SessionAnalysis,
+    SpeakerEmbedding,
+    SpeakerProfile,
+)
 from media_engine.artifacts.media import Audio, FrameSet, Image, Video
 from media_engine.artifacts.text import (
     Chunks,
@@ -64,6 +72,8 @@ _KIND_TO_CLASS: dict[Kind, type[AnyArtifact]] = {
     Kind.MarkdownArtifact: MarkdownArtifact,
     Kind.Document: Document,
     Kind.WebPage: WebPage,
+    Kind.SpeakerEmbedding: SpeakerEmbedding,
+    Kind.SpeakerProfile: SpeakerProfile,
 }
 
 
@@ -467,6 +477,72 @@ class Cache:
                 row.metadata_json = json.dumps(meta, sort_keys=True)
                 updated += 1
         return updated
+
+    def purge_namespace(
+        self, namespace: str, *, permanent_store: Path | None = None
+    ) -> dict[str, int]:
+        """Delete every artifact + operation-run row in one namespace.
+
+        Phase 7 privacy control: gives an operator a hard delete for a
+        namespace's data (voice fingerprints are biometric). When
+        ``permanent_store`` is passed, the acoustic fingerprint store is
+        purged too (the SQLite sidecar plus, if configured, the Postgres
+        table). Returns ``{"artifacts": n, "runs": m, "speaker_profiles": k}``.
+        """
+        from sqlalchemy import delete, func
+
+        with self.session() as s:
+            # Collect the on-disk blob paths before dropping the rows — a
+            # privacy purge must delete the artifact *files* too (a
+            # SpeakerEmbedding sidecar holds the raw voice vectors), not
+            # just the index rows. Mirrors eviction's file+row removal.
+            paths = [
+                row.path
+                for row in s.execute(
+                    select(CachedArtifact.path).where(
+                        CachedArtifact.namespace == namespace
+                    )
+                )
+            ]
+            n_arts = len(paths)
+            n_runs = int(
+                s.execute(
+                    select(func.count())
+                    .select_from(CachedOperationRun)
+                    .where(CachedOperationRun.namespace == namespace)
+                ).scalar_one()
+            )
+            s.execute(
+                delete(CachedArtifact).where(
+                    CachedArtifact.namespace == namespace
+                )
+            )
+            s.execute(
+                delete(CachedOperationRun).where(
+                    CachedOperationRun.namespace == namespace
+                )
+            )
+
+        for p in paths:
+            with contextlib.suppress(OSError):
+                Path(p).unlink(missing_ok=True)
+
+        n_profiles = 0
+        if permanent_store is not None:
+            from media_engine.backends import _speaker_store as store
+
+            n_profiles = store.purge_namespace(permanent_store, namespace)
+            from media_engine.backends import _speaker_store_pg as pg
+
+            if pg.is_configured():
+                with contextlib.suppress(Exception):
+                    n_profiles += pg.delete_namespace(namespace)
+
+        return {
+            "artifacts": n_arts,
+            "runs": n_runs,
+            "speaker_profiles": n_profiles,
+        }
 
     def list_artifacts(
         self,
