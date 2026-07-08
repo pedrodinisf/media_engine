@@ -15,6 +15,7 @@ import json
 from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -475,6 +476,64 @@ class Cache:
                 row.metadata_json = json.dumps(meta, sort_keys=True)
                 updated += 1
         return updated
+
+    def purge_namespace(
+        self, namespace: str, *, permanent_store: Path | None = None
+    ) -> dict[str, int]:
+        """Delete every artifact + operation-run row in one namespace.
+
+        Phase 7 privacy control: gives an operator a hard delete for a
+        namespace's data (voice fingerprints are biometric). When
+        ``permanent_store`` is passed, the acoustic fingerprint store is
+        purged too (the SQLite sidecar plus, if configured, the Postgres
+        table). Returns ``{"artifacts": n, "runs": m, "speaker_profiles": k}``.
+        """
+        from sqlalchemy import delete, func
+
+        with self.session() as s:
+            n_arts = int(
+                s.execute(
+                    select(func.count())
+                    .select_from(CachedArtifact)
+                    .where(CachedArtifact.namespace == namespace)
+                ).scalar_one()
+            )
+            n_runs = int(
+                s.execute(
+                    select(func.count())
+                    .select_from(CachedOperationRun)
+                    .where(CachedOperationRun.namespace == namespace)
+                ).scalar_one()
+            )
+            s.execute(
+                delete(CachedArtifact).where(
+                    CachedArtifact.namespace == namespace
+                )
+            )
+            s.execute(
+                delete(CachedOperationRun).where(
+                    CachedOperationRun.namespace == namespace
+                )
+            )
+
+        n_profiles = 0
+        if permanent_store is not None:
+            from media_engine.backends import _speaker_store as store
+
+            n_profiles = store.purge_namespace(permanent_store, namespace)
+            from media_engine.backends import _speaker_store_pg as pg
+
+            if pg.is_configured():
+                import contextlib
+
+                with contextlib.suppress(Exception):
+                    n_profiles += pg.delete_namespace(namespace)
+
+        return {
+            "artifacts": n_arts,
+            "runs": n_runs,
+            "speaker_profiles": n_profiles,
+        }
 
     def list_artifacts(
         self,

@@ -45,6 +45,7 @@ from media_engine.cli import db as _db_cli  # noqa: E402
 from media_engine.cli import events as _events_cli  # noqa: E402
 from media_engine.cli import mcp as _mcp_cli  # noqa: E402
 from media_engine.cli import profile as _profile_cli  # noqa: E402
+from media_engine.cli import speakers as _speakers_cli  # noqa: E402
 from media_engine.cli import storage as _storage_cli  # noqa: E402
 from media_engine.cli import web as _web_cli  # noqa: E402
 from media_engine.cli.acquire_live import (  # noqa: E402
@@ -63,6 +64,7 @@ app.add_typer(_events_cli.app, name="events")
 app.add_typer(_api_cli.app, name="api")
 app.add_typer(_db_cli.app, name="db")
 app.add_typer(_storage_cli.app, name="storage")
+app.add_typer(_speakers_cli.app, name="speakers")
 app.add_typer(_web_cli.app, name="web")
 app.command("health")(cmd_health)
 app.command("ready")(cmd_ready)

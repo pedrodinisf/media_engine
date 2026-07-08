@@ -387,6 +387,24 @@ async def post_run(
 ) -> JobAck:
     if not OpRegistry.has(body.op):
         raise HTTPException(status_code=400, detail=f"unknown op {body.op!r}")
+    # Phase 7 privacy: the acoustic speaker ops write/read biometric voice
+    # fingerprints, so they're gated off the REST surface unless the operator
+    # opts in (speaker_export_enabled). Discovery (GET /operations) still
+    # lists them; only submission is blocked.
+    if (
+        body.op.startswith("speakers.")
+        and body.op != "speakers.identify"
+        and not state.engine.config.speaker_export_enabled
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"{body.op!r} is disabled over REST. Acoustic speaker "
+                "operations handle biometric voice data; set "
+                "speaker_export_enabled = true (or "
+                "MEDIA_ENGINE_SPEAKER_EXPORT_ENABLED=1) to allow them."
+            ),
+        )
     if body.backend is not None and not BackendRegistry.has(body.op, body.backend):
         raise HTTPException(
             status_code=400,
