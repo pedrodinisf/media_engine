@@ -103,7 +103,10 @@ class HdbscanClusterBackend(Backend):
     op_name = OP_NAME
     name = BACKEND_NAME
     version = BACKEND_VERSION
-    requires = BackendRequirements(services=["hdbscan", "scikit-learn"])
+    # Declare the packages the call path actually imports (hdbscan pulls in
+    # scikit-learn transitively). These resolve by importable name so
+    # ``med doctor`` reports the real status.
+    requires = BackendRequirements(services=["hdbscan", "numpy"])
 
     async def execute(
         self,
