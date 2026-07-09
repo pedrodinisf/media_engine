@@ -9,6 +9,7 @@
    */
   import { onMount } from 'svelte';
   import { ApiError, api } from '$lib/api/client';
+  import YAMLEditor from '$lib/components/profile/YAMLEditor.svelte';
   import {
     backendDetail,
     createToken,
@@ -22,6 +23,7 @@
     listSecrets,
     listTokens,
     putCatalog,
+    putConfigFiles,
     putSecrets,
     revokeToken,
     storageGC,
@@ -413,18 +415,69 @@
     return out;
   });
 
-  // ─────────────── Config files (read-only) ───────────────
+  // ─────────────── Config files (editable: config.toml + resources.yaml) ───────────────
+  // secrets.env stays read-only/masked here — it's edited in the Secrets tab.
+  type EditableConfigKey = 'config_toml' | 'resources_yaml';
   let configFiles = $state<ConfigFilesResponse | null>(null);
   let configFilesLoading = $state(false);
+  let configEdits = $state<Record<EditableConfigKey, string>>({ config_toml: '', resources_yaml: '' });
+  let configDirty = $state<Record<EditableConfigKey, boolean>>({ config_toml: false, resources_yaml: false });
+  let configSaving = $state<Record<EditableConfigKey, boolean>>({ config_toml: false, resources_yaml: false });
+  let configErrors = $state<Record<EditableConfigKey, string | null>>({ config_toml: null, resources_yaml: null });
+  let configSavedAt = $state<number | null>(null);
+
+  function seedConfigEdits(r: ConfigFilesResponse): void {
+    configEdits = { config_toml: r.config_toml.content, resources_yaml: r.resources_yaml.content };
+    configDirty = { config_toml: false, resources_yaml: false };
+    configErrors = { config_toml: null, resources_yaml: null };
+  }
 
   async function refreshConfigFiles(): Promise<void> {
     configFilesLoading = true;
     try {
-      configFiles = await getConfigFiles();
+      const r = await getConfigFiles();
+      configFiles = r;
+      seedConfigEdits(r);
     } catch (e) {
       error = e instanceof ApiError ? e.detail : String(e);
     } finally {
       configFilesLoading = false;
+    }
+  }
+
+  function editConfig(key: EditableConfigKey, next: string): void {
+    configEdits = { ...configEdits, [key]: next };
+    configDirty = { ...configDirty, [key]: true };
+    configErrors = { ...configErrors, [key]: null };
+  }
+
+  async function saveConfigFile(key: EditableConfigKey): Promise<void> {
+    configSaving = { ...configSaving, [key]: true };
+    configErrors = { ...configErrors, [key]: null };
+    try {
+      const r = await putConfigFiles({ [key]: configEdits[key] });
+      configFiles = r;
+      configEdits = { ...configEdits, [key]: r[key].content };
+      configDirty = { ...configDirty, [key]: false };
+      configSavedAt = Date.now();
+    } catch (e) {
+      // 422 carries the parse/validation message in ApiError.detail — surface
+      // it inline next to the editor rather than the page-level error banner.
+      configErrors = { ...configErrors, [key]: e instanceof ApiError ? e.detail : String(e) };
+    } finally {
+      configSaving = { ...configSaving, [key]: false };
+    }
+  }
+
+  async function reloadConfigFile(key: EditableConfigKey): Promise<void> {
+    try {
+      const r = await getConfigFiles();
+      configFiles = r;
+      configEdits = { ...configEdits, [key]: r[key].content };
+      configDirty = { ...configDirty, [key]: false };
+      configErrors = { ...configErrors, [key]: null };
+    } catch (e) {
+      error = e instanceof ApiError ? e.detail : String(e);
     }
   }
 
@@ -1184,14 +1237,14 @@
   </section>
 {/if}
 
-<!-- ─────────────── CONFIG · read-only ─────────────── -->
+<!-- ─────────────── CONFIG · editable (config.toml + resources.yaml) ─────────────── -->
 {#if activeTab === 'config'}
   <section class="p-4 rounded" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
     <h2 class="text-xs font-semibold uppercase mb-1" style="color: var(--text-muted);">Effective resources</h2>
     <p class="text-xs mb-3" style="color: var(--text-secondary);">
       Resources declared by each registered op (the engine maps declared resource names to
-      <code class="font-mono">asyncio.Semaphore</code> capacities at boot). Inline editor for
-      <code class="font-mono">resources.yaml</code> lands in v1.x.
+      <code class="font-mono">asyncio.Semaphore</code> capacities at boot). Override them by editing
+      <code class="font-mono">resources.yaml</code> below.
     </p>
     {#if opsLoading}
       <p class="text-xs italic" style="color: var(--text-muted);">Loading…</p>
@@ -1216,39 +1269,137 @@
       </table>
     {/if}
     <p class="mt-4 text-xs" style="color: var(--text-muted);">
-      The full <code class="font-mono">EngineConfig</code> + <code class="font-mono">resources.yaml</code>
-      content is shown below (read-only). Inline editing lands in v1.x —
-      <code class="font-mono">MEDIA_ENGINE_*</code> env vars are owned by the deploy;
-      secrets live in the Secrets tab.
+      Edit <code class="font-mono">config.toml</code> and <code class="font-mono">resources.yaml</code>
+      below. Input is validated on save; a valid save is written to disk but
+      <strong>applied only on the next</strong> <code class="font-mono">med web start</code>
+      (config is read once at boot). <code class="font-mono">MEDIA_ENGINE_*</code> env vars
+      override values set here; secrets live in the Secrets tab.
     </p>
   </section>
 
   {#if configFilesLoading && !configFiles}
     <p class="text-xs italic mt-3" style="color: var(--text-muted);">Loading config files…</p>
   {:else if configFiles}
-    {#each [
-      { key: 'config_toml', label: 'config.toml', view: configFiles.config_toml },
-      { key: 'resources_yaml', label: 'resources.yaml', view: configFiles.resources_yaml },
-      { key: 'secrets_env', label: 'secrets.env (values masked)', view: configFiles.secrets_env },
-    ] as block (block.key)}
-      <section class="p-4 rounded mt-3" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
-        <div class="flex items-center justify-between mb-2">
-          <h2 class="text-xs font-semibold uppercase" style="color: var(--text-muted);">
-            {block.label}
-          </h2>
-          <code class="text-xs font-mono" style="color: var(--text-muted);">{block.view.path}</code>
-        </div>
-        {#if !block.view.exists}
-          <p class="text-xs italic" style="color: var(--text-muted);">
-            File does not exist. Defaults are used.
-          </p>
-        {:else}
-          <pre
-            class="text-xs font-mono p-3 rounded overflow-x-auto max-h-[40vh]"
-            style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-soft);"
-          >{block.view.content}</pre>
-        {/if}
-      </section>
-    {/each}
+    {#if configSavedAt}
+      <p data-testid="config-restart-banner" class="mt-3 text-xs p-2 rounded" style="color: var(--accent-green); background: var(--bg-page); border: 1px solid var(--border-soft);">
+        Saved to disk. Config is read once at boot — restart
+        <code class="font-mono">med web start</code> to apply the change.
+      </p>
+    {/if}
+
+    <!-- config.toml — editable (plain TOML; no CodeMirror TOML pack installed) -->
+    <section class="p-4 rounded mt-3" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xs font-semibold uppercase" style="color: var(--text-muted);">
+          config.toml{configDirty.config_toml ? ' •' : ''}
+        </h2>
+        <code class="text-xs font-mono" style="color: var(--text-muted);">{configFiles.config_toml.path}</code>
+      </div>
+      {#if !configFiles.config_toml.exists}
+        <p class="text-xs italic mb-2" style="color: var(--text-muted);">
+          File does not exist yet — defaults are in effect. Type below and Save to create it.
+        </p>
+      {/if}
+      <textarea
+        data-testid="config-edit-config_toml"
+        value={configEdits.config_toml}
+        oninput={(e) => editConfig('config_toml', (e.target as HTMLTextAreaElement).value)}
+        spellcheck="false"
+        class="w-full text-xs font-mono p-3 rounded"
+        style="min-height: 30vh; background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-soft);"
+      ></textarea>
+      <p class="text-xs mt-1" style="color: var(--text-muted);">
+        <code class="font-mono">MEDIA_ENGINE_*</code> env vars override values set here.
+      </p>
+      {#if configErrors.config_toml}
+        <p data-testid="config-error-config_toml" class="text-xs mt-2 p-2 rounded font-mono" style="color: var(--accent-red); background: var(--bg-page); border: 1px solid rgba(220, 38, 38, 0.35);">
+          {configErrors.config_toml}
+        </p>
+      {/if}
+      <div class="flex gap-2 mt-2">
+        <button
+          type="button"
+          data-testid="config-save-config_toml"
+          onclick={() => void saveConfigFile('config_toml')}
+          disabled={configSaving.config_toml || !configDirty.config_toml}
+          class="px-3 py-1 rounded text-xs font-semibold disabled:opacity-50"
+          style="background: var(--accent-green); color: var(--text-inverse);"
+        >{configSaving.config_toml ? 'Saving…' : 'Save'}</button>
+        <button
+          type="button"
+          onclick={() => void reloadConfigFile('config_toml')}
+          disabled={configSaving.config_toml}
+          class="px-3 py-1 rounded text-xs disabled:opacity-50"
+          style="background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border-light);"
+        >Reload from disk</button>
+      </div>
+    </section>
+
+    <!-- resources.yaml — editable (CodeMirror YAML) -->
+    <section class="p-4 rounded mt-3" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xs font-semibold uppercase" style="color: var(--text-muted);">
+          resources.yaml{configDirty.resources_yaml ? ' •' : ''}
+        </h2>
+        <code class="text-xs font-mono" style="color: var(--text-muted);">{configFiles.resources_yaml.path}</code>
+      </div>
+      {#if !configFiles.resources_yaml.exists}
+        <p class="text-xs italic mb-2" style="color: var(--text-muted);">
+          File does not exist yet — default semaphore capacities are used. Edit below and Save to create it.
+        </p>
+      {/if}
+      <YAMLEditor
+        value={configEdits.resources_yaml}
+        onChange={(next) => editConfig('resources_yaml', next)}
+        minHeight="30vh"
+      />
+      {#if configErrors.resources_yaml}
+        <p data-testid="config-error-resources_yaml" class="text-xs mt-2 p-2 rounded font-mono" style="color: var(--accent-red); background: var(--bg-page); border: 1px solid rgba(220, 38, 38, 0.35);">
+          {configErrors.resources_yaml}
+        </p>
+      {/if}
+      <div class="flex gap-2 mt-2">
+        <button
+          type="button"
+          data-testid="config-save-resources_yaml"
+          onclick={() => void saveConfigFile('resources_yaml')}
+          disabled={configSaving.resources_yaml || !configDirty.resources_yaml}
+          class="px-3 py-1 rounded text-xs font-semibold disabled:opacity-50"
+          style="background: var(--accent-green); color: var(--text-inverse);"
+        >{configSaving.resources_yaml ? 'Saving…' : 'Save'}</button>
+        <button
+          type="button"
+          onclick={() => void reloadConfigFile('resources_yaml')}
+          disabled={configSaving.resources_yaml}
+          class="px-3 py-1 rounded text-xs disabled:opacity-50"
+          style="background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border-light);"
+        >Reload from disk</button>
+      </div>
+    </section>
+
+    <!-- secrets.env — read-only/masked; edited in the Secrets tab -->
+    <section class="p-4 rounded mt-3" style="background: var(--bg-card); border: 1px solid var(--border-soft);">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xs font-semibold uppercase" style="color: var(--text-muted);">
+          secrets.env (values masked)
+        </h2>
+        <code class="text-xs font-mono" style="color: var(--text-muted);">{configFiles.secrets_env.path}</code>
+      </div>
+      {#if !configFiles.secrets_env.exists}
+        <p class="text-xs italic" style="color: var(--text-muted);">
+          File does not exist. Add secrets in the Secrets tab.
+        </p>
+      {:else}
+        <pre
+          class="text-xs font-mono p-3 rounded overflow-x-auto max-h-[30vh]"
+          style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-soft);"
+        >{configFiles.secrets_env.content}</pre>
+      {/if}
+      <p class="text-xs mt-2" style="color: var(--text-muted);">
+        Secrets are managed in the
+        <button type="button" class="underline" onclick={() => activate('secrets')} style="color: var(--text-secondary);">Secrets</button>
+        tab — they can't be written here.
+      </p>
+    </section>
   {/if}
 {/if}

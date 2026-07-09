@@ -258,7 +258,7 @@ export function putSecrets(updates: Record<string, string | null>): Promise<Secr
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Config files — read-only viewers
+// Config files — read + write
 // ─────────────────────────────────────────────────────────────────
 
 export type ConfigFileView = {
@@ -276,6 +276,21 @@ export type ConfigFilesResponse = {
 
 export function getConfigFiles(): Promise<ConfigFilesResponse> {
   return api.get<ConfigFilesResponse>('/settings/config-files');
+}
+
+/**
+ * Write `config.toml` and/or `resources.yaml` to the config dir. Only the
+ * key(s) present are written; `secrets.env` is intentionally not writable
+ * here (it has its own masked {@link putSecrets} path). The server validates
+ * before writing (TOML/YAML parse + round-trip) and returns 422 with the
+ * parse error on invalid input, writing nothing. Config is read once at
+ * boot, so callers must tell the operator to restart `med web start`.
+ */
+export function putConfigFiles(updates: {
+  config_toml?: string;
+  resources_yaml?: string;
+}): Promise<ConfigFilesResponse> {
+  return api.put<ConfigFilesResponse>('/settings/config-files', updates);
 }
 
 // ─────────────────────────────────────────────────────────────────

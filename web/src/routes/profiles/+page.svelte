@@ -214,6 +214,34 @@
           {/if}
         </a>
 
+        {#if p.digest && (p.digest.models.length > 0 || p.digest.requirement_hints.length > 0)}
+          <div class="mt-2 flex flex-wrap gap-1" data-testid="card-digest">
+            {#each p.digest.models as m (m.name)}
+              <span
+                class="text-xs font-mono px-1.5 py-0.5 rounded"
+                style="
+                  background: {m.provider === 'cloud'
+                  ? 'var(--accent-amber-soft)'
+                  : m.provider === 'local'
+                    ? 'var(--accent-green-soft)'
+                    : 'var(--bg-page)'};
+                  color: {m.provider === 'cloud'
+                  ? 'var(--accent-amber)'
+                  : m.provider === 'local'
+                    ? 'var(--accent-green)'
+                    : 'var(--text-secondary)'};"
+                title="{m.name} · {m.provider === 'cloud' ? 'Cloud API' : m.provider === 'local' ? 'Local / on-device' : 'Unknown'}"
+              >{m.name.includes('/') ? m.name.split('/').pop() : m.name}</span>
+            {/each}
+            {#each p.digest.requirement_hints as h (h)}
+              <span
+                class="text-xs px-1.5 py-0.5 rounded"
+                style="background: var(--accent-red-soft); color: var(--accent-red);"
+              >⚠ {h}</span>
+            {/each}
+          </div>
+        {/if}
+
         {#if preview !== undefined}
           <pre
             class="mt-2 text-xs font-mono p-2 rounded max-h-48 overflow-y-auto whitespace-pre-wrap"

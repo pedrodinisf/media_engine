@@ -321,13 +321,25 @@ walk stopped.
 one card per discovered profile. Each card carries name + kind chip
 (`pipeline` / `prompt`), description, source badge (🔒 bundled vs
 ✎ user — sourced from the server's `ProfileSummary.source` field,
-not a path heuristic), a lazy "body" button that fetches
+not a path heuristic), **model/provider digest badges** (Phase 8 —
+`gemini-2.5-pro (cloud) + Qwen2-VL (local)` + any `needs GEMINI_API_KEY`
+hint, from `ProfileSummary.digest`), a lazy "body" button that fetches
 `GET /profiles/{name}` once and shows the first ~30 lines of the
 body / graph, and a **"fork"** button for bundled profiles. Fork
 opens a modal asking for a kebab-case name (validated client-side
 against the same regex the server enforces), then re-`POST`s the
 profile under the new name and navigates straight into the
 workspace.
+
+Phase 8 adds, throughout the workspace: a **summary strip** (all
+models grouped by provider + requirement gaps), **provider chips**
+(cloud/local/composite) on every op node, an un-deferred **per-node
+param editor** (schema-driven form; edits round-trip through the YAML
+AST, default-valued params omitted), a **provider-grouped model
+dropdown** (`ModelSelect`), and a **Run preflight panel** that shows
+per-node cost + feasibility and blocks Submit when a node is
+infeasible (e.g. `fps × duration > max_frames`) — surfacing the error
+at configure time instead of after a failed run.
 
 **Workspace** (`/ui/profiles/[name]`). The heart of Phase 6's
 "data, not code" promise. Split view, **YAML is canonical**:
@@ -396,11 +408,15 @@ initial paint stays cheap.
   "GC apply" — fire `POST /storage/gc` with `apply` accordingly.
   Result panel shows workdirs swept + eviction stats (when
   `eviction_enabled = true` in config).
-- **Config** — read-only view of the effective per-op
-  `declared_resources` map (now carried on `OperationSummary` so
-  this is a single GET, not N+1). Inline editors for
-  `config.toml` + `resources.yaml` are deferred to v1.x —
-  `MEDIA_ENGINE_*` env vars are owned by the deploy, not the UI.
+- **Config** — the effective per-op `declared_resources` map plus
+  **editable** `config.toml` + `resources.yaml` (Phase 8; CodeMirror
+  for the YAML, textarea for the TOML). Save calls `PUT
+  /settings/config-files`, which validates before writing (invalid
+  input → 422 + inline error, nothing written) and returns the
+  file(s) fresh from disk. Config is read once at boot, so a save
+  shows a **restart notice**. `secrets.env` stays read-only here —
+  it's edited in the Secrets tab. `MEDIA_ENGINE_*` env vars still
+  override `config.toml` values.
 
 ---
 

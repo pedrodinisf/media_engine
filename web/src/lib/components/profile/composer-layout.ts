@@ -12,7 +12,13 @@
  */
 
 import dagre from '@dagrejs/dagre';
-import type { GraphNodeSpec, InputSpec } from '$lib/profile/types';
+import type {
+  CompiledNode,
+  GraphNodeSpec,
+  InputSpec,
+  ModelFieldRef,
+  Provider,
+} from '$lib/profile/types';
 
 export type ComposerFlowNodeData =
   | {
@@ -28,6 +34,11 @@ export type ComposerFlowNodeData =
       inputs: readonly string[];
       params_count: number;
       is_invalid?: boolean;
+      // Phase 8 — model/provider enrichment (from /profiles/validate).
+      resolved_backend?: string | null;
+      provider?: Provider;
+      models?: ModelFieldRef[];
+      requirement_hint?: string | null;
     };
 
 export type ComposerFlowNode = {
@@ -46,7 +57,7 @@ export type ComposerFlowEdge = {
 };
 
 const NODE_WIDTH = 240;
-const NODE_HEIGHT = 88;
+const NODE_HEIGHT = 104;
 
 function inputRefs(node: GraphNodeSpec): string[] {
   if (Array.isArray(node.inputs)) return node.inputs;
@@ -57,6 +68,7 @@ export function layoutComposer(
   inputs: InputSpec[],
   nodes: GraphNodeSpec[],
   invalidNodeIds: ReadonlySet<string> = new Set(),
+  enrichment: ReadonlyMap<string, CompiledNode> = new Map(),
 ): { nodes: ComposerFlowNode[]; edges: ComposerFlowEdge[] } {
   const flowNodes: Map<string, { type: 'composer-op' | 'composer-input'; data: ComposerFlowNodeData }> = new Map();
   const edges: ComposerFlowEdge[] = [];
@@ -72,6 +84,7 @@ export function layoutComposer(
 
   for (const node of nodes) {
     const key = `op:${node.id}`;
+    const enriched = enrichment.get(node.id);
     flowNodes.set(key, {
       type: 'composer-op',
       data: {
@@ -82,6 +95,10 @@ export function layoutComposer(
         inputs: inputRefs(node),
         params_count: Object.keys(node.params).length,
         is_invalid: invalidNodeIds.has(node.id),
+        resolved_backend: enriched?.resolved_backend ?? null,
+        provider: enriched?.provider ?? 'unknown',
+        models: enriched?.models ?? [],
+        requirement_hint: enriched?.requirement_hint ?? null,
       },
     });
     for (const ref of inputRefs(node)) {

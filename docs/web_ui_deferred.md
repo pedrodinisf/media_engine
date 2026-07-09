@@ -76,18 +76,13 @@ memory (`memory/web_ui_v1_deferred.md`) reference here.
 ## Settings + ops
 
 ### In-UI `config.toml` + `resources.yaml` editor
-- **Status:** read-only view in v1 (commit 49)
-- **Why:** `MEDIA_ENGINE_*` env vars are owned by the deploy
-  (Dockerfile / Helm values / compose); editing them from a running
-  process is a footgun — the env doesn't refresh, and a bad edit
-  bricks the next boot. Same logic for `resources.yaml`.
-- **Bring-in trigger:** a clear UX win for "I have one machine and
-  want to tweak `eviction_max_gb` without dropping to a shell."
-  Implementation: dedicated PATCH endpoint that writes to
-  `{config_dir}/config.toml` (not env), validates against the
-  `EngineConfig` Pydantic model, and shows a "restart engine to
-  apply" notice. `resources.yaml` is easier — it's already reloaded
-  by the loader.
+- **Status:** ✅ SHIPPED (Phase 8, v0.9.0). `PUT /settings/config-files`
+  writes `config.toml` / `resources.yaml` (validate-before-write via
+  `EngineConfig` / the resources loader + unknown-key/op rejection),
+  the Config tab is editable (CodeMirror for YAML, textarea for TOML)
+  with create-when-missing, Reload-from-disk, and a restart notice.
+  `secrets.env` stays read-only here (its own masked `PUT /settings/secrets`).
+  See `docs/phase-8.md`.
 
 ### Daemon lifecycle UI (`med daemon start/stop/status/logs`)
 - **Status:** out

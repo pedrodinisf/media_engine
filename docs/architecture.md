@@ -70,6 +70,14 @@ out across a DAG.
    `backends/_pricing.py`, `runtime/cost_tracker.py`.
 10. **Resource-aware.** Declared resources -> `asyncio.Semaphore` (e.g.
     1 VLM at a time on Apple Silicon). `runtime/dag.py` semaphore pool.
+11. **Feasibility declared by ops, surfaced before execution** (Phase 8).
+    `Operation.validate_params(inputs, params)` (default no-op) raises a
+    human message when a config can't succeed. `Engine.preview_pipeline`
+    runs it + `cost_estimate` per node without executing, and it's surfaced
+    everywhere: `POST /pipelines/preview` (the Web UI Run button blocks on
+    it), `POST /run/preview`, and `med profile run --dry-run`. So
+    `video.comprehend`'s `fps × duration > max_frames` fails at configure
+    time, not after the run. `ops/_base.py`, `runtime/engine.py`.
 
 ---
 

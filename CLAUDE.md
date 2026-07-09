@@ -107,7 +107,9 @@ YAML frontmatter) or pipeline (YAML DAG).
   build`) — rebuild the SvelteKit SPA into `media_engine/web/dist/`.
   CI / `hatch build` runs this first so the wheel ships the dist tree.
 - `uv run med daemon start|status|stop` — warm-engine daemon lifecycle
-- `uv run med profile ls|show|run` — discover / inspect / execute profiles
+- `uv run med profile ls|show|run` — discover / inspect / execute profiles.
+  `med profile run <name> --dry-run` preflights the DAG (per-node
+  backend/model/cost + feasibility) and exits without running (Phase 8)
 - `uv run med acquire <file>` — `acquire.upload` shortcut (local files)
 - `uv run med acquire-url <url> [--quality] [--backend]` — `acquire.url`
 - `uv run med acquire-live <url> [--max-duration N] [--segment-seconds N]
@@ -278,6 +280,30 @@ Phases are formalized in `~/.claude/plans/goofy-gathering-beaver.md`
   `diarize` extra. Default profile at `profiles/examples/speaker-id.yaml`;
   ledger at `docs/phase-7.md`. Same voice across recordings gets the
   same stable id with no name database.
+
+- **Phase 8 — Profile transparency, pre-run validation & config editor**
+  *(shipped — current version `0.9.0`)*. New engine principle: ops declare
+  pre-run feasibility (`Operation.validate_params`) and the engine surfaces
+  it everywhere *before* running — `Engine.preview_pipeline`, the new
+  `POST /pipelines/preview` (the workspace Run button blocks on it),
+  `POST /run/preview`'s `feasibility_error`, and `med profile run --dry-run`.
+  So `video.comprehend`'s `fps × duration > max_frames` now fails at
+  configure time, not after the run. Model/backend transparency: static
+  `profiles/introspect.py` enriches `POST /profiles/validate` nodes +
+  `GET /profiles` cards with model, resolved backend, provider
+  (cloud/local/composite via `doctor.classify_provider`, keyed on the
+  `_API_KEY` env suffix), and requirement hints (`needs GEMINI_API_KEY`).
+  Web: the profile workspace un-defers the **per-node param editor**
+  (schema-driven `SchemaForm` + `mutateNodeParams` AST round-trip),
+  provider chips on every node + a profile summary strip, and a Run
+  **preflight panel**. New **`ModelSelect`** provider-grouped dropdown
+  (Local/Cloud optgroups) lands in the workspace + `/run`. Several
+  free-text `model` params gained curated enum dropdowns
+  (`ops/video/_models.py`, `ops/embed/_models.py`). **Config editor**:
+  Settings → Config is now editable via `PUT /settings/config-files`
+  (validate-before-write; `secrets.env` stays on its own masked flow;
+  restart notice since config is read once at boot). Ledger at
+  `docs/phase-8.md`.
 
 When adding new features or revisiting plans, check whether the work
 fits existing phase scope before opening a new phase. Phase 5 stays

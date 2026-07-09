@@ -312,3 +312,156 @@ def test_config_files_reports_missing(
     assert body["config_toml"]["exists"] is False
     assert body["resources_yaml"]["exists"] is False
     assert body["config_toml"]["content"] == ""
+
+
+# ─────────────────────────────────────────────────────────────────
+# PUT /settings/config-files
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_config_files_put_writes_config_toml(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    body = 'namespace = "tenant-a"\nmin_free_gb = 5\n'
+    r = client.put(
+        "/settings/config-files", json={"config_toml": body}, headers=auth
+    )
+    assert r.status_code == 200
+    # response echoes the file back from disk
+    assert r.json()["config_toml"]["content"] == body
+    assert r.json()["config_toml"]["exists"] is True
+    # and it's actually on disk
+    on_disk = (api_engine.config.config_dir / "config.toml").read_text()
+    assert on_disk == body
+    # a follow-up GET reflects it
+    g = client.get("/settings/config-files", headers=auth)
+    assert g.json()["config_toml"]["content"] == body
+
+
+def test_config_files_put_writes_resources_yaml(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    body = "apple_gpu:\n  capacity: 3\n"
+    r = client.put(
+        "/settings/config-files", json={"resources_yaml": body}, headers=auth
+    )
+    assert r.status_code == 200
+    assert r.json()["resources_yaml"]["content"] == body
+    on_disk = (api_engine.config.config_dir / "resources.yaml").read_text()
+    assert on_disk == body
+
+
+def test_config_files_put_invalid_toml_422_leaves_file_untouched(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    r = client.put(
+        "/settings/config-files",
+        json={"config_toml": "min_free_gb = = 10"},
+        headers=auth,
+    )
+    assert r.status_code == 422
+    assert "TOML" in r.json()["detail"]
+    # nothing written
+    assert not (api_engine.config.config_dir / "config.toml").exists()
+
+
+def test_config_files_put_unknown_config_key_422(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    r = client.put(
+        "/settings/config-files",
+        json={"config_toml": 'permanant_store = "/x"'},
+        headers=auth,
+    )
+    assert r.status_code == 422
+    assert "unknown config key" in r.json()["detail"]
+
+
+def test_config_files_put_invalid_resources_yaml_422(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    r = client.put(
+        "/settings/config-files",
+        json={"resources_yaml": "foo: [unclosed"},
+        headers=auth,
+    )
+    assert r.status_code == 422
+    assert not (api_engine.config.config_dir / "resources.yaml").exists()
+
+
+def test_config_files_put_unknown_op_in_resources_422(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    r = client.put(
+        "/settings/config-files",
+        json={
+            "resources_yaml": (
+                "apple_gpu:\n  capacity: 1\n  operations: [not.a.real.op]\n"
+            )
+        },
+        headers=auth,
+    )
+    assert r.status_code == 422
+    assert "unknown op" in r.json()["detail"]
+
+
+def test_config_files_put_partial_leaves_other_untouched(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    config_dir = api_engine.config.config_dir
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "resources.yaml").write_text("apple_gpu:\n  capacity: 9\n")
+    # write only config.toml
+    r = client.put(
+        "/settings/config-files",
+        json={"config_toml": 'namespace = "x"\n'},
+        headers=auth,
+    )
+    assert r.status_code == 200
+    # resources.yaml is untouched
+    assert (config_dir / "resources.yaml").read_text() == "apple_gpu:\n  capacity: 9\n"
+
+
+def test_config_files_put_empty_body_422(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    r = client.put("/settings/config-files", json={}, headers=auth)
+    assert r.status_code == 422
+
+
+def test_config_files_put_cannot_write_secrets(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    # A stray secrets_env field is not part of the request model — it's
+    # dropped, so with no valid field the request is a 422 and secrets.env
+    # is never written through this route.
+    r = client.put(
+        "/settings/config-files",
+        json={"secrets_env": "GEMINI_API_KEY=leak"},
+        headers=auth,
+    )
+    assert r.status_code == 422
+    assert not secrets_path(api_engine.config.config_dir).exists()
+
+
+def test_config_files_put_ignores_secrets_alongside_valid_field(
+    client: TestClient, auth: dict[str, str], api_engine: Engine
+) -> None:
+    # Even smuggled next to a valid field, secrets_env is ignored.
+    r = client.put(
+        "/settings/config-files",
+        json={
+            "config_toml": 'namespace = "x"\n',
+            "secrets_env": "GEMINI_API_KEY=leak",
+        },
+        headers=auth,
+    )
+    assert r.status_code == 200
+    assert not secrets_path(api_engine.config.config_dir).exists()
+
+
+def test_config_files_put_requires_auth(client: TestClient) -> None:
+    r = client.put(
+        "/settings/config-files", json={"config_toml": 'namespace = "x"\n'}
+    )
+    assert r.status_code == 401

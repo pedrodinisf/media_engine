@@ -72,3 +72,25 @@ export function initialParams(schema: ParamsSchema): ParamsValue {
 export function isMultilineField(name: string): boolean {
   return /prompt|system_prompt|schema_def|template/i.test(name);
 }
+
+export type ModelProvider = 'cloud' | 'local' | 'unknown';
+
+/**
+ * Classify a model id as cloud vs local by prefix.
+ *
+ * MIRRORS the server-side `classify_model_provider` in
+ * `media_engine/profiles/introspect.py` (and the op routers'
+ * `_backend_for_model`) — keep the two in sync. Same intent as how
+ * `PROFILE_NAME_RE` mirrors the server's profile-name regex.
+ */
+export function classifyModelProvider(modelId: string): ModelProvider {
+  if (/^(mlx-community|sentence-transformers|pyannote|BAAI)\//.test(modelId)) return 'local';
+  if (/^(gemini-|claude-|gpt-)/.test(modelId)) return 'cloud';
+  return 'unknown';
+}
+
+/** A field names a model when it is `model` or ends in `_model` (vlm_model,
+ *  synth_model, transcribe_model, …). Mirrors the server `_MODEL_FIELD_RE`. */
+export function isModelField(name: string): boolean {
+  return /(^|_)model$/.test(name);
+}

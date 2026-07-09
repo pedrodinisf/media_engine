@@ -6,12 +6,45 @@
  */
 
 import { api } from '$lib/api/client';
+import type { ParamsSchema } from '$lib/components/forms/schema';
 import type {
   PipelineProfile,
+  PipelinePreviewResponse,
   ProfileSummary,
   PromptProfile,
   ValidateProfileResponse,
 } from './types';
+
+/** Source spec for a pipeline run / preview: declared input name → artifact id. */
+export type PipelineSource = { name: string; artifact_id: string };
+
+/** Subset of `GET /operations/{name}` the workspace consumes: the JSON Schema
+ *  that drives the per-node param form. */
+export type OperationDetail = {
+  name: string;
+  params_schema: ParamsSchema;
+  backends: string[];
+  default_backend: string | null;
+};
+
+export function getOperationDetail(op: string): Promise<OperationDetail> {
+  return api.get<OperationDetail>(`/operations/${encodeURIComponent(op)}`);
+}
+
+/**
+ * Preflight a pipeline (inline YAML + picked sources) without running it —
+ * per-node backend/models/cost + feasibility. The workspace Run button calls
+ * this first and blocks on any `feasibility_error`.
+ */
+export function previewPipeline(
+  pipeline_yaml: string,
+  sources: PipelineSource[],
+): Promise<PipelinePreviewResponse> {
+  return api.post<PipelinePreviewResponse>('/pipelines/preview', {
+    pipeline_yaml,
+    sources,
+  });
+}
 
 export function listProfiles(): Promise<ProfileSummary[]> {
   return api.get<ProfileSummary[]>('/profiles');

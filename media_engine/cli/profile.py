@@ -15,6 +15,7 @@ from media_engine.config import EngineConfig
 from media_engine.profiles import discover_profiles, load_profile
 from media_engine.profiles.pipeline import compile_profile
 from media_engine.profiles.schema import PipelineProfile, Profile, PromptProfile
+from media_engine.runtime.engine import NodeCostPreview
 
 app = typer.Typer(name="profile", help="Discover, inspect, and run profiles.")
 console = Console()
@@ -87,6 +88,55 @@ def cmd_show(
         console.print(_json.dumps(profile.model_dump(), indent=2))
 
 
+def _print_dry_run(previews: list[NodeCostPreview]) -> int:
+    """Render a pipeline preflight table. Returns non-zero if any node is
+    infeasible so ``med profile run --dry-run`` can be used as a gate."""
+    table = Table(title="Pipeline preflight (dry-run — nothing ran)")
+    table.add_column("node")
+    table.add_column("op")
+    table.add_column("backend")
+    table.add_column("~cost")
+    table.add_column("status")
+    total_s = 0.0
+    total_cents = 0.0
+    infeasible = 0
+    for p in previews:
+        if p.feasibility_error:
+            status = f"[red]✗ {p.feasibility_error}[/red]"
+            infeasible += 1
+        elif not p.resolvable:
+            status = "[dim]not preflighted (downstream)[/dim]"
+        elif p.cached:
+            status = "[green]cached[/green]"
+        else:
+            status = "[green]ok[/green]"
+        cost = (
+            f"${p.estimate.cloud_cents / 100:.3f}"
+            if p.estimate.cloud_cents
+            else f"~{p.estimate.local_seconds:.0f}s"
+        )
+        total_s += p.estimate.local_seconds
+        total_cents += p.estimate.cloud_cents
+        table.add_row(
+            p.id,
+            p.op,
+            p.backend or ("(composite)" if p.embedded else "—"),
+            cost,
+            status,
+        )
+    console.print(table)
+    console.print(
+        f"DAG total: ~{total_s:.0f}s local"
+        + (f" + ${total_cents / 100:.3f} cloud" if total_cents else "")
+    )
+    if infeasible:
+        err_console.print(
+            f"[red]{infeasible} node(s) infeasible — fix params before running.[/red]"
+        )
+        return 1
+    return 0
+
+
 @app.command("run")
 def cmd_run(
     name: Annotated[str, typer.Argument(help="Profile name")],
@@ -107,6 +157,14 @@ def cmd_run(
             help="Load a profile directly from disk (skips discovery).",
         ),
     ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Preflight only: per-node backend/model/cost + feasibility, "
+            "then exit without running (non-zero if any node is infeasible).",
+        ),
+    ] = False,
 ) -> None:
     """Execute a profile through the DAG executor."""
     if profile_path is not None:
@@ -159,6 +217,8 @@ def cmd_run(
             except Exception as e:
                 err_console.print(f"[red]profile compile failed: {e}[/red]")
                 return 1
+            if dry_run:
+                return _print_dry_run(h.preview_pipeline(pipeline))
             result = await h.run_pipeline(pipeline)
             for node_id, success in result.successes.items():
                 for art in success.artifacts:

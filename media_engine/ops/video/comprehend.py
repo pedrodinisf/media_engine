@@ -57,22 +57,48 @@ from media_engine.ops.video._comprehend_prompts import (
     SYSTEM_PROMPTS,
     USER_PROMPTS,
 )
+from media_engine.ops.video._models import VLM_MODELS
 
 # ── Params ───────────────────────────────────────────────────────────────
 
 
 class ComprehendParams(BaseModel):
-    # Frame sampling
-    fps: float = Field(default=1.0, ge=0.1, le=8.0)
-    max_frames: int = Field(default=240, ge=1, le=2000)
+    # Frame sampling. The two knobs interact: the op samples ≈ fps ×
+    # (effective) video-duration frames, and refuses to run when that
+    # exceeds max_frames — so a long video needs a low fps. The
+    # descriptions surface this in the Web UI form *before* a run; the
+    # pre-run preflight (validate_params) is the hard gate.
+    fps: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=8.0,
+        description=(
+            "Frames sampled per second of video. Sampled frame count ≈ "
+            "fps × video-duration and must stay ≤ max_frames — lower this "
+            "for long videos (e.g. a 1-hour video at fps=1 = 3600 frames)."
+        ),
+    )
+    max_frames: int = Field(
+        default=240,
+        ge=1,
+        le=2000,
+        description=(
+            "Hard cap on frames sent to the VLM. If fps × duration exceeds "
+            "this, the run is refused up-front — lower fps or raise this."
+        ),
+    )
 
     # Per-frame VLM. The 2B variant fits on a 16 GB Mac alongside
     # whisper + pyannote (the audio side loads before the VLM phase).
     # Operators with >24 GB free can opt in to 7B via:
     #   --param vlm_model=mlx-community/Qwen2-VL-7B-Instruct-4bit
     # The bundled teams-meeting + video-comprehend profiles also set
-    # this explicitly per their target hardware.
-    vlm_model: str = "mlx-community/Qwen2-VL-2B-Instruct-4bit"
+    # this explicitly per their target hardware. mlx-community/* routes
+    # to the local vllm-mlx backend (Apple Silicon); gemini-* to cloud.
+    vlm_model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(VLM_MODELS)}),
+    ] = "mlx-community/Qwen2-VL-2B-Instruct-4bit"
     vlm_prompt: str = (
         "Describe what is visible in this frame in one sentence. Note any "
         "text, objects, people, actions."
@@ -271,6 +297,20 @@ class VideoComprehend(Operation):
     )
     declared_resources = ("apple_neural_engine",)
 
+    def validate_params(
+        self, inputs: list[AnyArtifact], params: BaseModel
+    ) -> None:
+        """Pre-run frame-budget check — the same gate ``run`` enforces, run at
+        configure time so ``fps × duration > max_frames`` fails in the preflight
+        instead of after fan-out.
+
+        Needs only the input Video's stored ``duration`` metadata (no ffprobe,
+        no bytes), so it's safe in an API/preview process. The arm64 hardware
+        gate stays in ``run`` — it depends on the executing host."""
+        assert isinstance(params, ComprehendParams)
+        if inputs and isinstance(inputs[0], Video):
+            self._check_frame_budget(inputs[0], params)
+
     async def run(
         self,
         inputs: list[AnyArtifact],
@@ -302,19 +342,10 @@ class VideoComprehend(Operation):
                 "vlm_model or wait for the openai-compat backend (deferred)."
             )
 
-        # Frame-budget gate. fps × effective duration > max_frames is
-        # almost always the user being sloppy with fps for a long video;
-        # refuse instead of fanning out 2000 cloud calls.
-        effective_duration = self._effective_duration(video, params)
-        if effective_duration is not None:
-            projected = int(effective_duration * params.fps)
-            if projected > params.max_frames:
-                raise ValueError(
-                    f"fps × duration ({projected} frames) exceeds max_frames "
-                    f"({params.max_frames}). Lower fps to "
-                    f"≤{(params.max_frames / effective_duration):.2f} or "
-                    "raise max_frames explicitly."
-                )
+        # Frame-budget gate (backstop). Also surfaced pre-run via
+        # ``validate_params`` — both call the same ``_check_frame_budget`` so
+        # there's a single source of truth for the message + threshold.
+        self._check_frame_budget(video, params)
 
         # ── Audio ──
         # Forward the time window so video.extract_audio cuts only the
@@ -636,6 +667,25 @@ class VideoComprehend(Operation):
         return CostEstimate(local_seconds=60.0)
 
     # ── internals ──
+
+    def _check_frame_budget(
+        self, video: Video, params: ComprehendParams
+    ) -> None:
+        """Refuse configs whose ``fps × effective-duration`` would blow past
+        ``max_frames`` — almost always a sloppy fps for a long video. Raises
+        ``ValueError`` with the fps the operator should drop to. No-op when the
+        video's duration is unknown (older ingests). Single source of truth for
+        both ``run`` (backstop) and ``validate_params`` (preflight)."""
+        effective_duration = self._effective_duration(video, params)
+        if effective_duration is not None:
+            projected = int(effective_duration * params.fps)
+            if projected > params.max_frames:
+                raise ValueError(
+                    f"fps × duration ({projected} frames) exceeds max_frames "
+                    f"({params.max_frames}). Lower fps to "
+                    f"≤{(params.max_frames / effective_duration):.2f} or "
+                    "raise max_frames explicitly."
+                )
 
     def _effective_duration(
         self, video: Video, params: ComprehendParams

@@ -73,11 +73,13 @@ uv run med run video.comprehend \
 | -------- | ------------------------------------------------------ |
 | `med profile ls`          | List discovered profiles (config dir + repo dir + extras). |
 | `med profile show <name>` | Print the parsed profile (graph / frontmatter).         |
-| `med profile run <name> --input <id> [--param k=v] [--backend b]` | Execute a profile through the DAG executor. |
+| `med profile run <name> --input <id> [--param k=v] [--backend b] [--dry-run]` | Execute a profile through the DAG executor. `--dry-run` preflights only (per-node backend/model/cost + feasibility) and exits non-zero if any node is infeasible. |
 
 ```bash
 uv run med profile ls
 uv run med profile run analysis-full --input v-91a3...
+# Preflight without running — catches e.g. fps × duration > max_frames up front:
+uv run med profile run video-comprehend --input source=v-91a3... --dry-run
 uv run med profile run general-custom --input v-91a3... \
     --param system_prompt="Summarize as a recipe card."
 ```

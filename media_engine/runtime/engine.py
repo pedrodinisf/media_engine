@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Self, cast
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -82,6 +83,28 @@ def _actual_usage(
             tin += int(usage.get("input_tokens", 0) or 0)
             tout += int(usage.get("output_tokens", 0) or 0)
     return cents, tin, tout
+
+
+@dataclass
+class NodeCostPreview:
+    """Per-node result of a pipeline preflight (``Engine.preview_pipeline``).
+
+    ``resolvable`` is True only when all of a node's inputs are pipeline
+    sources (their ids are known pre-run); downstream nodes whose inputs are
+    upstream outputs are ``resolvable=False`` and are neither feasibility-
+    checked nor cost-priced against real inputs. ``feasibility_error`` is the
+    message from ``op.validate_params`` (or a backend/model conflict) when the
+    config can't succeed — ``None`` means "no problem found" for resolvable
+    nodes, and "not checked" for unresolvable ones."""
+
+    id: str
+    op: str
+    backend: str | None
+    embedded: bool
+    cached: bool
+    resolvable: bool
+    estimate: CostEstimate
+    feasibility_error: str | None = None
 
 
 class Engine:
@@ -541,6 +564,103 @@ class Engine:
                 )
         return total
 
+    def preview_pipeline(self, pipeline: Pipeline) -> list[NodeCostPreview]:
+        """Preflight a DAG without running it — per-node cost + feasibility.
+
+        Same dependency-ordered walk as :meth:`estimate_pipeline_cost`, but
+        returns a per-node record and additionally runs each op's
+        ``validate_params`` (and resolves its backend, which also enforces the
+        B-008 model/backend consistency check). A resolvable node's
+        infeasibility (e.g. ``fps × duration > max_frames``) or backend/model
+        conflict is captured as ``feasibility_error`` instead of raising — the
+        UI blocks the Run button on it. Cached + unresolvable-downstream nodes
+        contribute zero cost, matching ``estimate_pipeline_cost`` semantics."""
+        from media_engine.runtime.dag import validate_and_sort
+
+        previews: list[NodeCostPreview] = []
+        src_ids = {name: a.id for name, a in pipeline.sources.items()}
+        for wave in validate_and_sort(pipeline):
+            for node in wave:
+                op_class = OpRegistry.get(node.op_name)
+                op = op_class()
+                embedded = (
+                    not BackendRegistry.for_op(node.op_name)
+                    and op_class.default_backend is None
+                )
+                input_ids: list[str] = []
+                resolvable = True
+                for ref in node.input_node_ids:
+                    if ref in src_ids:
+                        input_ids.append(src_ids[ref])
+                    else:
+                        resolvable = False
+                feasibility_error: str | None = None
+                backend_name: str | None = node.backend
+                # Build params + resolve backend; a params/B-008 error is a
+                # node-level feasibility failure, not a 500.
+                try:
+                    params_model = op_class.params_model(**node.params)
+                    backend_name, backend_version = self._resolve_backend(
+                        op, op_class, node.backend, params_model
+                    )
+                except (ValidationError, ValueError) as e:
+                    previews.append(
+                        NodeCostPreview(
+                            id=node.id,
+                            op=node.op_name,
+                            backend=node.backend,
+                            embedded=embedded,
+                            cached=False,
+                            resolvable=resolvable,
+                            estimate=CostEstimate(),
+                            feasibility_error=str(e),
+                        )
+                    )
+                    continue
+                resolved = (
+                    self._resolve_inputs(input_ids) if resolvable else []
+                )
+                # Feasibility gate — only meaningful when inputs are real.
+                if resolvable:
+                    try:
+                        op.validate_params(resolved, params_model)
+                    except ValueError as e:
+                        feasibility_error = str(e)
+                # Cache-hit short-circuit → zero cost.
+                cached = False
+                if resolvable and feasibility_error is None:
+                    params_hash = canonical_params_hash(params_model)
+                    cached = (
+                        self.cache.find_cached_run(
+                            op_name=node.op_name,
+                            op_version=op_class.version,
+                            backend_name=backend_name,
+                            backend_version=backend_version,
+                            params_hash=params_hash,
+                            input_ids=input_ids,
+                            namespace=self.config.namespace,
+                        )
+                        is not None
+                    )
+                estimate = (
+                    CostEstimate()
+                    if cached or feasibility_error is not None
+                    else op.cost_estimate(resolved, params_model)
+                )
+                previews.append(
+                    NodeCostPreview(
+                        id=node.id,
+                        op=node.op_name,
+                        backend=backend_name,
+                        embedded=embedded,
+                        cached=cached,
+                        resolvable=resolvable,
+                        estimate=estimate,
+                        feasibility_error=feasibility_error,
+                    )
+                )
+        return previews
+
     def estimate_op_cost(
         self,
         op_name: str,
@@ -554,6 +674,25 @@ class Engine:
         resolved_inputs = self._resolve_inputs(list(inputs or []))
         params_model = op_class.params_model(**params)
         return op.cost_estimate(resolved_inputs, params_model)
+
+    def validate_op_feasibility(
+        self,
+        op_name: str,
+        *,
+        inputs: list[str] | None = None,
+        **params: Any,
+    ) -> None:
+        """Run a single op's ``validate_params`` against resolved inputs.
+
+        Raises ``ValueError`` when the (inputs, params) combination can't
+        succeed (e.g. ``fps × duration > max_frames``), or ``LookupError`` if
+        an input id doesn't resolve. Powers ``/run/preview``'s feasibility
+        surface — the single-op sibling of ``preview_pipeline``."""
+        op_class = OpRegistry.get(op_name)
+        op = op_class()
+        resolved_inputs = self._resolve_inputs(list(inputs or []))
+        params_model = op_class.params_model(**params)
+        op.validate_params(resolved_inputs, params_model)
 
     async def run_pipeline(
         self, pipeline: Pipeline, *, job_id: str | None = None

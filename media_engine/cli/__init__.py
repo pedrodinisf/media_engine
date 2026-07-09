@@ -526,6 +526,14 @@ def cmd_run(
                 err_console.print(f"[red]cost estimate failed: {e}[/red]")
                 raise typer.Exit(1) from None
             _print_cost_preview(op_name, est)
+            # Pre-run feasibility (op.validate_params) — surface an infeasible
+            # config (e.g. fps × duration > max_frames) here rather than after
+            # a long run. Applies to both --dry-run and a real submission.
+            try:
+                h.validate_op_feasibility(op_name, inputs=resolved, **params)
+            except ValueError as e:
+                err_console.print(f"[red]infeasible: {e}[/red]")
+                raise typer.Exit(1) from None
             if _opts.dry_run:
                 return None
             if not yes and not _opts.json_output and not typer.confirm(

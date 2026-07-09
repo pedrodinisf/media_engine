@@ -139,6 +139,26 @@ class Operation(ABC):
         Default ``None`` → engine falls back to ``default_backend``."""
         return None
 
+    def validate_params(
+        self, inputs: list[AnyArtifact], params: BaseModel
+    ) -> None:
+        """Optional pre-run feasibility check on a resolved (inputs, params) pair.
+
+        Raise ``ValueError`` with a human-actionable message when this
+        combination cannot succeed — e.g. a frame budget that would fan out
+        thousands of calls, or a required input file that doesn't exist.
+        Default: no-op.
+
+        Unlike ``run``, this must do **no** work and mutate nothing: it's
+        called speculatively by the pipeline preflight
+        (``Engine.preview_pipeline`` → ``POST /pipelines/preview``),
+        ``/run/preview``, and ``--dry-run`` to surface the error at configure
+        time, and again as a backstop at the top of ``run``. It only runs when
+        the op's inputs are fully resolvable (source-fed nodes); keep checks
+        host-independent so they're valid in an API/preview process that may
+        differ from the worker that ultimately runs ``run``."""
+        return None
+
     @abstractmethod
     async def run(
         self,

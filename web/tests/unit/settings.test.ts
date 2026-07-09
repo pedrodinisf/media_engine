@@ -5,6 +5,7 @@ import {
   getDoctor,
   isRevoked,
   listSecrets,
+  putConfigFiles,
   putSecrets,
   type TokenInfo,
 } from '$lib/api/settings';
@@ -103,6 +104,21 @@ describe('Settings REST client (Doctor / Secrets / Config files)', () => {
     });
     await getConfigFiles();
     expect(spy).toHaveBeenCalledWith('/settings/config-files');
+    spy.mockRestore();
+  });
+
+  it('putConfigFiles() PUTs only the provided file(s) — no secrets field', async () => {
+    const spy = vi.spyOn(api, 'put').mockResolvedValueOnce({
+      config_toml: { path: '', exists: true, content: 'namespace = "x"', is_masked: false },
+      resources_yaml: { path: '', exists: false, content: '', is_masked: false },
+      secrets_env: { path: '', exists: false, content: '', is_masked: true },
+    });
+    await putConfigFiles({ config_toml: 'namespace = "x"' });
+    // Exact-match deep equality ⇒ the body is *only* { config_toml }, proving
+    // there's no secrets channel smuggled through this endpoint.
+    expect(spy).toHaveBeenCalledWith('/settings/config-files', {
+      config_toml: 'namespace = "x"',
+    });
     spy.mockRestore();
   });
 });

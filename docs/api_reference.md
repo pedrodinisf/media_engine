@@ -38,7 +38,7 @@ routes should keep using the `Authorization` header.
 | Group       | Routes                                                                                                  |
 | ----------- | ------------------------------------------------------------------------------------------------------- |
 | Liveness    | `GET /health` · `GET /ready`                                                                            |
-| Run         | `POST /run` · `POST /run/preview` · `POST /pipelines`                                                   |
+| Run         | `POST /run` · `POST /run/preview` · `POST /pipelines` · `POST /pipelines/preview`                       |
 | Jobs        | `GET /jobs` · `GET /jobs/{id}` · `GET /jobs/{id}/events` (SSE) · `DELETE /jobs/{id}`                    |
 | Events      | `GET /events/stream` (SSE) · `GET /events/history`                                                      |
 | Acquire     | `POST /acquire/upload` · `POST /acquire/url/probe`                                                      |
@@ -49,6 +49,7 @@ routes should keep using the `Authorization` header.
 | Operations  | `GET /operations` · `GET /operations/{name}`                                                            |
 | Backends    | `GET /backends` · `GET /backends/{name}`                                                                |
 | Tokens      | `POST /tokens` · `GET /tokens` · `DELETE /tokens/{id}`                                                  |
+| Settings    | `GET/PUT /settings/secrets` · `GET/PUT /settings/config-files` · `GET /settings/doctor`                 |
 
 For every endpoint's request / response shapes, see `docs/openapi.json`
 (committed; regenerate via `uv run python scripts/gen_openapi.py`) or
@@ -117,6 +118,19 @@ Submit a profile by name (server-known) **OR** by inline YAML:
 ```
 Returns `202 { job_id }`. Inline YAML uses `"pipeline_yaml": "..."`
 instead of `profile_name`.
+
+#### `POST /pipelines/preview` (Phase 8)
+Preflight a pipeline without running it — same body as `POST /pipelines`.
+Returns `200 { ok, nodes, total_seconds_local, total_cost_cents, ... }`.
+Each node carries `backend`, `models`, `embedded`, `cached`, `resolvable`
+(false = downstream, "not preflighted"), cost, and `feasibility_error`
+(non-null when the config can't succeed, e.g. `fps × duration > max_frames`,
+or a B-008 backend/model conflict). A compile/load failure returns
+`ok=false` + `{error_class, message}` (200, mirroring `/profiles/validate`).
+The Web UI's Run button calls this first and blocks Submit on any
+`feasibility_error`. `POST /run/preview` gains the same `feasibility_error`
+for the single-op case; `POST /profiles/validate` `compiled_nodes` and
+`GET /profiles` summaries gain model/provider/`requirement_hint` enrichment.
 
 #### `POST /acquire/upload` (Phase 6 commit 41)
 Multipart upload + ffprobe preview / commit. Two modes:

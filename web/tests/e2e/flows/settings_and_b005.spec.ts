@@ -393,3 +393,40 @@ test('B-007: intelligence.summarize exposes extract_backend as a schema field', 
   const body = await resp.json();
   expect(body.params_schema.properties).toHaveProperty('extract_backend');
 });
+
+test('Phase 8: Config tab edits + saves config.toml and shows a restart banner', async ({ page }) => {
+  await page.goto(`${baseURL}/ui/settings`);
+  await page.getByRole('button', { name: 'Config files' }).click();
+
+  const editor = page.getByTestId('config-edit-config_toml');
+  await expect(editor).toBeVisible({ timeout: 5_000 });
+  // A benign, valid change — namespace override written into the fresh env's
+  // config.toml. Config isn't hot-reloaded, so this can't disturb sibling specs.
+  await editor.fill('min_free_gb = 7\n');
+  await page.getByTestId('config-save-config_toml').click();
+
+  // Success ⇒ the restart banner appears (config is read once at boot).
+  await expect(page.getByTestId('config-restart-banner')).toBeVisible({ timeout: 5_000 });
+
+  // And it's actually persisted — the REST GET reflects the new content.
+  const r = await page.request.get(`${baseURL}/settings/config-files`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await r.json();
+  expect(body.config_toml.content).toContain('min_free_gb = 7');
+});
+
+test('Phase 8: Config tab surfaces a 422 validation error inline for invalid TOML', async ({ page }) => {
+  await page.goto(`${baseURL}/ui/settings`);
+  await page.getByRole('button', { name: 'Config files' }).click();
+
+  const editor = page.getByTestId('config-edit-config_toml');
+  await expect(editor).toBeVisible({ timeout: 5_000 });
+  await editor.fill('min_free_gb = = 10');  // syntactically invalid TOML
+  await page.getByTestId('config-save-config_toml').click();
+
+  // The 422 detail is rendered inline next to the editor, not swallowed.
+  const err = page.getByTestId('config-error-config_toml');
+  await expect(err).toBeVisible({ timeout: 5_000 });
+  await expect(err).toContainText('TOML');
+});

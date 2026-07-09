@@ -44,6 +44,7 @@ from media_engine.api.sse import job_event_stream
 from media_engine.artifacts import AnyArtifact, Kind
 from media_engine.backends import BackendRegistry
 from media_engine.ops import OpRegistry
+from media_engine.profiles.introspect import profile_digest
 from media_engine.profiles.loader import (
     ProfileLoadError,
     discover_profiles,
@@ -57,6 +58,7 @@ from media_engine.profiles.pipeline import (
 )
 from media_engine.profiles.schema import PipelineProfile, PromptProfile
 from media_engine.runtime.cache import ApiTokenInfo, Job
+from media_engine.runtime.dag import Pipeline
 from media_engine.runtime.lineage import OperationRunRef
 from media_engine.runtime.search_query import embed_query_string
 
@@ -173,6 +175,9 @@ class RunPreviewResponse(BaseModel):
     estimate_cost_cents: float
     estimate_tokens_in: int
     estimate_tokens_out: int
+    # Phase 8 — pre-run feasibility (op.validate_params). Non-null when the
+    # current (inputs, params) can't succeed, e.g. fps × duration > max_frames.
+    feasibility_error: str | None = None
 
 
 class SearchRequest(BaseModel):
@@ -225,6 +230,59 @@ class PipelineRequest(BaseModel):
     )
 
 
+class ModelFieldRef(BaseModel):
+    """A model-typed param on a node + which provider it routes to."""
+
+    name: str
+    value: str | None = None
+    provider: Literal["cloud", "local", "unknown"] = "unknown"
+
+
+class NodePreview(BaseModel):
+    """Per-node result of ``POST /pipelines/preview`` (a pipeline preflight).
+
+    ``resolvable`` is False for a downstream node whose inputs are upstream
+    outputs (unknown id pre-run) — such a node is *not* feasibility-checked, so
+    the UI must render it "not preflighted", distinct from "OK". NB: field is
+    ``models`` (not ``model_*``) — Pydantic reserves ``model_``.
+    """
+
+    id: str
+    op: str
+    backend: str | None = None
+    embedded: bool = False
+    cached: bool = False
+    resolvable: bool = True
+    models: list[ModelFieldRef] = Field(
+        default_factory=lambda: cast(list[ModelFieldRef], [])
+    )
+    estimate_seconds_local: float = 0.0
+    estimate_cost_cents: float = 0.0
+    estimate_tokens_in: int = 0
+    estimate_tokens_out: int = 0
+    feasibility_error: str | None = None
+
+
+class PipelinePreviewResponse(BaseModel):
+    """Shape of ``POST /pipelines/preview``.
+
+    Success: ``ok=True`` + per-node previews + DAG totals. A compile/load
+    failure returns ``ok=False`` + a typed envelope (200 for both, mirroring
+    ``/profiles/validate``) so the workspace doesn't special-case it.
+    """
+
+    ok: bool
+    nodes: list[NodePreview] = Field(
+        default_factory=lambda: cast(list[NodePreview], [])
+    )
+    total_seconds_local: float = 0.0
+    total_cost_cents: float = 0.0
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+    error_class: str | None = None
+    message: str | None = None
+
+
 class JobAck(BaseModel):
     job_id: str
 
@@ -254,6 +312,25 @@ class TokenCreateResponse(BaseModel):
     secret: str  # shown once at creation time
 
 
+class DigestModelRef(BaseModel):
+    """A distinct model a profile uses + its provider (for the list-card badge)."""
+
+    name: str          # the model id, e.g. "gemini-2.5-pro"
+    provider: Literal["cloud", "local", "unknown"] = "unknown"
+
+
+class ProfileDigest(BaseModel):
+    """Compact 'what does this profile use?' summary for the list cards."""
+
+    models: list[DigestModelRef] = Field(
+        default_factory=lambda: cast(list[DigestModelRef], [])
+    )
+    providers: list[str] = Field(default_factory=lambda: cast(list[str], []))
+    requirement_hints: list[str] = Field(
+        default_factory=lambda: cast(list[str], [])
+    )
+
+
 class ProfileSummary(BaseModel):
     """Discovery row for a profile.
 
@@ -268,6 +345,9 @@ class ProfileSummary(BaseModel):
     description: str = ""
     path: str
     source: Literal["bundled", "user"]
+    # Phase 8 — models/providers/requirement hints, computed statically so the
+    # cards can show "gemini-2.5-pro (cloud) + whisper (local) · needs GEMINI_API_KEY".
+    digest: ProfileDigest | None = None
 
 
 class OperationSummary(BaseModel):
@@ -370,6 +450,19 @@ class ConfigFilesResponse(BaseModel):
     config_toml: ConfigFileView
     resources_yaml: ConfigFileView
     secrets_env: ConfigFileView
+
+
+class ConfigFilesUpdateRequest(BaseModel):
+    """Editable config files for ``PUT /settings/config-files``.
+
+    Only the field(s) present are written. There is deliberately **no**
+    ``secrets_env`` field — secrets are biometric-adjacent credentials with
+    their own masked write path (``PUT /settings/secrets``); making them
+    structurally absent here means this route can never persist a secret.
+    """
+
+    config_toml: str | None = None
+    resources_yaml: str | None = None
 
 
 router = APIRouter()
@@ -525,6 +618,17 @@ def post_run_preview(
         # the upstream op yet. Surface as 404 so the UI can hint.
         raise HTTPException(status_code=404, detail=str(e)) from None
 
+    # Pre-run feasibility (op.validate_params). Inputs already resolved above
+    # (else we'd have 404'd), so this only surfaces an infeasible config —
+    # e.g. video.comprehend's fps × duration > max_frames — before submit.
+    feasibility_error: str | None = None
+    try:
+        state.engine.validate_op_feasibility(
+            body.op, inputs=list(body.inputs), **body.params
+        )
+    except ValueError as e:
+        feasibility_error = str(e)
+
     return RunPreviewResponse(
         op=body.op,
         backend=backend_name,
@@ -533,6 +637,7 @@ def post_run_preview(
         estimate_cost_cents=estimate.cloud_cents,
         estimate_tokens_in=estimate.tokens_in,
         estimate_tokens_out=estimate.tokens_out,
+        feasibility_error=feasibility_error,
     )
 
 
@@ -661,22 +766,25 @@ async def post_search(
 # ─────────────────────────────────────────────────────────────────
 
 
-@router.post(
-    "/pipelines",
-    response_model=JobAck,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def post_pipeline(
+def _resolve_and_compile_pipeline(
     body: PipelineRequest,
-    state: Annotated[AppState, Depends(get_state)],
-    token: Annotated[ApiTokenInfo, Depends(require_token)],
-) -> JobAck:
+    state: AppState,
+    token: ApiTokenInfo,
+) -> tuple[PipelineProfile | PromptProfile, Pipeline]:
+    """Resolve a pipeline request (by name or inline YAML) → compiled Pipeline.
+
+    Shared by ``POST /pipelines`` (submit) and ``POST /pipelines/preview``
+    (preflight). Raises ``HTTPException`` for hard errors (bad request, unknown
+    profile / source), and re-raises ``ProfileLoadError`` / ``ProfileCompileError``
+    unwrapped so each caller can choose HTTP-error vs typed-envelope handling.
+    """
     if (body.profile_name is None) == (body.pipeline_yaml is None):
         raise HTTPException(
             status_code=400,
             detail="exactly one of `profile_name` or `pipeline_yaml` is required",
         )
 
+    profile: PipelineProfile | PromptProfile
     if body.profile_name is not None:
         profiles = discover_profiles(
             config_dir=state.engine.config.config_dir / "profiles",
@@ -701,9 +809,7 @@ async def post_pipeline(
         tmp_path = tmp / "inline.yaml"
         tmp_path.write_text(body.pipeline_yaml or "", encoding="utf-8")
         try:
-            profile = load_profile(tmp_path)
-        except ProfileLoadError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from None
+            profile = load_profile(tmp_path)  # may raise ProfileLoadError
         finally:
             import contextlib as _ctx
 
@@ -731,9 +837,23 @@ async def post_pipeline(
             )
         sources[spec.name] = art
 
+    pipeline = compile_profile(profile, sources)  # may raise ProfileCompileError
+    return profile, pipeline
+
+
+@router.post(
+    "/pipelines",
+    response_model=JobAck,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def post_pipeline(
+    body: PipelineRequest,
+    state: Annotated[AppState, Depends(get_state)],
+    token: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> JobAck:
     try:
-        pipeline = compile_profile(profile, sources)
-    except ProfileCompileError as e:
+        profile, pipeline = _resolve_and_compile_pipeline(body, state, token)
+    except (ProfileLoadError, ProfileCompileError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
     job_id = submit_pipeline(
@@ -744,6 +864,73 @@ async def post_pipeline(
         pipeline_yaml=body.pipeline_yaml,
     )
     return JobAck(job_id=job_id)
+
+
+@router.post("/pipelines/preview", response_model=PipelinePreviewResponse)
+def post_pipeline_preview(
+    body: PipelineRequest,
+    state: Annotated[AppState, Depends(get_state)],
+    token: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> PipelinePreviewResponse:
+    """Preflight a pipeline — per-node backend + models + cost + feasibility —
+    without running it.
+
+    The workspace Run button calls this first (with the picked sources) and
+    blocks submission when any node has a ``feasibility_error`` (e.g.
+    ``fps × duration > max_frames``). Compile/load failures come back as
+    ``ok=False`` + a typed envelope (200, mirroring ``/profiles/validate``);
+    unknown-profile / missing-source stay hard HTTP errors.
+    """
+    from media_engine.profiles.introspect import enrich_node
+
+    try:
+        _profile, pipeline = _resolve_and_compile_pipeline(body, state, token)
+    except ProfileLoadError as e:
+        return PipelinePreviewResponse(
+            ok=False, error_class="ProfileLoadError", message=str(e)
+        )
+    except ProfileCompileError as e:
+        return PipelinePreviewResponse(
+            ok=False, error_class="ProfileCompileError", message=str(e)
+        )
+
+    previews = state.engine.preview_pipeline(pipeline)
+    node_params = {
+        n.id: (n.op_name, dict(n.params), n.backend) for n in pipeline.nodes
+    }
+    nodes: list[NodePreview] = []
+    for p in previews:
+        models: list[ModelFieldRef] = []
+        if p.id in node_params:
+            op_name, params, backend = node_params[p.id]
+            enriched = enrich_node(op_name, params, backend)
+            models = [ModelFieldRef(**m) for m in enriched["models"]]
+        nodes.append(
+            NodePreview(
+                id=p.id,
+                op=p.op,
+                backend=p.backend,
+                embedded=p.embedded,
+                cached=p.cached,
+                resolvable=p.resolvable,
+                models=models,
+                estimate_seconds_local=p.estimate.local_seconds,
+                estimate_cost_cents=p.estimate.cloud_cents,
+                estimate_tokens_in=p.estimate.tokens_in,
+                estimate_tokens_out=p.estimate.tokens_out,
+                feasibility_error=p.feasibility_error,
+            )
+        )
+    # preview_pipeline already zeroes cached / infeasible / unresolvable nodes,
+    # so a plain sum is the DAG total.
+    return PipelinePreviewResponse(
+        ok=True,
+        nodes=nodes,
+        total_seconds_local=sum(n.estimate_seconds_local for n in nodes),
+        total_cost_cents=sum(n.estimate_cost_cents for n in nodes),
+        total_tokens_in=sum(n.estimate_tokens_in for n in nodes),
+        total_tokens_out=sum(n.estimate_tokens_out for n in nodes),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -992,6 +1179,7 @@ def list_profiles_endpoint(
                 description=profile.description,
                 path=str(path),
                 source="user" if is_user else "bundled",
+                digest=ProfileDigest(**profile_digest(profile)),
             )
         )
     return out
@@ -1078,6 +1266,15 @@ class CompiledNodeRef(BaseModel):
     op: str
     backend: str | None = None
     inputs: list[str] = Field(default_factory=lambda: cast(list[str], []))
+    # Phase 8 — model/backend transparency. All additive + statically derived
+    # (introspect.enrich_node); existing ok/compiled_nodes consumers ignore them.
+    # NB: field is `models` (not `model_*`) — Pydantic reserves `model_`.
+    resolved_backend: str | None = None
+    provider: Literal["cloud", "local", "composite", "unknown"] = "unknown"
+    models: list[ModelFieldRef] = Field(
+        default_factory=lambda: cast(list[ModelFieldRef], [])
+    )
+    requirement_hint: str | None = None
 
 
 class ValidateProfileResponse(BaseModel):
@@ -1144,9 +1341,17 @@ def post_profiles_validate(
             error_class="ProfileCompileError",
             message=str(e),
         )
+    # Enrich each compiled node with model/provider/requirement metadata
+    # (aligned 1:1 with `compiled` in declaration order). Purely additive.
+    from media_engine.profiles.introspect import enrich_profile_nodes
+
+    enriched = enrich_profile_nodes(profile)
     return ValidateProfileResponse(
         ok=True,
-        compiled_nodes=[CompiledNodeRef(**c) for c in compiled],
+        compiled_nodes=[
+            CompiledNodeRef(**{**c, **e})
+            for c, e in zip(compiled, enriched, strict=False)
+        ],
     )
 
 
@@ -1507,6 +1712,63 @@ def get_settings_config_files(
     """
     config_dir = state.engine.config.config_dir
     from media_engine.runtime.secrets import secrets_path
+
+    return ConfigFilesResponse(
+        config_toml=_read_config_file(config_dir / "config.toml"),
+        resources_yaml=_read_config_file(config_dir / "resources.yaml"),
+        secrets_env=_read_config_file(secrets_path(config_dir), mask=True),
+    )
+
+
+@router.put("/settings/config-files", response_model=ConfigFilesResponse)
+def put_settings_config_files(
+    body: ConfigFilesUpdateRequest,
+    state: Annotated[AppState, Depends(get_state)],
+    _: Annotated[ApiTokenInfo, Depends(require_token)],
+) -> ConfigFilesResponse:
+    """Persist ``config.toml`` and/or ``resources.yaml`` to the config dir.
+
+    Validates every provided file **before writing any of them** (TOML/YAML
+    parse + ``EngineConfig`` / resources round-trip + unknown-key / unknown-op
+    rejection); on failure returns 422 with the message and writes nothing.
+    ``secrets.env`` is not writable here — it has its own masked endpoint.
+
+    Config is read once at process boot, so a successful write does NOT
+    hot-reload a running ``med web start`` — the UI surfaces a restart notice.
+    """
+    from media_engine.config import (
+        ConfigValidationError,
+        validate_config_toml,
+        write_config_toml,
+    )
+    from media_engine.runtime.resources import (
+        ResourcesConfigError,
+        validate_resources_yaml,
+        write_resources_config,
+    )
+    from media_engine.runtime.secrets import secrets_path
+
+    if body.config_toml is None and body.resources_yaml is None:
+        raise HTTPException(
+            status_code=422,
+            detail="provide config_toml and/or resources_yaml to write",
+        )
+
+    config_dir = state.engine.config.config_dir
+    # Validate BOTH before writing EITHER — an invalid file must never leave a
+    # half-applied pair on disk.
+    try:
+        if body.config_toml is not None:
+            validate_config_toml(body.config_toml)
+        if body.resources_yaml is not None:
+            validate_resources_yaml(body.resources_yaml)
+    except (ConfigValidationError, ResourcesConfigError) as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+
+    if body.config_toml is not None:
+        write_config_toml(config_dir, body.config_toml)
+    if body.resources_yaml is not None:
+        write_resources_config(config_dir, body.resources_yaml)
 
     return ConfigFilesResponse(
         config_toml=_read_config_file(config_dir / "config.toml"),
