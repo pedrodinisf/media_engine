@@ -11,7 +11,7 @@ Because AssemblyAI diarizes in the same call, this backend writes
 ``params.speaker_labels`` is set — the same segment shape
 ``audio.transcribe_diarized`` otherwise produces by merging whisper + pyannote.
 
-Auth: ``ASSEMBLYAI_API_KEY``. Optional dep: ``uv sync --extra assemblyai``.
+Auth: ``ASSEMBLYAI_API_KEY``. Optional dep: ``uv sync --extra transcribe-assemblyai``.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from media_engine.artifacts import AnyArtifact, Audio
 from media_engine.backends import Backend, BackendRequirements, register_backend
 from media_engine.ops import CostEstimate, OperationContext
 from media_engine.ops.audio._models import (
+    ASSEMBLYAI_PROMPT_MODELS,
     assemblyai_cost_cents,
     strip_assemblyai_prefix,
 )
@@ -65,7 +66,8 @@ def _import_assemblyai() -> Any:
         return importlib.import_module("assemblyai")
     except ImportError as e:
         raise RuntimeError(
-            "assemblyai is not installed. Install with: uv sync --extra assemblyai"
+            "assemblyai is not installed. "
+            "Install with: uv sync --extra transcribe-assemblyai"
         ) from e
 
 
@@ -112,11 +114,14 @@ def _build_config(aai: Any, params: TranscribeParams, *, detect_only: bool) -> A
                     min_speakers_expected=params.min_speakers,
                     max_speakers_expected=params.max_speakers,
                 )
-        if params.prompt:
-            cfg_kwargs["prompt"] = params.prompt
-        keyterms = _keyterms(params.keyterms)
-        if keyterms:
-            cfg_kwargs["keyterms_prompt"] = keyterms
+        # prompt + keyterms are only accepted by universal-3-5-pro; forwarding
+        # them to universal-2 makes AssemblyAI reject the whole job.
+        if strip_assemblyai_prefix(params.model) in ASSEMBLYAI_PROMPT_MODELS:
+            if params.prompt:
+                cfg_kwargs["prompt"] = params.prompt
+            keyterms = _keyterms(params.keyterms)
+            if keyterms:
+                cfg_kwargs["keyterms_prompt"] = keyterms
     if params.start_s is not None:
         cfg_kwargs["audio_start_from"] = int(params.start_s * 1000)
     if params.end_s is not None:
@@ -160,7 +165,9 @@ def _utterance_segments(
                 "start": float(getattr(u, "start", 0) or 0) / 1000.0,
                 "end": float(getattr(u, "end", 0) or 0) / 1000.0,
                 "text": str(getattr(u, "text", "")).strip(),
-                "speaker_id": str(getattr(u, "speaker", "")),
+                # None speaker → "" so the transcribe_diarized composite stamps
+                # it "UNKNOWN" (its per-segment speaker_id invariant).
+                "speaker_id": str(getattr(u, "speaker", None) or ""),
                 "words": _word_dicts(getattr(u, "words", None))
                 if word_timestamps
                 else [],
@@ -305,6 +312,9 @@ class AssemblyAIDetectLanguageBackend(Backend):
         language = str(getattr(transcript, "language_code", None) or "unknown")
         confidence = float(getattr(transcript, "language_confidence", 0.0) or 0.0)
 
+        # AssemblyAI exposes only the winning language + its confidence (no
+        # per-language probability map), so alternatives is a single entry —
+        # unlike the whisper backend's ranked {lang: prob} map.
         analysis = build_detect_language_artifact(
             audio=audio,
             params=params,

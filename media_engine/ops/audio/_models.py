@@ -64,6 +64,18 @@ def is_assemblyai_model(model: str) -> bool:
     return model.startswith("assemblyai/")
 
 
+def transcribe_backend_for_model(model: str) -> str:
+    """Route a transcribe/detect-language model id to its backend by prefix:
+    ``assemblyai/*`` → the cloud AssemblyAI backend, else local mlx-whisper.
+    Shared by audio.transcribe + audio.detect_language so the rule lives once."""
+    return "assemblyai" if is_assemblyai_model(model) else "mlx-whisper"
+
+
+# AssemblyAI models that accept the ``prompt`` + ``keyterms`` accuracy knobs.
+# universal-2 rejects them, so the backend only forwards them for these.
+ASSEMBLYAI_PROMPT_MODELS: frozenset[str] = frozenset({"universal-3-5-pro"})
+
+
 def strip_assemblyai_prefix(model: str) -> str:
     """``assemblyai/universal-2`` → ``universal-2`` (the API's speech_model id)."""
     return model.split("/", 1)[1] if is_assemblyai_model(model) else model
@@ -82,9 +94,11 @@ def assemblyai_cost_cents(
 
 __all__ = [
     "ASSEMBLYAI_MODELS",
+    "ASSEMBLYAI_PROMPT_MODELS",
     "DIARIZE_MODELS",
     "WHISPER_MODELS",
     "assemblyai_cost_cents",
     "is_assemblyai_model",
     "strip_assemblyai_prefix",
+    "transcribe_backend_for_model",
 ]

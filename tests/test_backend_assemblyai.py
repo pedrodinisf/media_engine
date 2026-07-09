@@ -48,7 +48,9 @@ class _Utterance:
         self.words = words
 
 
-def _make_fake_assemblyai(captured: dict) -> types.ModuleType:
+def _make_fake_assemblyai(
+    captured: dict, *, no_utterances: bool = False
+) -> types.ModuleType:
     aai = types.ModuleType("assemblyai")
 
     class _Settings:
@@ -83,12 +85,13 @@ def _make_fake_assemblyai(captured: dict) -> types.ModuleType:
                 _Word("Kenobi.", 3000, 4000),
             ]
             self.words = words
-            if config.kwargs.get("speaker_labels"):
+            if config.kwargs.get("speaker_labels") and not no_utterances:
                 self.utterances = [
                     _Utterance("A", 0, 2000, "Hello there.", words[:2]),
                     _Utterance("B", 2000, 4000, "General Kenobi.", words[2:]),
                 ]
             else:
+                # single-speaker / diarization-off → no utterances
                 self.utterances = None
 
     class _Transcriber:
@@ -110,6 +113,17 @@ def fake_aai(monkeypatch: pytest.MonkeyPatch) -> dict:
     captured: dict = {}
     monkeypatch.setenv("ASSEMBLYAI_API_KEY", "test-key")
     monkeypatch.setitem(sys.modules, "assemblyai", _make_fake_assemblyai(captured))
+    return captured
+
+
+@pytest.fixture
+def fake_aai_single_speaker(monkeypatch: pytest.MonkeyPatch) -> dict:
+    """A fake whose transcript has no utterances (single-speaker audio)."""
+    captured: dict = {}
+    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "test-key")
+    monkeypatch.setitem(
+        sys.modules, "assemblyai", _make_fake_assemblyai(captured, no_utterances=True)
+    )
     return captured
 
 
@@ -166,6 +180,17 @@ def test_build_config_maps_params(fake_aai: dict) -> None:
     assert k["prompt"] == "tech meeting"
     assert k["keyterms_prompt"] == ["Sphere", "triage"]
     assert k["audio_start_from"] == 1000 and k["audio_end_at"] == 5000
+    # universal-2 does NOT support prompt/keyterms → they must be dropped
+    # (forwarding them makes AssemblyAI reject the whole job).
+    u2 = _build_config(
+        aai,
+        TranscribeParams(
+            model="assemblyai/universal-2", prompt="hi", keyterms="Sphere"
+        ),
+        detect_only=False,
+    )
+    assert "prompt" not in u2.kwargs
+    assert "keyterms_prompt" not in u2.kwargs
     # detect-only path forces language_detection + drops diarization/prompt.
     d = _build_config(aai, TranscribeParams(model="assemblyai/universal-2"), detect_only=True)
     assert d.kwargs.get("language_detection") is True
@@ -299,3 +324,42 @@ async def test_detect_language_via_assemblyai(
     assert analysis.metadata["data"]["language"] == "en"
     # detect path must force language_detection (no fixed language_code)
     assert fake_aai["config"].kwargs.get("language_detection") is True
+
+
+async def test_short_circuit_guarantees_speaker_id(
+    engine: Engine, sample_m4a: Path, fake_aai_single_speaker: dict
+) -> None:
+    # Single-speaker audio → AssemblyAI returns no utterances → the backend
+    # falls to sentence segments with no speaker_id. transcribe_diarized must
+    # still stamp every segment "UNKNOWN" (the whisper+pyannote invariant).
+    audio = await _acquire_audio(engine, sample_m4a)
+    [t] = await engine.run(
+        "audio.transcribe_diarized",
+        inputs=[audio.id],
+        transcribe_model="assemblyai/universal-2",
+    )
+    assert t.segments, "expected sentence segments"
+    assert all(s["speaker_id"] == "UNKNOWN" for s in t.segments)
+
+
+async def test_short_circuit_tolerates_num_speakers_zero(
+    engine: Engine, sample_m4a: Path, fake_aai: dict
+) -> None:
+    # num_speakers=0 must not raise (TranscribeParams min/max_speakers ge=1) —
+    # the composite simply doesn't forward the hint.
+    audio = await _acquire_audio(engine, sample_m4a)
+    [t] = await engine.run(
+        "audio.transcribe_diarized",
+        inputs=[audio.id],
+        transcribe_model="assemblyai/universal-2",
+        num_speakers=0,
+    )
+    assert t.metadata["diarization_model"] == "assemblyai"
+    assert "min_speakers" not in fake_aai["config"].kwargs
+
+
+def test_transcribe_diarized_does_not_double_bill() -> None:
+    # Composite bills nothing itself — the delegated audio.transcribe does.
+    from media_engine.ops.audio.transcribe_diarized import AudioTranscribeDiarized
+
+    assert AudioTranscribeDiarized.records_cost is False

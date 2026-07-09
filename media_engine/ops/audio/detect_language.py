@@ -33,6 +33,7 @@ from media_engine.ops.audio._models import (
     WHISPER_MODELS,
     assemblyai_cost_cents,
     is_assemblyai_model,
+    transcribe_backend_for_model,
 )
 
 
@@ -76,13 +77,9 @@ class AudioDetectLanguage(Operation):
     declared_resources = ("apple_neural_engine",)
     default_backend = "mlx-whisper"
 
-    @staticmethod
-    def _backend_for_model(model: str) -> str:
-        return "assemblyai" if is_assemblyai_model(model) else "mlx-whisper"
-
     def select_backend(self, params: BaseModel) -> str | None:
         assert isinstance(params, DetectLanguageParams)
-        return self._backend_for_model(params.model)
+        return transcribe_backend_for_model(params.model)
 
     async def run(
         self,
@@ -98,7 +95,7 @@ class AudioDetectLanguage(Operation):
             )
         audio: Audio = inputs[0]
 
-        backend_name = ctx.backend or self._backend_for_model(params.model)
+        backend_name = ctx.backend or transcribe_backend_for_model(params.model)
         backend_cls = BackendRegistry.get(self.name, backend_name)
         backend = backend_cls()
         return await backend.execute([audio], params, ctx)

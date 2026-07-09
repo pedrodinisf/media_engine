@@ -169,6 +169,11 @@ class AudioTranscribeDiarized(Operation):
     output_kinds = (Kind.Transcript,)
     params_model = TranscribeDiarizedParams
     declared_resources = ("apple_neural_engine",)
+    # Thin composite — every sub-op (audio.transcribe / audio.diarize, or the
+    # single AssemblyAI transcribe on the cloud path) already bills its own
+    # spend. Without this the cost ledger would double-count (matters now that
+    # the AssemblyAI path has real cloud_cents, not just local seconds).
+    records_cost = False
     delegates_to = ("audio.transcribe", "audio.diarize")
 
     async def run(
@@ -289,7 +294,10 @@ class AudioTranscribeDiarized(Operation):
         }
         if params.language is not None:
             aa_kwargs["language"] = params.language
-        if params.num_speakers is not None:
+        # num_speakers → min/max hint, but only when it's a sane positive count
+        # (TranscribeParams.min/max_speakers carry ge=1, so 0/negative would
+        # otherwise raise a ValidationError deep in the delegate).
+        if params.num_speakers is not None and params.num_speakers >= 1:
             aa_kwargs["min_speakers"] = params.num_speakers
             aa_kwargs["max_speakers"] = params.num_speakers
         if params.transcribe_backend is not None:
@@ -301,10 +309,15 @@ class AudioTranscribeDiarized(Operation):
 
         outs = await ctx.run_op("audio.transcribe", inputs=[audio.id], **aa_kwargs)
         aa: Transcript = outs[0]
-        segments = list(aa.metadata.get("segments", []))
-        speakers = {
-            s.get("speaker_id") for s in segments if s.get("speaker_id")
-        }
+        # Preserve the whisper+pyannote path's invariant: EVERY segment carries
+        # a speaker_id. AssemblyAI's non-diarized fallback (single-speaker audio
+        # → no utterances) emits segments without the key, so default to
+        # "UNKNOWN" exactly like _align_speakers does.
+        segments = [
+            {**s, "speaker_id": s.get("speaker_id") or "UNKNOWN"}
+            for s in aa.metadata.get("segments", [])
+        ]
+        speakers = {s["speaker_id"] for s in segments if s["speaker_id"] != "UNKNOWN"}
 
         derived_id = compute_derived_artifact_id(
             kind=Kind.Transcript,
