@@ -30,7 +30,12 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
-from media_engine.ops.audio._models import DIARIZE_MODELS, WHISPER_MODELS
+from media_engine.ops.audio._models import (
+    ASSEMBLYAI_MODELS,
+    DIARIZE_MODELS,
+    WHISPER_MODELS,
+    is_assemblyai_model,
+)
 
 
 def release_audio_models(ctx: OperationContext | None = None) -> None:
@@ -93,9 +98,13 @@ def release_audio_models(ctx: OperationContext | None = None) -> None:
 
 
 class TranscribeDiarizedParams(BaseModel):
+    # Local whisper OR a cloud ``assemblyai/*`` id. AssemblyAI does
+    # transcription + diarization in one call, so picking an assemblyai model
+    # makes this op do a single API call instead of the whisper+pyannote
+    # compose (see the short-circuit in run()).
     transcribe_model: Annotated[
         str,
-        Field(json_schema_extra={"enum": list(WHISPER_MODELS)}),
+        Field(json_schema_extra={"enum": [*WHISPER_MODELS, *ASSEMBLYAI_MODELS]}),
     ] = "mlx-community/whisper-large-v3-mlx"
     diarize_model: Annotated[
         str,
@@ -181,6 +190,14 @@ class AudioTranscribeDiarized(Operation):
             )
         audio: Audio = inputs[0]
 
+        # AssemblyAI short-circuit: it transcribes + diarizes in one call, so
+        # skip the whisper+pyannote compose entirely and do a single
+        # audio.transcribe with speaker_labels on. The returned Transcript
+        # already carries per-segment speaker_id — we just re-key it as this
+        # composite's own artifact so lineage + caching stay consistent.
+        if is_assemblyai_model(params.transcribe_model):
+            return await self._run_assemblyai(audio, params, ctx)
+
         transcribe_kwargs: dict[str, Any] = {
             "model": params.transcribe_model,
         }
@@ -258,12 +275,86 @@ class AudioTranscribeDiarized(Operation):
             )
         ]
 
+    async def _run_assemblyai(
+        self,
+        audio: Audio,
+        params: TranscribeDiarizedParams,
+        ctx: OperationContext,
+    ) -> list[AnyArtifact]:
+        """One AssemblyAI call (transcribe + diarize) → this op's Transcript."""
+        assert ctx.run_op is not None
+        aa_kwargs: dict[str, Any] = {
+            "model": params.transcribe_model,
+            "speaker_labels": True,
+        }
+        if params.language is not None:
+            aa_kwargs["language"] = params.language
+        if params.num_speakers is not None:
+            aa_kwargs["min_speakers"] = params.num_speakers
+            aa_kwargs["max_speakers"] = params.num_speakers
+        if params.transcribe_backend is not None:
+            aa_kwargs["backend"] = params.transcribe_backend
+        if params.start_s is not None:
+            aa_kwargs["start_s"] = params.start_s
+        if params.end_s is not None:
+            aa_kwargs["end_s"] = params.end_s
+
+        outs = await ctx.run_op("audio.transcribe", inputs=[audio.id], **aa_kwargs)
+        aa: Transcript = outs[0]
+        segments = list(aa.metadata.get("segments", []))
+        speakers = {
+            s.get("speaker_id") for s in segments if s.get("speaker_id")
+        }
+
+        derived_id = compute_derived_artifact_id(
+            kind=Kind.Transcript,
+            op_name=self.name,
+            op_version=self.version,
+            backend_name=None,
+            backend_version=None,
+            params=params,
+            input_ids=[audio.id, aa.id],
+        )
+        payload: dict[str, Any] = {
+            "text": aa.metadata.get("text", ""),
+            "segments": segments,
+            "language": aa.metadata.get("language"),
+            "model": params.transcribe_model,
+            "diarization_model": "assemblyai",
+            "num_speakers": params.num_speakers or len(speakers) or None,
+        }
+        import json
+
+        tmp = ctx.workdir / f"transcript_diarized-{derived_id[:12]}.json"
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        dest = ctx.storage.store_file(tmp, derived_id, ".json")
+        tmp.unlink(missing_ok=True)
+        return [
+            Transcript(
+                id=derived_id,
+                path=dest,
+                metadata=payload,
+                derived_from=(audio.id, aa.id),
+                created_at=datetime.now(UTC),
+            )
+        ]
+
     def cost_estimate(
         self, inputs: list[AnyArtifact], params: BaseModel
     ) -> CostEstimate:
         if not inputs:
             return CostEstimate()
+        assert isinstance(params, TranscribeDiarizedParams)
         audio = inputs[0]
-        if isinstance(audio, Audio) and audio.duration is not None:
-            return CostEstimate(local_seconds=audio.duration * 0.5 + 5.0)
+        duration = audio.duration if isinstance(audio, Audio) else None
+        if is_assemblyai_model(params.transcribe_model):
+            from media_engine.ops.audio._models import assemblyai_cost_cents
+
+            return CostEstimate(
+                cloud_cents=assemblyai_cost_cents(
+                    params.transcribe_model, duration, diarize=True
+                )
+            )
+        if duration is not None:
+            return CostEstimate(local_seconds=duration * 0.5 + 5.0)
         return CostEstimate(local_seconds=25.0)

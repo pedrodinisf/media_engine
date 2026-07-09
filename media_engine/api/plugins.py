@@ -68,6 +68,7 @@ class ExtrasResponse(BaseModel):
 _EXTRAS_CATALOG: list[tuple[str, list[str], str]] = [
     # (extra name, pip dist names, leaf module to probe)
     ("transcribe-mlx", ["mlx-whisper>=0.4"], "mlx_whisper"),
+    ("transcribe-assemblyai", ["assemblyai>=0.40"], "assemblyai"),
     ("diarize", ["pyannote.audio>=3.1", "torch>=2.2"], "pyannote.audio"),
     ("embed", ["sentence-transformers>=2.7"], "sentence_transformers"),
     ("chunk", ["nltk>=3.8"], "nltk"),

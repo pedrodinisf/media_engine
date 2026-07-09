@@ -41,5 +41,50 @@ DIARIZE_MODELS: tuple[str, ...] = (
     "pyannote/speaker-diarization-3.0",
 )
 
+# AssemblyAI cloud speech-to-text models. Namespaced with an ``assemblyai/``
+# prefix so audio.transcribe's router dispatches by prefix (``assemblyai/*`` →
+# the assemblyai backend; ``mlx-community/*`` → mlx-whisper). Off-list ids are
+# still accepted. Both do one-call diarization; universal-3-5-pro additionally
+# supports ``prompt`` + ``keyterms``. https://www.assemblyai.com/pricing
+ASSEMBLYAI_MODELS: tuple[str, ...] = (
+    "assemblyai/universal-3-5-pro",
+    "assemblyai/universal-2",
+)
 
-__all__ = ["DIARIZE_MODELS", "WHISPER_MODELS"]
+# AssemblyAI per-audio-hour base rates (USD). Add-ons stack additively; we
+# model diarization (+$0.02/hr) since it's the common one here.
+_ASSEMBLYAI_RATES_USD_PER_HR: dict[str, float] = {
+    "universal-3-5-pro": 0.21,
+    "universal-2": 0.15,
+}
+_ASSEMBLYAI_DIARIZATION_USD_PER_HR = 0.02
+
+
+def is_assemblyai_model(model: str) -> bool:
+    return model.startswith("assemblyai/")
+
+
+def strip_assemblyai_prefix(model: str) -> str:
+    """``assemblyai/universal-2`` → ``universal-2`` (the API's speech_model id)."""
+    return model.split("/", 1)[1] if is_assemblyai_model(model) else model
+
+
+def assemblyai_cost_cents(
+    model: str, duration_s: float | None, *, diarize: bool
+) -> float:
+    """Estimated AssemblyAI spend in cents for ``duration_s`` seconds of audio."""
+    hours = (duration_s or 0.0) / 3600.0
+    rate = _ASSEMBLYAI_RATES_USD_PER_HR.get(strip_assemblyai_prefix(model), 0.21)
+    if diarize:
+        rate += _ASSEMBLYAI_DIARIZATION_USD_PER_HR
+    return hours * rate * 100.0
+
+
+__all__ = [
+    "ASSEMBLYAI_MODELS",
+    "DIARIZE_MODELS",
+    "WHISPER_MODELS",
+    "assemblyai_cost_cents",
+    "is_assemblyai_model",
+    "strip_assemblyai_prefix",
+]

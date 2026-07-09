@@ -28,13 +28,18 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
-from media_engine.ops.audio._models import WHISPER_MODELS
+from media_engine.ops.audio._models import (
+    ASSEMBLYAI_MODELS,
+    WHISPER_MODELS,
+    assemblyai_cost_cents,
+    is_assemblyai_model,
+)
 
 
 class DetectLanguageParams(BaseModel):
     model: Annotated[
         str,
-        Field(json_schema_extra={"enum": list(WHISPER_MODELS)}),
+        Field(json_schema_extra={"enum": [*WHISPER_MODELS, *ASSEMBLYAI_MODELS]}),
     ] = "mlx-community/whisper-large-v3-mlx"
     # Optional time-window slicing. Whisper's language detector only
     # looks at the first ~30 s of input, so the most common reason to
@@ -71,6 +76,14 @@ class AudioDetectLanguage(Operation):
     declared_resources = ("apple_neural_engine",)
     default_backend = "mlx-whisper"
 
+    @staticmethod
+    def _backend_for_model(model: str) -> str:
+        return "assemblyai" if is_assemblyai_model(model) else "mlx-whisper"
+
+    def select_backend(self, params: BaseModel) -> str | None:
+        assert isinstance(params, DetectLanguageParams)
+        return self._backend_for_model(params.model)
+
     async def run(
         self,
         inputs: list[AnyArtifact],
@@ -85,12 +98,7 @@ class AudioDetectLanguage(Operation):
             )
         audio: Audio = inputs[0]
 
-        backend_name = self.default_backend
-        if backend_name is None:
-            raise RuntimeError(
-                f"{self.name} has no default backend; register one or "
-                f"pass `backend=` to Engine.run."
-            )
+        backend_name = ctx.backend or self._backend_for_model(params.model)
         backend_cls = BackendRegistry.get(self.name, backend_name)
         backend = backend_cls()
         return await backend.execute([audio], params, ctx)
@@ -98,7 +106,15 @@ class AudioDetectLanguage(Operation):
     def cost_estimate(
         self, inputs: list[AnyArtifact], params: BaseModel
     ) -> CostEstimate:
-        # Detect runs on the first ~30 s of audio; cheap.
+        assert isinstance(params, DetectLanguageParams)
+        if is_assemblyai_model(params.model) and inputs:
+            audio = inputs[0]
+            duration = audio.duration if isinstance(audio, Audio) else None
+            # AssemblyAI has no language-only endpoint — it transcribes.
+            return CostEstimate(
+                cloud_cents=assemblyai_cost_cents(params.model, duration, diarize=False)
+            )
+        # Local detect runs on the first ~30 s of audio; cheap.
         return CostEstimate(local_seconds=2.0)
 
 

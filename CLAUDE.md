@@ -63,11 +63,24 @@ YAML frontmatter) or pipeline (YAML DAG).
 - `docs/web_ui_deferred.md` — Phase 6 v1 deferred items with bring-in
   triggers
 
+## Transcription backends
+`audio.transcribe` (+ `audio.detect_language`) route by **model prefix**:
+`mlx-community/*` → local `mlx-whisper` (default); `assemblyai/*` → the cloud
+**AssemblyAI** backend (`uv sync --extra transcribe-assemblyai`, key
+`ASSEMBLYAI_API_KEY` — settable in the UI Settings → Secrets). AssemblyAI does
+transcription + speaker diarization + language detection in one call, so
+`audio.transcribe --param model=assemblyai/universal-3-5-pro --param
+speaker_labels=true` yields a diarized Transcript directly. Picking an
+`assemblyai/*` `transcribe_model` in `audio.transcribe_diarized` (and thus
+`video.comprehend`) makes those do a single AssemblyAI call instead of the
+whisper+pyannote compose — handy on Linux where pyannote is painful.
+
 ## Common commands
 - `uv sync` — install (core deps only). Backends live behind extras
   declared in `pyproject.toml` `[project.optional-dependencies]`
-  (`transcribe-mlx`, `diarize`, `vlm-cloud`, `acquire-url`, `api`,
-  `mcp`, `postgres`, …); install with `uv sync --extra <name>`.
+  (`transcribe-mlx`, `transcribe-assemblyai`, `diarize`, `vlm-cloud`,
+  `acquire-url`, `api`, `mcp`, `postgres`, …); install with
+  `uv sync --extra <name>`.
   `med doctor` reports which extras are currently active per op.
 - `uv run pytest -q` — Python unit + integration suite
 - `pnpm -C web test:unit` — frontend unit (vitest under `web/tests/unit/`)
