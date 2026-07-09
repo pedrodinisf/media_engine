@@ -16,6 +16,7 @@ from media_engine.runtime.doctor import classify_provider
 def test_classify_model_provider_by_prefix() -> None:
     assert classify_model_provider("gemini-2.5-pro") == "cloud"
     assert classify_model_provider("claude-opus-4-7") == "cloud"
+    assert classify_model_provider("assemblyai/universal-3-5-pro") == "cloud"
     assert classify_model_provider("mlx-community/Qwen2-VL-2B-Instruct-4bit") == "local"
     assert classify_model_provider("pyannote/speaker-diarization-3.1") == "local"
     assert classify_model_provider("sentence-transformers/all-MiniLM-L6-v2") == "local"

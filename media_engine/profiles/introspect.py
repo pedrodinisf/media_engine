@@ -42,15 +42,16 @@ from media_engine.runtime.doctor import (
 _MODEL_FIELD_RE = re.compile(r"(^|_)model$")
 
 # Model-id prefix → provider. Local weights live under a namespace prefix;
-# cloud ids are dash-prefixed vendor families.
+# cloud ids are dash-prefixed vendor families (or the assemblyai/ namespace).
 _LOCAL_PREFIXES = ("mlx-community/", "sentence-transformers/", "pyannote/", "BAAI/")
-_CLOUD_PREFIXES = ("gemini-", "claude-", "gpt-")
+_CLOUD_PREFIXES = ("gemini-", "claude-", "gpt-", "assemblyai/")
 
 # Cloud model family → the env var that unblocks it (for composite hints).
 _CLOUD_KEY_FOR_PREFIX = {
     "gemini-": "GEMINI_API_KEY",
     "claude-": "ANTHROPIC_API_KEY",
     "gpt-": "OPENAI_API_KEY",
+    "assemblyai/": "ASSEMBLYAI_API_KEY",
 }
 
 

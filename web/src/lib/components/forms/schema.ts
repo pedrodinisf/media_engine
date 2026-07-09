@@ -85,7 +85,7 @@ export type ModelProvider = 'cloud' | 'local' | 'unknown';
  */
 export function classifyModelProvider(modelId: string): ModelProvider {
   if (/^(mlx-community|sentence-transformers|pyannote|BAAI)\//.test(modelId)) return 'local';
-  if (/^(gemini-|claude-|gpt-)/.test(modelId)) return 'cloud';
+  if (/^(gemini-|claude-|gpt-|assemblyai\/)/.test(modelId)) return 'cloud';
   return 'unknown';
 }
 

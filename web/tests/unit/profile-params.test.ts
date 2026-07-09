@@ -8,6 +8,7 @@ describe('classifyModelProvider', () => {
     expect(classifyModelProvider('gemini-2.5-pro')).toBe('cloud');
     expect(classifyModelProvider('claude-opus-4-7')).toBe('cloud');
     expect(classifyModelProvider('gpt-4o')).toBe('cloud');
+    expect(classifyModelProvider('assemblyai/universal-3-5-pro')).toBe('cloud');
   });
   it('tags known local prefixes', () => {
     expect(classifyModelProvider('mlx-community/Qwen2-VL-2B-Instruct-4bit')).toBe('local');
