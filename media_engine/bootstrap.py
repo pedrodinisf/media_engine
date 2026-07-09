@@ -179,6 +179,15 @@ def _backend_classes() -> list[type]:
     except ImportError:
         pass
     try:
+        from media_engine.backends.transcribe.assemblyai import (
+            AssemblyAIDetectLanguageBackend,
+            AssemblyAITranscribeBackend,
+        )
+        classes.append(AssemblyAITranscribeBackend)
+        classes.append(AssemblyAIDetectLanguageBackend)
+    except ImportError:
+        pass
+    try:
         from media_engine.backends.embed_voice.pyannote import (
             PyannoteEmbedVoiceBackend,
         )

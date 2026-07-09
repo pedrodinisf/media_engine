@@ -202,6 +202,22 @@ wheels = [
 ]
 
 [[package]]
+name = "assemblyai"
+version = "0.64.26"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-settings", marker = "python_full_version >= '3.14'" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/46/e2/1312ed899cc6f8690bba3159c0bdf1cacc6127052cdbb1e9a5947e052c41/assemblyai-0.64.26.tar.gz", hash = "sha256:7ca174b09f8505f4e565c8de4855486e6dc5511b3db24a4cc02f798db9dca16e", size = 94610, upload-time = "2026-07-07T22:51:54.288Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/9d/192cb56f4d58a6d22b3fb42d9342ae1080b3d3d0efd2ed5a29a1b9fcbd62/assemblyai-0.64.26-py3-none-any.whl", hash = "sha256:9f98a28695eea93455f0902130eec90efde27b5cf018643f39c4f3d1df1718ce", size = 83498, upload-time = "2026-07-07T22:51:53.321Z" },
+]
+
+[[package]]
 name = "asteroid-filterbanks"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1807,6 +1823,9 @@ postgres = [
 search = [
     { name = "sqlite-vss" },
 ]
+transcribe-assemblyai = [
+    { name = "assemblyai" },
+]
 transcribe-mlx = [
     { name = "mlx-whisper" },
 ]
@@ -1832,6 +1851,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "anthropic", marker = "extra == 'vlm-cloud'", specifier = ">=0.40" },
     { name = "anyio", specifier = ">=4.0" },
+    { name = "assemblyai", marker = "extra == 'transcribe-assemblyai'", specifier = ">=0.40" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.110" },
     { name = "google-genai", marker = "extra == 'vlm-cloud'", specifier = ">=0.4" },
     { name = "hdbscan", marker = "extra == 'cluster'", specifier = ">=0.8" },
@@ -1869,7 +1889,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'api'", specifier = ">=0.30" },
     { name = "yt-dlp", marker = "extra == 'acquire-url'", specifier = ">=2024.5" },
 ]
-provides-extras = ["transcribe-mlx", "diarize", "embed", "chunk", "vlm-cloud", "vlm-local", "llm-mlx", "ocr", "classify", "acquire-url", "live", "document", "search", "cluster", "api", "mcp", "postgres"]
+provides-extras = ["transcribe-mlx", "transcribe-assemblyai", "diarize", "embed", "chunk", "vlm-cloud", "vlm-local", "llm-mlx", "ocr", "classify", "acquire-url", "live", "document", "search", "cluster", "api", "mcp", "postgres"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 transcribe-mlx = ["mlx-whisper>=0.4"]
+transcribe-assemblyai = ["assemblyai>=0.40"]
 diarize        = ["pyannote.audio>=4.0", "torch>=2.2"]
 embed          = ["sentence-transformers>=2.7"]
 chunk          = ["nltk>=3.8"]

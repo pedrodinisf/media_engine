@@ -49,7 +49,11 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
-from media_engine.ops.audio._models import DIARIZE_MODELS, WHISPER_MODELS
+from media_engine.ops.audio._models import (
+    ASSEMBLYAI_MODELS,
+    DIARIZE_MODELS,
+    WHISPER_MODELS,
+)
 from media_engine.ops.audio.transcribe_diarized import release_audio_models
 from media_engine.ops.intelligence._models import INTELLIGENCE_MODELS
 from media_engine.ops.video._comprehend_prompts import (
@@ -80,9 +84,12 @@ class ComprehendParams(BaseModel):
     max_concurrent_frames: int = Field(default=4, ge=1, le=32)
 
     # Audio
+    # Local whisper OR a cloud ``assemblyai/*`` id — forwarded to
+    # audio.transcribe_diarized, which does a single AssemblyAI call for the
+    # cloud ids (handy on Linux where pyannote is painful to set up).
     transcribe_model: Annotated[
         str,
-        Field(json_schema_extra={"enum": list(WHISPER_MODELS)}),
+        Field(json_schema_extra={"enum": [*WHISPER_MODELS, *ASSEMBLYAI_MODELS]}),
     ] = "mlx-community/whisper-medium-mlx"
     diarize_model: Annotated[
         str,

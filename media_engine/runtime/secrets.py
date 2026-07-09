@@ -56,6 +56,15 @@ KNOWN_SECRETS: tuple[dict[str, str], ...] = (
         "url": "https://huggingface.co/settings/tokens",
     },
     {
+        "name": "ASSEMBLYAI_API_KEY",
+        "label": "AssemblyAI API key",
+        "category": "Transcription",
+        "used_by": "audio.transcribe / audio.transcribe_diarized / "
+        "audio.detect_language (assemblyai/* models) — cloud "
+        "transcription + speaker diarization",
+        "url": "https://www.assemblyai.com/app/account",
+    },
+    {
         "name": "MEDIA_ENGINE_FULLTEXT_DB_URL",
         "label": "Postgres connection (search.fulltext)",
         "category": "Database",
