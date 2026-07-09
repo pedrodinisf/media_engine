@@ -162,9 +162,18 @@ body: |
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True
-    assert body["compiled_nodes"] == [
-        {"id": "run", "op": "video.multimodal", "backend": None, "inputs": []}
-    ]
+    (node,) = body["compiled_nodes"]
+    # Structural fields (unchanged contract).
+    assert node["id"] == "run"
+    assert node["op"] == "video.multimodal"
+    assert node["backend"] is None
+    assert node["inputs"] == []
+    # Phase 8 enrichment — video.multimodal defaults to a gemini (cloud) model.
+    assert node["resolved_backend"] == "gemini"
+    assert node["provider"] == "cloud"
+    assert any(
+        m["name"] == "model" and m["provider"] == "cloud" for m in node["models"]
+    )
 
 
 def test_validate_requires_token(client: TestClient) -> None:
@@ -343,3 +352,60 @@ def test_validate_does_not_touch_disk_workdir(
         sorted(workdir_root.iterdir()) if workdir_root.exists() else []
     )
     assert after == before
+
+
+# ─────────────────────────────────────────────────────────────────
+# Phase 8 — validate enrichment · /profiles digest · /pipelines/preview
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_validate_enriches_nodes_with_provider(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    r = client.post(
+        "/profiles/validate", json={"pipeline_yaml": VALID_PIPELINE}, headers=auth
+    )
+    body = r.json()
+    audio = next(n for n in body["compiled_nodes"] if n["id"] == "audio")
+    # video.extract_audio is a local ffmpeg op.
+    assert audio["provider"] in ("local", "unknown", "composite")
+    # every enriched node carries the additive fields
+    for n in body["compiled_nodes"]:
+        assert "resolved_backend" in n
+        assert "models" in n
+        assert "requirement_hint" in n
+
+
+def test_profiles_list_carries_digest(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    r = client.get("/profiles", headers=auth)
+    assert r.status_code == 200
+    profiles = r.json()
+    assert profiles, "bundled profiles should be discovered"
+    for p in profiles:
+        assert "digest" in p
+        assert isinstance(p["digest"]["models"], list)
+        assert isinstance(p["digest"]["requirement_hints"], list)
+
+
+def test_pipeline_preview_compile_error_envelope(
+    client: TestClient, auth: dict[str, str]
+) -> None:
+    # An op typo compiles-fails → 200 with ok=False + typed envelope, mirroring
+    # /profiles/validate (so the workspace doesn't special-case the preview).
+    bad = VALID_PIPELINE.replace("audio.transcribe", "audio.not_a_real_op")
+    r = client.post(
+        "/pipelines/preview", json={"pipeline_yaml": bad, "sources": []}, headers=auth
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is False
+    assert body["error_class"] == "ProfileCompileError"
+
+
+def test_pipeline_preview_requires_auth(client: TestClient) -> None:
+    r = client.post(
+        "/pipelines/preview", json={"pipeline_yaml": VALID_PIPELINE, "sources": []}
+    )
+    assert r.status_code == 401

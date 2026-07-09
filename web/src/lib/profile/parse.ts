@@ -155,6 +155,56 @@ export function mutateNode(doc: Document, nodeId: string, patch: Partial<GraphNo
   return false;
 }
 
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a !== null && b !== null && typeof a === 'object' && typeof b === 'object') {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+  return false;
+}
+
+/** Set a node's `params` in the AST, writing only keys whose value differs
+ *  from its schema `default` (and deleting keys reset to default) so the YAML
+ *  stays minimal and comments + key order on untouched params survive. Drops
+ *  an emptied `params:` map entirely. Returns `true` when the node was found.
+ *
+ *  This is the round-trip path behind the per-node param editor: the form
+ *  seeds from `{ ...defaults, ...node.params }`, so a value left at its
+ *  default is omitted from the YAML rather than bloating every node. */
+export function mutateNodeParams(
+  doc: Document,
+  nodeId: string,
+  params: Record<string, unknown>,
+  defaults: Record<string, unknown>,
+): boolean {
+  const graph = doc.getIn(['graph']);
+  if (!graph || typeof graph !== 'object' || !('items' in graph)) return false;
+  const items = (graph as { items: unknown[] }).items;
+  for (let i = 0; i < items.length; i++) {
+    const idNode = doc.getIn(['graph', i, 'id']);
+    if (typeof idNode === 'string' && idNode === nodeId) {
+      for (const [k, v] of Object.entries(params)) {
+        if (v === undefined || deepEqual(v, defaults[k])) {
+          doc.deleteIn(['graph', i, 'params', k]);
+        } else {
+          doc.setIn(['graph', i, 'params', k], v);
+        }
+      }
+      const p = doc.getIn(['graph', i, 'params']);
+      if (
+        p &&
+        typeof p === 'object' &&
+        'items' in p &&
+        (p as { items: unknown[] }).items.length === 0
+      ) {
+        doc.deleteIn(['graph', i, 'params']);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Remove a node by id. Returns `true` when found + removed. */
 export function removeNode(doc: Document, nodeId: string): boolean {
   const graph = doc.getIn(['graph']);

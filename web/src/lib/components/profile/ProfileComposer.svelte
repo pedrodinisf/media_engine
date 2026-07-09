@@ -22,7 +22,7 @@
   } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
 
-  import type { GraphNodeSpec, InputSpec } from '$lib/profile/types';
+  import type { CompiledNode, GraphNodeSpec, InputSpec } from '$lib/profile/types';
   import { layoutComposer } from './composer-layout';
   import ComposerOpNode from './ComposerOpNode.svelte';
   import ComposerInputNode from './ComposerInputNode.svelte';
@@ -32,6 +32,9 @@
     nodes: readonly GraphNodeSpec[];
     selectedNodeId?: string | null;
     invalidNodeIds?: ReadonlySet<string>;
+    /** Per-node model/provider enrichment from `POST /profiles/validate`,
+     *  keyed by node id — drives the cloud/local chips on each op node. */
+    enrichment?: ReadonlyMap<string, CompiledNode>;
     /** Op-name palette — typically every entry of `GET /operations`
      *  whose `input_kinds` is empty or matches the available input
      *  kinds. */
@@ -46,6 +49,7 @@
     nodes,
     selectedNodeId = null,
     invalidNodeIds = new Set<string>(),
+    enrichment = new Map<string, CompiledNode>(),
     opPalette,
     onSelectNode,
     onAddOp,
@@ -57,7 +61,7 @@
     'composer-input': ComposerInputNode,
   };
 
-  const laid = $derived(layoutComposer([...inputs], [...nodes], invalidNodeIds));
+  const laid = $derived(layoutComposer([...inputs], [...nodes], invalidNodeIds, enrichment));
   const flowNodes = $derived<Node[]>(
     laid.nodes.map((n) => ({
       ...n,

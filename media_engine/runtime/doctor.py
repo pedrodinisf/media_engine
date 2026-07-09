@@ -24,13 +24,40 @@ import shutil
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
-from media_engine.backends._base import Backend, BackendRegistry
+from media_engine.backends._base import (
+    Backend,
+    BackendRegistry,
+    BackendRequirements,
+)
 from media_engine.ops import Operation, OpRegistry
 from media_engine.runtime.hardware import total_memory_gb
 
 CheckKind = Literal["env", "binary", "service", "hardware", "memory"]
 Status = Literal["ok", "missing", "degraded"]
 Overall = Literal["ok", "degraded", "unavailable"]
+Provider = Literal["cloud", "local", "unknown"]
+
+
+def classify_provider(requires: BackendRequirements) -> Provider:
+    """Classify a backend as cloud vs local from its declared requirements.
+
+    A backend that needs an ``*_API_KEY`` env var is a cloud/API backend
+    (``GEMINI_API_KEY``, ``ANTHROPIC_API_KEY``, …). One that needs specific
+    hardware / binaries / importable packages / RAM is a local backend. The
+    ``_API_KEY`` **suffix** check is load-bearing: non-key env requirements
+    like ``HF_TOKEN`` (gated HF downloads) or ``MEDIA_ENGINE_*_DB_URL`` must
+    NOT flip a local backend to "cloud". Returns ``"unknown"`` for a backend
+    with no declared requirements (e.g. a pure-python util)."""
+    if any(name.endswith("_API_KEY") for name in requires.env):
+        return "cloud"
+    if (
+        requires.hardware
+        or requires.binaries
+        or requires.services
+        or requires.min_memory_gb > 0
+    ):
+        return "local"
+    return "unknown"
 
 
 @dataclass
@@ -48,6 +75,8 @@ class BackendDoctorReport:
     backend_version: str
     requirements: list[RequirementCheck] = field(default_factory=lambda: [])  # noqa: PIE807
     overall: Overall = "ok"
+    # cloud (needs an *_API_KEY) vs local (needs hardware/binaries/RAM).
+    provider: Provider = "unknown"
 
 
 @dataclass
@@ -258,6 +287,7 @@ def check_backend(backend_cls: type[Backend]) -> BackendDoctorReport:
         backend_version=backend_cls.version,
         requirements=reqs,
         overall=_roll_backend(reqs),
+        provider=classify_provider(req_spec),
     )
 
 

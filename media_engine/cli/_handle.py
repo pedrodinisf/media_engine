@@ -35,7 +35,7 @@ from media_engine.runtime.dag import (
     Pipeline,
     execute_pipeline,
 )
-from media_engine.runtime.engine import Engine
+from media_engine.runtime.engine import Engine, NodeCostPreview
 from media_engine.runtime.lineage import LineageNode
 
 
@@ -74,6 +74,14 @@ class EngineHandle(Protocol):
     def estimate_op_cost(
         self, op_name: str, *, inputs: list[str] | None = None, **params: Any
     ) -> CostEstimate: ...
+
+    def preview_pipeline(
+        self, pipeline: Pipeline
+    ) -> list[NodeCostPreview]: ...
+
+    def validate_op_feasibility(
+        self, op_name: str, *, inputs: list[str] | None = None, **params: Any
+    ) -> None: ...
 
     def cost_summary(
         self, *, since: datetime | None = None, op_name: str | None = None
@@ -141,6 +149,14 @@ class LocalEngineHandle:
         self, op_name: str, *, inputs: list[str] | None = None, **params: Any
     ) -> CostEstimate:
         return self._engine.estimate_op_cost(op_name, inputs=inputs, **params)
+
+    def preview_pipeline(self, pipeline: Pipeline) -> list[NodeCostPreview]:
+        return self._engine.preview_pipeline(pipeline)
+
+    def validate_op_feasibility(
+        self, op_name: str, *, inputs: list[str] | None = None, **params: Any
+    ) -> None:
+        self._engine.validate_op_feasibility(op_name, inputs=inputs, **params)
 
     def cost_summary(
         self, *, since: datetime | None = None, op_name: str | None = None
@@ -241,6 +257,18 @@ class DaemonEngineHandle:
         # local engine reads inputs from the shared cache.
         with Engine.open_quick(self._config) as local:
             return local.estimate_op_cost(op_name, inputs=inputs, **params)
+
+    def preview_pipeline(self, pipeline: Pipeline) -> list[NodeCostPreview]:
+        # Preflight is pure arithmetic + validate_params (no model load).
+        # A transient local engine reads sources from the shared cache.
+        with Engine.open_quick(self._config) as local:
+            return local.preview_pipeline(pipeline)
+
+    def validate_op_feasibility(
+        self, op_name: str, *, inputs: list[str] | None = None, **params: Any
+    ) -> None:
+        with Engine.open_quick(self._config) as local:
+            local.validate_op_feasibility(op_name, inputs=inputs, **params)
 
     def cost_summary(
         self, *, since: datetime | None = None, op_name: str | None = None

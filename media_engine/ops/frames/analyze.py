@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     Analysis,
@@ -27,12 +27,17 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.video._models import VLM_MODELS
 
 
 class FramesAnalyzeParams(BaseModel):
     prompt: str
     system_prompt: str | None = None
-    model: str = "gemini-2.5-pro"
+    # mlx-community/* routes to the local vllm-mlx backend; gemini-* to cloud.
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(VLM_MODELS)}),
+    ] = "gemini-2.5-pro"
     temperature: float = 0.2
     max_tokens: int = 4096
     media_resolution: Literal["low", "medium", "high"] = "medium"

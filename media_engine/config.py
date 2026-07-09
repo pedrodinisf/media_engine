@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -181,3 +181,65 @@ class EngineConfig(BaseSettings):
                 f"permanent_store exists but is not writable: {store}\n"
                 f"Suggestion: chmod, or set MEDIA_ENGINE_PERMANENT_STORE elsewhere."
             )
+
+
+class ConfigValidationError(ValueError):
+    """Raised when ``config.toml`` text is syntactically or semantically invalid.
+
+    Surfaced by the Web UI's config editor (``PUT /settings/config-files``)
+    as a 422 with the parse/validation message so the operator never
+    persists a config the engine would reject at next boot.
+    """
+
+
+def _config_allowed_keys() -> set[str]:
+    """Top-level keys a valid ``config.toml`` may set — field names plus any
+    validation aliases (e.g. ``cache_db_url`` also accepts ``MEDIA_ENGINE_DB_URL``)."""
+    allowed: set[str] = set(EngineConfig.model_fields)
+    for field in EngineConfig.model_fields.values():
+        alias = field.validation_alias
+        if isinstance(alias, AliasChoices):
+            allowed.update(c for c in alias.choices if isinstance(c, str))
+        elif isinstance(alias, str):
+            allowed.add(alias)
+    return allowed
+
+
+def validate_config_toml(text: str) -> None:
+    """Parse + round-trip ``config.toml`` text through ``EngineConfig``.
+
+    Raises :class:`ConfigValidationError` on a TOML syntax error, an
+    unknown top-level key (``extra="ignore"`` would otherwise swallow a
+    typo like ``permanant_store`` and silently ignore it), or a value
+    that fails field validation. Empty text is valid (resets to defaults).
+    """
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigValidationError(f"invalid TOML: {e}") from e
+    unknown = sorted(set(data) - _config_allowed_keys())
+    if unknown:
+        raise ConfigValidationError(
+            f"unknown config key(s): {unknown}. Allowed keys are the EngineConfig "
+            f"fields — see `med config` for the effective set."
+        )
+    try:
+        EngineConfig(**data)
+    except ValidationError as e:
+        raise ConfigValidationError(f"invalid config value — {e}") from e
+
+
+def write_config_toml(config_dir: Path, text: str) -> Path:
+    """Validate then atomically write ``{config_dir}/config.toml``.
+
+    Validates first (raises :class:`ConfigValidationError`), then writes via
+    a same-dir temp file + ``os.replace`` so a crash mid-write can't leave a
+    truncated config. Returns the written path.
+    """
+    validate_config_toml(text)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    target = config_dir / "config.toml"
+    tmp = target.with_suffix(".toml.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(target)
+    return target

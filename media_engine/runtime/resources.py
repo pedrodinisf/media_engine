@@ -77,16 +77,31 @@ def load_resources_config(path: Path | None) -> ResourcesConfig:
     """Parse the resources YAML file. Missing file → empty config (defaults stand)."""
     if path is None or not path.exists():
         return ResourcesConfig()
+    return load_resources_config_from_string(
+        path.read_text(encoding="utf-8"), source_label=str(path)
+    )
+
+
+def load_resources_config_from_string(
+    text: str, *, source_label: str = "resources.yaml"
+) -> ResourcesConfig:
+    """Parse + structurally validate ``resources.yaml`` text (no disk I/O).
+
+    Mirrors :func:`load_resources_config` but takes a string, so the Web UI's
+    config editor can validate before writing (same pattern as
+    ``load_profile_from_string``). Does NOT check that referenced op names
+    exist — use :func:`validate_resources_yaml` for that. Empty text → empty
+    config."""
     try:
-        loaded: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+        loaded: Any = yaml.safe_load(text)
     except yaml.YAMLError as e:
-        raise ResourcesConfigError(f"{path}: invalid YAML — {e}") from e
+        raise ResourcesConfigError(f"{source_label}: invalid YAML — {e}") from e
     raw: dict[str, Any] = (
         cast(dict[str, Any], loaded) if isinstance(loaded, dict) else {}
     )
     if loaded is not None and not isinstance(loaded, dict):
         raise ResourcesConfigError(
-            f"{path}: top-level YAML must be a mapping (got "
+            f"{source_label}: top-level YAML must be a mapping (got "
             f"{type(loaded).__name__})"
         )
     specs: list[ResourceSpec] = []
@@ -97,7 +112,7 @@ def load_resources_config(path: Path | None) -> ResourcesConfig:
             continue
         if not isinstance(body, dict):
             raise ResourcesConfigError(
-                f"{path}: resource {name!r} body must be int or mapping "
+                f"{source_label}: resource {name!r} body must be int or mapping "
                 f"(got {type(body).__name__})"
             )
         body_d: dict[str, Any] = cast(dict[str, Any], body)
@@ -107,19 +122,19 @@ def load_resources_config(path: Path | None) -> ResourcesConfig:
         unknown_keys = sorted(set(body_d) - _ALLOWED_KEYS)
         if unknown_keys:
             raise ResourcesConfigError(
-                f"{path}: resource {name!r} has unknown key(s) "
+                f"{source_label}: resource {name!r} has unknown key(s) "
                 f"{unknown_keys!r}; allowed: "
                 f"{sorted(_ALLOWED_KEYS)!r}"
             )
         capacity_raw: Any = body_d.get("capacity", 1)
         if not isinstance(capacity_raw, int) or capacity_raw < 1:
             raise ResourcesConfigError(
-                f"{path}: resource {name!r} capacity must be a positive int"
+                f"{source_label}: resource {name!r} capacity must be a positive int"
             )
         ops_raw: Any = body_d.get("operations", [])
         if ops_raw and not isinstance(ops_raw, list):
             raise ResourcesConfigError(
-                f"{path}: resource {name!r} operations must be a list"
+                f"{source_label}: resource {name!r} operations must be a list"
             )
         ops_list: list[Any] = (
             cast(list[Any], ops_raw) if isinstance(ops_raw, list) else []
@@ -175,3 +190,34 @@ def apply_resources_config(config: ResourcesConfig) -> None:
 
 def default_resources_path(config_dir: Path) -> Path:
     return config_dir / "resources.yaml"
+
+
+def validate_resources_yaml(text: str) -> ResourcesConfig:
+    """Structurally validate ``resources.yaml`` text AND verify referenced op
+    names exist — WITHOUT mutating the registry.
+
+    The op-name check mirrors :func:`apply_resources_config` (which is
+    mutating and runs at session open); this non-mutating variant lets the
+    Web UI config editor reject an ``operations: [typo.op]`` before it's
+    written to disk. Raises :class:`ResourcesConfigError`."""
+    config = load_resources_config_from_string(text)
+    unknown = [op for op in config.remap() if not OpRegistry.has(op)]
+    if unknown:
+        raise ResourcesConfigError(
+            f"resources.yaml references unknown op(s) {unknown!r}"
+        )
+    return config
+
+
+def write_resources_config(config_dir: Path, text: str) -> Path:
+    """Validate then atomically write ``{config_dir}/resources.yaml``.
+
+    Validates first (raises :class:`ResourcesConfigError`), then writes via a
+    same-dir temp file + ``os.replace``. Returns the written path."""
+    validate_resources_yaml(text)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    target = config_dir / "resources.yaml"
+    tmp = target.with_suffix(".yaml.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(target)
+    return target

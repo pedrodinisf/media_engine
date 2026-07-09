@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -32,10 +32,21 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.embed._models import EMBED_TEXT_MODELS
 
 
 class EmbedTextParams(BaseModel):
-    model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    model: Annotated[
+        str,
+        Field(
+            json_schema_extra={"enum": list(EMBED_TEXT_MODELS)},
+            description=(
+                "Local sentence-transformers model. Changing this changes the "
+                "vector dimension — re-embed an existing semantic index after "
+                "switching."
+            ),
+        ),
+    ] = "sentence-transformers/all-MiniLM-L6-v2"
     normalize: bool = True
 
 

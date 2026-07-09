@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     AnyArtifact,
@@ -29,13 +29,18 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.video._models import VLM_GEMINI_MODELS
 
 
 class ImageOCRParams(BaseModel):
     # Backend is selected the engine-standard way (``--backend
     # gemini-vision`` / ``backend=`` / DAGNode.backend), not a param —
     # default is ``rapidocr`` (see Operation.default_backend).
-    model: str = "gemini-2.5-flash"  # only used by the gemini-vision backend
+    # only used by the gemini-vision backend
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(VLM_GEMINI_MODELS)}),
+    ] = "gemini-2.5-flash"
 
 
 @register_op

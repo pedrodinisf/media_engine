@@ -9,24 +9,44 @@
    * lib's `Document` model). The editor + composer both write through
    * the same `yaml = $state(...)` so they stay in sync.
    */
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { stringify as yamlStringify } from 'yaml';
   import { ApiError, api } from '$lib/api/client';
-  import { deleteProfile, getProfile, saveProfile, validateProfile } from '$lib/profile/api';
+  import {
+    deleteProfile,
+    getOperationDetail,
+    getProfile,
+    previewPipeline,
+    saveProfile,
+    validateProfile,
+    type PipelineSource,
+  } from '$lib/profile/api';
   import {
     addNode,
     loadDocument,
     mutateNode,
+    mutateNodeParams,
     parseProfileText,
     serializeDocument,
   } from '$lib/profile/parse';
-  import type { CompiledNode, ValidateProfileResponse } from '$lib/profile/types';
+  import type {
+    CompiledNode,
+    NodePreview,
+    PipelinePreviewResponse,
+    ValidateProfileResponse,
+  } from '$lib/profile/types';
   import ProfileComposer from '$lib/components/profile/ProfileComposer.svelte';
   import YAMLEditor from '$lib/components/profile/YAMLEditor.svelte';
   import SourcesPicker from '$lib/components/profile/SourcesPicker.svelte';
+  import SchemaForm from '$lib/components/forms/SchemaForm.svelte';
+  import {
+    initialParams,
+    type ParamsSchema,
+    type ParamsValue,
+  } from '$lib/components/forms/schema';
 
   type OperationSummary = {
     name: string;
@@ -53,6 +73,18 @@
   let ops = $state<OperationSummary[]>([]);
 
   let selectedNodeId = $state<string | null>(null);
+
+  // Per-node param editor (Phase 8 — un-defers the old "edit YAML directly").
+  // Schema cache is a plain Map (non-reactive) so re-seeding doesn't loop.
+  const opSchemaCache = new Map<string, ParamsSchema>();
+  let opSchema = $state<ParamsSchema | null>(null);
+  let editingParams = $state<ParamsValue>({});
+  let schemaDefaults = $state<ParamsValue>({});
+
+  // Pipeline preflight (Phase 8) — populated after the user picks sources.
+  let preview = $state<PipelinePreviewResponse | null>(null);
+  let previewing = $state(false);
+  let pendingSources = $state<PipelineSource[]>([]);
 
   let saving = $state(false);
   let saveError = $state<string | null>(null);
@@ -88,6 +120,76 @@
   });
 
   const opPalette = $derived(ops.map((o) => o.name));
+
+  // Phase 8 — per-node model/provider enrichment from validate, keyed by id.
+  const compiledById = $derived(
+    new Map<string, CompiledNode>(
+      (validation?.compiled_nodes ?? []).map((c) => [c.id, c]),
+    ),
+  );
+  const selectedNode = $derived(
+    selectedNodeId ? (parsed.nodes.find((n) => n.id === selectedNodeId) ?? null) : null,
+  );
+  const selectedOp = $derived(selectedNode?.op ?? null);
+  const selectedEnrichment = $derived(
+    selectedNodeId ? (compiledById.get(selectedNodeId) ?? null) : null,
+  );
+
+  // Profile-wide "what does this use?" summary strip.
+  const profileModels = $derived.by(() => {
+    const seen = new Map<string, string>(); // model id → provider
+    for (const c of validation?.compiled_nodes ?? []) {
+      for (const m of c.models ?? []) {
+        if (m.value) seen.set(m.value, m.provider);
+      }
+    }
+    return [...seen.entries()].map(([name, provider]) => ({ name, provider }));
+  });
+  const profileHints = $derived.by(() => {
+    const s = new Set<string>();
+    for (const c of validation?.compiled_nodes ?? []) {
+      if (c.requirement_hint) s.add(c.requirement_hint);
+    }
+    return [...s];
+  });
+
+  const previewInfeasible = $derived(
+    (preview?.nodes ?? []).some((n) => n.feasibility_error),
+  );
+
+  // Fetch the selected op's param schema + seed the form. Depends ONLY on the
+  // node id + op name (strings) — NOT the whole node — so typing a param value
+  // (which flows through the 150ms yamlForLayout debounce) never resets the
+  // form mid-edit. Current params are read `untrack`ed for the same reason.
+  $effect(() => {
+    const id = selectedNodeId;
+    const op = selectedOp;
+    if (!id || !op) {
+      opSchema = null;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      let schema = opSchemaCache.get(op);
+      if (!schema) {
+        try {
+          schema = (await getOperationDetail(op)).params_schema;
+          opSchemaCache.set(op, schema);
+        } catch {
+          return;
+        }
+      }
+      if (cancelled) return;
+      opSchema = schema;
+      const defaults = initialParams(schema);
+      schemaDefaults = defaults;
+      const nodeParams = untrack(() => selectedNode?.params ?? {}) as ParamsValue;
+      editingParams = { ...defaults, ...nodeParams };
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
 
   async function loadProfileBody(): Promise<void> {
     loadError = null;
@@ -289,29 +391,61 @@
     }
   }
 
+  // Write the edited params for the selected node back into the YAML AST,
+  // omitting values equal to their schema default (keeps YAML minimal).
+  function updateSelectedParams(next: ParamsValue): void {
+    editingParams = next;
+    if (!selectedNodeId) return;
+    const doc = loadDocument(yamlText);
+    mutateNodeParams(doc, selectedNodeId, next, schemaDefaults);
+    yamlText = serializeDocument(doc);
+  }
+
+  // Phase 8 — Run now PREFLIGHTS first: pick sources → POST /pipelines/preview
+  // → show per-node cost + feasibility → block submit on any feasibility error.
   async function runWithSources(sources: Record<string, string>): Promise<void> {
     showSourcesPicker = false;
+    pendingSources = Object.entries(sources).map(([s_name, artifact_id]) => ({
+      name: s_name,
+      artifact_id,
+    }));
+    previewing = true;
+    preview = null;
+    runError = null;
+    try {
+      preview = await previewPipeline(yamlText, pendingSources);
+    } catch (e) {
+      runError = e instanceof ApiError ? e.detail : String(e);
+    } finally {
+      previewing = false;
+    }
+  }
+
+  async function submitRun(): Promise<void> {
     running = true;
     runError = null;
     try {
       const body = await api.post<{ job_id: string }>('/pipelines', {
         pipeline_yaml: yamlText,
-        sources: Object.entries(sources).map(([s_name, artifact_id]) => ({
-          name: s_name,
-          artifact_id,
-        })),
+        sources: pendingSources,
       });
       await goto(`${base}/jobs/${body.job_id}`);
     } catch (e) {
       runError = e instanceof ApiError ? e.detail : String(e);
-    } finally {
       running = false;
     }
   }
 
-  const selectedNode = $derived(
-    selectedNodeId ? parsed.nodes.find((n) => n.id === selectedNodeId) ?? null : null,
-  );
+  function cancelPreview(): void {
+    preview = null;
+    pendingSources = [];
+  }
+
+  function fmtCost(n: NodePreview): string {
+    return n.estimate_cost_cents
+      ? `$${(n.estimate_cost_cents / 100).toFixed(3)}`
+      : `~${n.estimate_seconds_local.toFixed(0)}s`;
+  }
 </script>
 
 <svelte:head>
@@ -383,6 +517,39 @@
   >{runError}</p>
 {/if}
 
+{#if isPipeline && (profileModels.length > 0 || profileHints.length > 0)}
+  <section
+    class="mb-3 rounded p-3 flex flex-wrap items-center gap-2"
+    style="background: var(--bg-card); border: 1px solid var(--border-soft);"
+    data-testid="profile-summary-strip"
+  >
+    <span class="text-xs font-semibold uppercase" style="color: var(--text-muted);">Uses</span>
+    {#each profileModels as m (m.name)}
+      <span
+        class="text-xs font-mono px-2 py-0.5 rounded"
+        style="
+          background: {m.provider === 'cloud'
+          ? 'var(--accent-amber-soft)'
+          : m.provider === 'local'
+            ? 'var(--accent-green-soft)'
+            : 'var(--bg-page)'};
+          color: {m.provider === 'cloud'
+          ? 'var(--accent-amber)'
+          : m.provider === 'local'
+            ? 'var(--accent-green)'
+            : 'var(--text-secondary)'};"
+        title="{m.provider === 'cloud' ? 'Cloud API' : m.provider === 'local' ? 'Local / on-device' : 'Unknown provider'}"
+      >{m.name} · {m.provider}</span>
+    {/each}
+    {#each profileHints as h (h)}
+      <span
+        class="text-xs px-2 py-0.5 rounded"
+        style="background: var(--accent-red-soft); color: var(--accent-red);"
+      >⚠ {h}</span>
+    {/each}
+  </section>
+{/if}
+
 <div class="grid grid-cols-12 gap-3 mb-3">
   <section class="col-span-7">
     {#if isPipeline}
@@ -391,6 +558,7 @@
         nodes={parsed.nodes}
         selectedNodeId={selectedNodeId}
         invalidNodeIds={invalidNodeIds}
+        enrichment={compiledById}
         opPalette={opPalette}
         onSelectNode={selectNode}
         onAddOp={appendNodeFromPalette}
@@ -443,11 +611,54 @@
             style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-light);"
           />
         </label>
-        <p class="mt-2 text-xs italic" style="color: var(--text-muted);">
-          Per-node param editing (full schema form) is deferred to a future commit. For now,
-          edit params directly in the YAML pane on the right — every save round-trips through
-          the YAML AST so comments + key order are preserved.
-        </p>
+
+        <!-- Models & requirements (from /profiles/validate enrichment) -->
+        {#if selectedEnrichment}
+          <div class="mt-3 pt-2" style="border-top: 1px solid var(--border-soft);">
+            <div class="text-xs font-semibold uppercase mb-1" style="color: var(--text-muted);">
+              Models &amp; requirements
+            </div>
+            <div class="text-xs" style="color: var(--text-secondary);">
+              backend: <span class="font-mono">{selectedEnrichment.resolved_backend ?? (selectedEnrichment.provider === 'composite' ? 'composite (per-model)' : '—')}</span>
+              {#if selectedEnrichment.provider && selectedEnrichment.provider !== 'unknown'}
+                · <span style="color: {selectedEnrichment.provider === 'cloud' ? 'var(--accent-amber)' : selectedEnrichment.provider === 'local' ? 'var(--accent-green)' : 'var(--accent-blue)'}; font-weight: 600;">{selectedEnrichment.provider}</span>
+              {/if}
+            </div>
+            {#each selectedEnrichment.models ?? [] as m (m.name)}
+              <div class="text-xs font-mono mt-0.5" style="color: var(--text-muted);">
+                {m.name}: {m.value ?? '(default)'}
+                <span style="color: {m.provider === 'cloud' ? 'var(--accent-amber)' : m.provider === 'local' ? 'var(--accent-green)' : 'var(--text-muted)'};">· {m.provider}</span>
+              </div>
+            {/each}
+            {#if selectedEnrichment.requirement_hint}
+              <div class="text-xs mt-1 font-semibold" style="color: var(--accent-red);">
+                ⚠ {selectedEnrichment.requirement_hint}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Params — schema-driven form (Phase 8; replaces the YAML-only note) -->
+        <div class="mt-3 pt-2" style="border-top: 1px solid var(--border-soft);">
+          <div class="text-xs font-semibold uppercase mb-2" style="color: var(--text-muted);">
+            Params
+          </div>
+          {#if opSchema}
+            <div class="max-h-[36vh] overflow-y-auto pr-1">
+              <SchemaForm
+                schema={opSchema}
+                value={editingParams}
+                onChange={updateSelectedParams}
+              />
+            </div>
+            <p class="mt-2 text-xs italic" style="color: var(--text-muted);">
+              Values equal to the default are omitted from the YAML. Edits round-trip
+              through the YAML AST (comments + key order preserved).
+            </p>
+          {:else}
+            <p class="text-xs italic" style="color: var(--text-muted);">Loading param schema…</p>
+          {/if}
+        </div>
       </section>
     {/if}
   </section>
@@ -492,4 +703,105 @@
     onCancel={() => (showSourcesPicker = false)}
     onConfirm={runWithSources}
   />
+{/if}
+
+{#if previewing || preview}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    style="background: rgba(0,0,0,0.5);"
+  >
+    <div
+      class="rounded p-4 w-full max-w-2xl max-h-[80vh] overflow-y-auto"
+      style="background: var(--bg-card); border: 1px solid var(--border-soft);"
+      data-testid="preflight-panel"
+    >
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold" style="color: var(--text-primary);">
+          Pipeline preflight
+        </h2>
+        <button type="button" onclick={cancelPreview} class="text-xs" style="color: var(--text-muted);"
+          >✕</button
+        >
+      </div>
+      {#if previewing}
+        <p class="text-xs italic" style="color: var(--text-muted);">Preflighting…</p>
+      {:else if preview && !preview.ok}
+        <p class="text-xs font-mono" style="color: var(--accent-red);">✗ {preview.error_class}</p>
+        <pre class="mt-1 text-xs whitespace-pre-wrap" style="color: var(--text-secondary);">{preview.message}</pre>
+      {:else if preview}
+        <table class="w-full text-xs">
+          <thead>
+            <tr style="color: var(--text-muted); text-align: left;">
+              <th class="py-1">node</th><th>backend</th><th>models</th><th>~cost</th><th>status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each preview.nodes as n (n.id)}
+              <tr style="border-top: 1px solid var(--border-soft);">
+                <td class="py-1 font-mono">{n.id}</td>
+                <td class="font-mono" style="color: var(--text-muted);"
+                  >{n.backend ?? (n.embedded ? 'composite' : '—')}</td
+                >
+                <td class="font-mono" style="color: var(--text-muted);"
+                  >{n.models
+                    .map((m) => m.value)
+                    .filter(Boolean)
+                    .join(', ') || '—'}</td
+                >
+                <td class="font-mono">{fmtCost(n)}</td>
+                <td>
+                  {#if n.feasibility_error}
+                    <span style="color: var(--accent-red);">✗</span>
+                  {:else if !n.resolvable}
+                    <span style="color: var(--text-muted);">not preflighted</span>
+                  {:else if n.cached}
+                    <span style="color: var(--accent-green);">cached</span>
+                  {:else}
+                    <span style="color: var(--accent-green);">ok</span>
+                  {/if}
+                </td>
+              </tr>
+              {#if n.feasibility_error}
+                <tr>
+                  <td colspan="5" class="pb-1" style="color: var(--accent-red);"
+                    >{n.feasibility_error}</td
+                  >
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+        <p class="mt-2 text-xs" style="color: var(--text-secondary);">
+          DAG total: ~{preview.total_seconds_local.toFixed(0)}s local{preview.total_cost_cents
+            ? ` + $${(preview.total_cost_cents / 100).toFixed(3)} cloud`
+            : ''}
+        </p>
+        {#if previewInfeasible}
+          <p class="mt-2 text-xs font-semibold" style="color: var(--accent-red);">
+            Fix the flagged params before running.
+          </p>
+        {/if}
+        <div class="flex gap-2 mt-3">
+          <button
+            type="button"
+            onclick={() => void submitRun()}
+            disabled={running || previewInfeasible}
+            data-testid="preflight-submit"
+            class="px-3 py-1.5 rounded text-xs font-semibold disabled:opacity-50"
+            style="background: var(--accent-green); color: var(--text-inverse);"
+          >
+            {running ? 'Submitting…' : 'Submit run'}
+          </button>
+          <button
+            type="button"
+            onclick={cancelPreview}
+            class="px-3 py-1.5 rounded text-xs"
+            style="background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border-light);"
+          >
+            Cancel
+          </button>
+        </div>
+      {/if}
+    </div>
+  </div>
 {/if}

@@ -11,11 +11,13 @@
   import {
     unwrapNullable,
     isMultilineField,
+    isModelField,
     type FieldValue,
     type ParamsSchema,
     type ParamsValue,
   } from './schema';
   import FloatInput from './FloatInput.svelte';
+  import ModelSelect from './ModelSelect.svelte';
 
   type Props = {
     schema: ParamsSchema;
@@ -55,7 +57,14 @@
         <span class="block text-xs mb-1.5" style="color: var(--text-muted);">{field.node.description}</span>
       {/if}
 
-      {#if field.node.enum}
+      {#if field.node.enum && isModelField(field.name)}
+        <ModelSelect
+          value={typeof v === 'string' ? v : null}
+          options={field.node.enum}
+          nullable={field.nullable}
+          onChange={(next) => update(field.name, next)}
+        />
+      {:else if field.node.enum}
         <select
           value={v ?? ''}
           onchange={(e) => update(field.name, (e.target as HTMLSelectElement).value)}

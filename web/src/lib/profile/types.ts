@@ -43,6 +43,24 @@ export type PromptProfile = {
   body: string;
 };
 
+/** Provider a model / backend routes to. `composite` = an embedded op with
+ *  no single backend (its per-model providers carry the detail). */
+export type Provider = 'cloud' | 'local' | 'composite' | 'unknown';
+
+/** A model-typed param on a node + which provider it routes to. */
+export type ModelFieldRef = {
+  name: string;
+  value: string | null;
+  provider: 'cloud' | 'local' | 'unknown';
+};
+
+/** Compact per-profile "what does it use?" summary for the list cards. */
+export type ProfileDigest = {
+  models: { name: string; provider: 'cloud' | 'local' | 'unknown' }[];
+  providers: string[];
+  requirement_hints: string[];
+};
+
 export type ProfileSummary = {
   name: string;
   kind: ProfileKind;
@@ -52,15 +70,21 @@ export type ProfileSummary = {
    *  in the user's config dir (editable). Server-supplied — no path
    *  heuristic needed. */
   source: 'bundled' | 'user';
+  /** Phase 8 — models/providers/requirement hints for the card badges. */
+  digest?: ProfileDigest | null;
 };
 
 /** Response from `POST /profiles/validate`. Always 200 — `ok` carries
- *  the verdict. */
+ *  the verdict. Nodes carry Phase-8 model/provider enrichment. */
 export type CompiledNode = {
   id: string;
   op: string;
   backend: string | null;
   inputs: string[];
+  resolved_backend?: string | null;
+  provider?: Provider;
+  models?: ModelFieldRef[];
+  requirement_hint?: string | null;
 };
 
 export type ValidateProfileResponse = {
@@ -69,6 +93,33 @@ export type ValidateProfileResponse = {
   error_class: string | null;
   message: string | null;
   line: number | null;
+};
+
+/** Per-node result of `POST /pipelines/preview` (a pipeline preflight). */
+export type NodePreview = {
+  id: string;
+  op: string;
+  backend: string | null;
+  embedded: boolean;
+  cached: boolean;
+  resolvable: boolean;
+  models: ModelFieldRef[];
+  estimate_seconds_local: number;
+  estimate_cost_cents: number;
+  estimate_tokens_in: number;
+  estimate_tokens_out: number;
+  feasibility_error: string | null;
+};
+
+export type PipelinePreviewResponse = {
+  ok: boolean;
+  nodes: NodePreview[];
+  total_seconds_local: number;
+  total_cost_cents: number;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  error_class: string | null;
+  message: string | null;
 };
 
 /** Skeleton YAML for the "+ New" button on `/ui/profiles`. */

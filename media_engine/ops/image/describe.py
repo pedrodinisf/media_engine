@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from media_engine.artifacts import (
     Analysis,
@@ -26,12 +26,16 @@ from media_engine.ops import (
     OperationContext,
     register_op,
 )
+from media_engine.ops.video._models import VLM_GEMINI_MODELS
 
 
 class ImageDescribeParams(BaseModel):
     prompt: str = "Describe this image in detail."
     system_prompt: str | None = None
-    model: str = "gemini-2.5-flash"
+    model: Annotated[
+        str,
+        Field(json_schema_extra={"enum": list(VLM_GEMINI_MODELS)}),
+    ] = "gemini-2.5-flash"
     temperature: float = 0.2
     max_tokens: int = 2048
 
